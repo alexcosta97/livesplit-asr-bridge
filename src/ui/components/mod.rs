@@ -29,7 +29,7 @@ mod timer_card;
 mod timer_row;
 mod unsaved_dialog;
 
-pub use about_row::{about_folder, about_row};
+pub use about_row::about_folder;
 pub use app_header::app_header;
 pub use checkbox::Checkbox;
 pub use empty_state::empty_state;

@@ -3,13 +3,17 @@
 
 use std::path::Path;
 
-use eframe::egui::{ScrollArea, Ui};
+use eframe::egui::{RichText, ScrollArea, Ui};
 
 use super::components::{self, Checkbox};
-use crate::version::VERSION;
+use super::{theme, window_title};
 
 /// The space between the tab's sections.
-const SECTION_GAP: f32 = 32.0;
+const SECTION_GAP: f32 = 48.0;
+/// The space under a section label.
+const LABEL_GAP: f32 = 16.0;
+/// The space between the lines of the About section.
+const ROW_GAP: f32 = 16.0;
 
 /// What the Preferences tab asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +35,8 @@ pub fn preferences_tab(
     let mut action = None;
     ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
+        components::section_label(ui, "Window");
+        ui.add_space(LABEL_GAP);
         let checkbox = Checkbox::new(remember_window, "Remember window size and position").note(
             "Turn this off with a tiling window manager, so the window manager decides the size.",
         );
@@ -40,12 +46,17 @@ pub fn preferences_tab(
 
         ui.add_space(SECTION_GAP);
         components::section_label(ui, "About");
-        ui.add_space(16.0);
-        ui.spacing_mut().item_spacing.y = 8.0;
-        components::about_row(ui, "Version", VERSION);
+        ui.add_space(LABEL_GAP);
+        ui.label(
+            RichText::new(window_title())
+                .font(theme::mono(13.0))
+                .color(theme::TEXT),
+        );
+        ui.add_space(ROW_GAP);
         if components::about_folder(ui, "Config folder", config_dir) {
             action = Some(PreferencesAction::OpenConfigFolder);
         }
+        ui.add_space(ROW_GAP);
         if components::about_folder(ui, "Log folder", log_dir) {
             action = Some(PreferencesAction::OpenLogFolder);
         }
@@ -162,7 +173,9 @@ mod tests {
     }
 
     fn find_all<'a>(nodes: &'a [Node], label: &str) -> Vec<&'a Node> {
-        let found: Vec<_> = nodes.iter().filter(|node| node.label == label).collect();
+        let mut found: Vec<_> = nodes.iter().filter(|node| node.label == label).collect();
+        // Top to bottom, as they are on screen.
+        found.sort_by(|a, b| a.rect.top().total_cmp(&b.rect.top()));
         assert!(!found.is_empty(), "no {label:?} in {nodes:#?}");
         found
     }
@@ -183,13 +196,14 @@ mod tests {
     }
 
     #[test]
-    fn about_shows_the_version_and_both_folders() {
+    fn about_shows_the_name_and_version_and_both_folders() {
         let screen = Screen::new(Some("/config"), Some("/logs"));
         let (_, nodes) = screen.frame(&mut true, Vec::new());
+        let version = format!("LiveSplit One ASR Bridge {}", crate::version::VERSION);
         for label in [
+            "WINDOW",
             "ABOUT",
-            "Version",
-            VERSION,
+            &version,
             "Config folder",
             "/config",
             "Log folder",

@@ -11,9 +11,9 @@ use crate::ui::theme;
 /// The size of the square.
 const BOX_SIZE: f32 = 16.0;
 /// The space between the square and the label.
-const GAP: f32 = 8.0;
+const GAP: f32 = 12.0;
 /// The space between the label and the note.
-const NOTE_GAP: f32 = 4.0;
+const NOTE_GAP: f32 = 6.0;
 
 /// A checkbox that ticks and unticks `checked` when clicked.
 #[must_use = "add it with `ui.add`"]
@@ -43,12 +43,12 @@ impl Widget for Checkbox<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let galley =
             ui.painter()
-                .layout_no_wrap(self.label.to_owned(), theme::body(13.0), theme::TEXT);
+                .layout_no_wrap(self.label.to_owned(), theme::body(14.0), theme::TEXT);
         let note = self.note.map(|note| {
             let wrap_width = (ui.available_width() - BOX_SIZE - GAP).max(0.0);
             ui.painter().layout(
                 note.to_owned(),
-                theme::body(12.0),
+                theme::body(13.0),
                 theme::TEXT_MUTED,
                 wrap_width,
             )
@@ -86,7 +86,7 @@ impl Widget for Checkbox<'_> {
             };
             painter.rect(
                 square,
-                2,
+                3,
                 fill,
                 Stroke::new(1.0, border),
                 StrokeKind::Inside,
@@ -94,8 +94,8 @@ impl Widget for Checkbox<'_> {
             if checked {
                 let at = |x: f32, y: f32| square.min + vec2(x, y) * BOX_SIZE;
                 painter.line(
-                    vec![at(0.25, 0.52), at(0.43, 0.7), at(0.76, 0.33)],
-                    Stroke::new(2.0, theme::WINDOW),
+                    vec![at(0.289, 0.523), at(0.43, 0.664), at(0.711, 0.336)],
+                    Stroke::new(1.65, theme::WINDOW),
                 );
             }
             if response.has_focus() {
