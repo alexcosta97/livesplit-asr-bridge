@@ -345,3 +345,105 @@ fn unloading_an_attached_auto_splitter_reports_the_game_detached() {
     harness.runner.unload();
     harness.wait_for(|event| *event == RunnerEvent::GameDetached);
 }
+
+/// A test double that follows the auto splitter's own actions, like a
+/// connected timer would, so state queries can be tested before the Server
+/// exists.
+#[derive(Default)]
+struct StateTrackingLink {
+    /// The split index while running.
+    split_index: Mutex<Option<usize>>,
+}
+
+impl TimerLink for StateTrackingLink {
+    fn state(&self) -> TimerState {
+        match *self.split_index.lock().unwrap() {
+            Some(_) => TimerState::Running,
+            None => TimerState::NotRunning,
+        }
+    }
+
+    fn current_split_index(&self) -> Option<usize> {
+        *self.split_index.lock().unwrap()
+    }
+
+    fn segment_splitted(&self, _index: usize) -> Option<bool> {
+        None
+    }
+
+    fn send(&self, action: TimerAction) {
+        let mut split_index = self.split_index.lock().unwrap();
+        match action {
+            TimerAction::Start => *split_index = split_index.or(Some(0)),
+            TimerAction::Split => *split_index = split_index.map(|index| index + 1),
+            TimerAction::Reset => *split_index = None,
+            _ => {}
+        }
+    }
+}
+
+/// Collects timer actions until a reset, failing the test on timeout.
+fn actions_until_reset(events: &Receiver<RunnerEvent>) -> Vec<TimerAction> {
+    let deadline = Instant::now() + TIMEOUT;
+    let mut actions = Vec::new();
+    while actions.last() != Some(&TimerAction::Reset) {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(remaining) {
+            Ok(RunnerEvent::TimerAction(action)) => actions.push(action),
+            Ok(_) => {}
+            Err(_) => panic!(
+                "timed out after {} actions; the first ones: {:?}",
+                actions.len(),
+                &actions[..actions.len().min(10)]
+            ),
+        }
+    }
+    actions
+}
+
+#[test]
+fn state_queries_go_through_the_timer_link() {
+    // Real auto splitters check the state before acting: this one starts when
+    // the timer isn't running and splits while it is, so it only splits if
+    // the link's answers reach it.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state-aware.wasm");
+    write_wasm(&path, include_str!("test_auto_splitters/state_aware.wat"));
+    let (runner, events) = Runner::new(Arc::new(StateTrackingLink::default()), || {});
+    runner.load(path);
+
+    assert_eq!(
+        actions_until_reset(&events),
+        [
+            TimerAction::Start,
+            TimerAction::Split,
+            TimerAction::Split,
+            TimerAction::Split,
+            TimerAction::Reset,
+        ]
+    );
+}
+
+#[test]
+fn with_no_timer_an_auto_splitter_that_checks_the_state_only_tries_to_start() {
+    // Spec §5.2: with no timer connected, the state is "not running", so a
+    // state-checking auto splitter keeps trying to start and never splits.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state-aware.wasm");
+    write_wasm(&path, include_str!("test_auto_splitters/state_aware.wat"));
+    let (runner, events) = Runner::new(Arc::new(NoTimer), || {});
+    runner.load(path);
+
+    let deadline = Instant::now() + Duration::from_millis(500);
+    let mut actions = Vec::new();
+    while let Ok(event) = events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        if let RunnerEvent::TimerAction(action) = event {
+            actions.push(action);
+        }
+    }
+    assert!(!actions.is_empty());
+    assert!(
+        actions.iter().all(|action| *action == TimerAction::Start),
+        "{actions:?}"
+    );
+}
