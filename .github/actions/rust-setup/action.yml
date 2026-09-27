@@ -1,0 +1,32 @@
+# Installs the Linux build dependencies and the Rust toolchain, and restores
+# the Rust cache. Every CI job on the same OS shares one cache key, so the
+# `setup` job compiles the dependencies once and the other jobs reuse them.
+name: Rust setup
+description: Install build dependencies and the Rust toolchain, and restore the Rust cache
+
+inputs:
+  components:
+    description: Extra toolchain components, e.g. "rustfmt, clippy"
+    required: false
+    default: ''
+  save-cache:
+    description: Whether to save the Rust cache at the end of the job
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install Linux build dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: ${{ inputs.components }}
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ci-${{ runner.os }}
+        save-if: ${{ inputs.save-cache }}

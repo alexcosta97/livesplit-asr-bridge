@@ -656,7 +656,10 @@ Manual, before each public release:
   checklist) and issue forms for tasks, feature requests and bug reports.
   Blank issues are disabled. Every pull request links an issue.
 - Tests run on pull requests only. They are not repeated on merge, because a
-  pull request cannot merge without passing them.
+  pull request cannot merge without passing them. On merge to `main`, CI only
+  compiles, to warm the Rust cache that pull requests restore; it does not run
+  the tests. In both cases a `setup` job per OS compiles the dependencies
+  once, and the other jobs share its cache.
 - **Dependency updates:** Renovate opens weekly pull requests for Cargo
   dependencies (including the LiveSplit crates, taken from the
   `LiveSplit/livesplit-core` repository by git `rev`), GitHub Actions and the

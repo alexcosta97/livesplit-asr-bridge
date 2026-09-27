@@ -3,49 +3,33 @@ name: CI
 on:
   pull_request:
     types: [opened, reopened, synchronize]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  # Line numbers only, not full debug info: much smaller caches, and
+  # backtraces still show where a panic happened.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
 jobs:
-  # Formatting, lint and tests don't depend on the OS, so they run once, on
-  # Linux. Only the build runs on every OS (spec §13).
-  lint:
-    name: lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-
-  test:
-    name: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --locked
-
-  build:
-    name: build (${{ matrix.os }})
+  # Compiles the dependencies once per OS and saves the Rust cache that the
+  # other jobs restore. It may always save, but rust-cache skips saving on an
+  # exact key match, so a pull request only saves a cache when its
+  # dependencies differ from main (e.g. a dependency update), which its own
+  # later jobs then use. On push to main it saves the cache every new pull
+  # request restores: GitHub lets pull requests read caches from their base
+  # branch, not from other pull requests. On main it only compiles; it never
+  # runs the tests (spec §13).
+  setup:
+    name: setup (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -53,17 +37,67 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/rust-setup
+        with:
+          components: ${{ runner.os == 'Linux' && 'clippy' || '' }}
+          save-cache: 'true'
+      - if: runner.os == 'Linux'
+        run: cargo clippy --all-targets --locked
+      - if: runner.os == 'Linux'
+        run: cargo test --no-run --locked
+      - run: cargo build --locked
+
+  # Formatting, lint and tests don't depend on the OS, so they run once, on
+  # Linux. Only the build runs on every OS (spec §13).
+  #
+  # These jobs use `!cancelled()` so they still run when `setup` fails: a job
+  # skipped because `setup` failed reports as success and would not block the
+  # merge, so they run anyway and report the real failure.
+  lint:
+    name: lint
+    needs: setup
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust-setup
+        with:
+          components: rustfmt, clippy
+          save-cache: 'false'
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+
+  test:
+    name: test
+    needs: setup
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust-setup
+        with:
+          save-cache: 'false'
+      - run: cargo test --locked
+
+  build:
+    name: build (${{ matrix.os }})
+    needs: setup
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/rust-setup
+        with:
+          save-cache: 'false'
       - run: cargo build --locked
 
   commitlint:
     name: commitlint
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
