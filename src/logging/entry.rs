@@ -13,10 +13,6 @@ pub enum Category {
     AutoSplitter,
     /// Timers connecting and disconnecting, commands sent, events and
     /// responses received, and dropped commands.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the server (#9, #10) logs connections")
-    )]
     Connection,
     /// Process attach and detach, tick rate changes, settings saved, server
     /// restarts and reloads.

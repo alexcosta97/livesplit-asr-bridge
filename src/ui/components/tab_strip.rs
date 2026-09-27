@@ -1,80 +1,76 @@
-//! Tab strip: the tabs of the tab area, with the active one underlined in
-//! orange.
+//! Tab strip: the tabs above the tab area.
 
 use eframe::egui::{
-    Rect, RichText, Sense, Stroke, TextStyle, TextWrapMode, Ui, WidgetText, pos2, vec2,
+    Color32, Rect, Sense, Stroke, StrokeKind, TextFormat, Ui, WidgetInfo, WidgetType, pos2,
+    text::LayoutJob, vec2,
 };
 
 use crate::ui::theme;
 
-/// The tabs of the tab area. The Settings, Connection and Preferences tabs
-/// join as they are built (#8, #10, #13).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Tab {
-    #[default]
-    Log,
-}
-
-impl Tab {
-    /// Every tab, in order.
-    const ALL: [Self; 1] = [Self::Log];
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::Log => "Log",
-        }
-    }
-}
-
-/// The height of the strip, down to its bottom border.
-const HEIGHT: f32 = 36.0;
-/// The space between tab labels.
+/// The strip's height.
+const HEIGHT: f32 = 44.0;
+/// The space before the first tab and between tabs.
 const GAP: f32 = 24.0;
+/// The active tab's underline.
+const UNDERLINE: f32 = 2.0;
+/// The tab labels' font size.
+const FONT_SIZE: f32 = 12.0;
 
-/// The tab strip: each tab's label, the active one in primary text and
-/// underlined in orange, over a 1 px border. Clicking a tab makes it active.
-pub fn tab_strip(ui: &mut Ui, active: &mut Tab) {
+/// The tab strip: uppercase labels, the active one underlined in orange,
+/// over a 1 px line across the tab area. Clicking a tab makes it `active`.
+/// The unsaved `•` comes with the Settings tab (#8).
+pub fn tab_strip<T: Copy + PartialEq>(ui: &mut Ui, tabs: &[(T, &str)], active: &mut T) {
     let (strip, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEIGHT), Sense::hover());
-    ui.painter().hline(
-        strip.x_range(),
-        strip.bottom() - 0.5,
-        Stroke::new(1.0, theme::BORDER),
+    ui.painter().rect_filled(
+        Rect::from_min_max(pos2(strip.left(), strip.bottom() - 1.0), strip.max),
+        0.0,
+        theme::BORDER,
     );
-    let mut x = strip.left();
-    for tab in Tab::ALL {
-        let text = RichText::new(tab.label().to_uppercase())
-            .font(theme::body_semibold(12.0))
-            .extra_letter_spacing(0.06 * 12.0);
-        let galley = WidgetText::from(text).into_galley(
-            ui,
-            Some(TextWrapMode::Extend),
-            f32::INFINITY,
-            TextStyle::Button,
+
+    let mut left = strip.left() + GAP;
+    for &(tab, label) in tabs {
+        let selected = tab == *active;
+        let job = LayoutJob::single_section(
+            label.to_uppercase(),
+            TextFormat {
+                font_id: theme::body_semibold(FONT_SIZE),
+                extra_letter_spacing: 0.06 * FONT_SIZE,
+                color: Color32::PLACEHOLDER,
+                ..TextFormat::default()
+            },
         );
-        let rect = Rect::from_min_size(pos2(x, strip.top()), vec2(galley.size().x, HEIGHT));
-        let response = ui.interact(rect, ui.id().with(tab.label()), Sense::click());
+        let galley = ui.painter().layout_job(job);
+        let rect = Rect::from_min_size(pos2(left, strip.top()), vec2(galley.size().x, HEIGHT));
+        left = rect.right() + GAP;
+
+        let response = ui.interact(rect, ui.id().with(("tab", label)), Sense::click());
+        response.widget_info(|| {
+            WidgetInfo::selected(WidgetType::SelectableLabel, true, selected, label)
+        });
         if response.clicked() {
             *active = tab;
         }
-        let color = if tab == *active {
+
+        let color = if selected || response.hovered() {
             theme::TEXT
-        } else if response.hovered() {
-            theme::TEXT_SECONDARY
         } else {
-            theme::TEXT_MUTED
+            theme::TEXT_SECONDARY
         };
-        ui.painter().galley_with_override_text_color(
-            pos2(x, rect.center().y - galley.size().y / 2.0),
-            galley,
-            color,
-        );
-        if tab == *active {
-            ui.painter().hline(
-                rect.x_range(),
-                strip.bottom() - 1.0,
-                Stroke::new(2.0, theme::ACCENT),
+        let text_pos = pos2(rect.left(), rect.center().y - galley.size().y / 2.0);
+        let painter = ui.painter();
+        painter.galley(text_pos, galley, color);
+        if selected {
+            let underline =
+                Rect::from_min_max(pos2(rect.left(), rect.bottom() - UNDERLINE), rect.max);
+            painter.rect_filled(underline, 0.0, theme::ACCENT);
+        }
+        if response.has_focus() {
+            painter.rect_stroke(
+                rect.expand2(vec2(4.0, -8.0)),
+                theme::RADIUS,
+                Stroke::new(1.0, theme::ACCENT),
+                StrokeKind::Outside,
             );
         }
-        x += rect.width() + GAP;
     }
 }

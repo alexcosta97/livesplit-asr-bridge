@@ -1,7 +1,10 @@
-//! The application window: the status column and, when wide, the tab area.
+//! The application window: the status column and, when wide, the tab
+//! area.
 
 mod components;
+mod connection_tab;
 mod folder;
+mod server_status;
 mod status;
 mod theme;
 
@@ -10,6 +13,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{Arc, mpsc::Receiver},
+    time::{Duration, Instant},
 };
 
 use eframe::egui::{self, Frame, Margin, ScrollArea};
@@ -18,12 +22,15 @@ use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters},
     logging::{self, Category, Filters, Logger},
     runner::{NoTimer, Runner, RunnerEvent, file_name},
+    server::{self, NetworkAddress, Server, ServerEvent},
     version::VERSION,
 };
 use components::{
     ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, LOG_LINE_HEIGHT,
-    LogAction, SplitterAction, Tab, Width,
+    LogAction, SplitterAction, Width,
 };
+use connection_tab::ConnectionTab;
+use server_status::ServerStatus;
 use status::Status;
 
 pub use theme::install as install_theme;
@@ -34,6 +41,10 @@ pub const APP_NAME: &str = "livesplit-asr-bridge";
 
 /// The name shown to people, in the window title.
 pub const DISPLAY_NAME: &str = "LiveSplit One ASR Bridge";
+
+/// How often the machine's addresses are read again, so a VPN coming up
+/// appears.
+const ADDRESSES_REFRESH: Duration = Duration::from_secs(5);
 
 /// Below this window width, the status column fills the window.
 const COMPACT_BELOW: f32 = 640.0;
@@ -48,24 +59,38 @@ pub fn window_title() -> String {
     format!("{DISPLAY_NAME} {VERSION}")
 }
 
-/// The application. Later issues add the Timer and Last action cards and the
+/// The tabs of the tab area. Settings and Preferences come with #8 and #13.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Connection,
+    Log,
+}
+
+/// The application. Later issues add the Last action card and the other
 /// tabs.
 pub struct BridgeApp {
     runner: Runner,
     events: Receiver<RunnerEvent>,
+    server: Server,
+    server_events: Receiver<ServerEvent>,
     status: Status,
+    server_status: ServerStatus,
+    /// The machine's addresses, and when they were read.
+    addresses: Vec<NetworkAddress>,
+    addresses_read: Instant,
+    /// The tab shown in the tab area.
+    tab: Tab,
+    connection_tab: ConnectionTab,
     /// Everything the app records, in the Log tab and on disk.
     logger: Logger,
     /// The Log tab's filters, saved in `app.toml`.
     log_filters: Filters,
     /// The log entry reached through Show in log (#14), highlighted.
     highlighted: Option<u64>,
-    /// The tab shown in the tab area.
-    tab: Tab,
     /// The configuration folder, if the OS has one for the user.
     config: Option<Config>,
     /// The app's own settings, read from `app.toml` at start-up. The
-    /// server (#9) listens on its port.
+    /// server listens on its port, and Restart server saves it.
     app_settings: AppSettings,
     /// The game of each auto splitter being loaded, until it is loaded.
     loading: HashMap<PathBuf, Game>,
@@ -77,41 +102,66 @@ pub struct BridgeApp {
 
 impl BridgeApp {
     pub fn new(ctx: &egui::Context) -> Self {
-        let ctx = ctx.clone();
+        let wake = {
+            let ctx = ctx.clone();
+            move || ctx.request_repaint()
+        };
         // The Server replaces NoTimer (#10, #11).
-        let (runner, events) = Runner::new(Arc::new(NoTimer), move || ctx.request_repaint());
+        let (runner, events) = Runner::new(Arc::new(NoTimer), wake.clone());
+        let config = Config::standard();
+        let loaded = config.as_ref().map(AppSettings::load);
+        let app_settings = match &loaded {
+            Some(Ok(settings)) => settings.clone(),
+            _ => AppSettings::default(),
+        };
+        let port = app_settings.port();
+        let (server, server_events) = Server::new(port, wake);
         let mut app = Self {
             runner,
             events,
+            server,
+            server_events,
             status: Status::default(),
+            server_status: ServerStatus::default(),
+            addresses: server::network_addresses(),
+            addresses_read: Instant::now(),
+            tab: Tab::Connection,
+            connection_tab: ConnectionTab::new(port),
             logger: Logger::new(logging::standard_dir()),
-            log_filters: Filters::default(),
+            log_filters: app_settings.log_filters(),
             highlighted: None,
-            tab: Tab::default(),
-            config: Config::standard(),
-            app_settings: AppSettings::default(),
+            config,
+            app_settings,
             loading: HashMap::new(),
             game: None,
             dialog: None,
         };
-        app.app_settings = app.read_app_settings();
-        app.log_filters = app.app_settings.log_filters();
+        // `app.toml` is read before the server starts, since the server
+        // listens on its port; what went wrong is reported once the app can.
+        match loaded {
+            // Reports that there is no configuration folder.
+            None => {
+                let _ = app.config();
+            }
+            Some(Err(error)) => app.log(
+                Category::Error,
+                format!("Couldn't read the app's settings: {error}"),
+            ),
+            Some(Ok(_)) => {}
+        }
         app
     }
 
-    /// Reads `app.toml`. If it can't be read, the error is reported and the
-    /// defaults are used.
-    fn read_app_settings(&mut self) -> AppSettings {
+    /// Saves the port the server was restarted on in `app.toml`, so the
+    /// next start listens on it too.
+    fn save_port(&mut self, port: u16) {
+        self.app_settings.set_port(port);
         let Some(config) = self.config() else {
-            return AppSettings::default();
+            return;
         };
-        AppSettings::load(&config).unwrap_or_else(|error| {
-            self.log(
-                Category::Error,
-                format!("Couldn't read the app's settings: {error}"),
-            );
-            AppSettings::default()
-        })
+        if let Err(error) = self.app_settings.save(&config) {
+            self.log(Category::Error, format!("Couldn't save the port: {error}"));
+        }
     }
 
     fn handle_events(&mut self) {
@@ -126,6 +176,11 @@ impl BridgeApp {
                 _ => {}
             }
             self.log(category(&event), event.describe());
+        }
+        while let Ok(event) = self.server_events.try_recv() {
+            self.status.apply_server(&event);
+            self.server_status.apply(&event);
+            self.log(server_category(&event), event.describe());
         }
     }
 
@@ -296,6 +351,15 @@ impl BridgeApp {
         }
     }
 
+    /// Reads the machine's addresses again every few seconds.
+    fn refresh_addresses(&mut self, ctx: &egui::Context) {
+        if self.addresses_read.elapsed() >= ADDRESSES_REFRESH {
+            self.addresses = server::network_addresses();
+            self.addresses_read = Instant::now();
+        }
+        ctx.request_repaint_after(ADDRESSES_REFRESH.saturating_sub(self.addresses_read.elapsed()));
+    }
+
     /// The status column: the header, the error card while there is one, the
     /// auto splitter and the game. It scrolls rather than clip a card.
     fn status_column(&mut self, ui: &mut egui::Ui, width: Width) {
@@ -309,6 +373,7 @@ impl BridgeApp {
             if let Some(error) = self.status.error() {
                 match components::error_card(ui, error, width) {
                     Some(ErrorAction::Reload) => self.reload(),
+                    Some(ErrorAction::OpenConnection) => self.tab = Tab::Connection,
                     Some(ErrorAction::Dismiss) => self.status.dismiss_error(),
                     None => {}
                 }
@@ -327,7 +392,32 @@ impl BridgeApp {
 
             let detail = self.status.game_detail(width == Width::Compact);
             components::game_card(ui, &self.status.game(), detail.as_deref(), width);
+
+            let urls = self.server_status.urls(&self.addresses);
+            components::timer_card(ui, self.server_status.timer_state(), &urls, width);
         });
+    }
+
+    /// The tab area: the tab strip, then the active tab.
+    fn tab_area(&mut self, ui: &mut egui::Ui) {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        components::tab_strip(
+            ui,
+            &[(Tab::Connection, "Connection"), (Tab::Log, "Log")],
+            &mut self.tab,
+        );
+        Frame::NONE
+            .inner_margin(Margin::same(24))
+            .show(ui, |ui| match self.tab {
+                Tab::Connection => {
+                    let urls = self.server_status.urls(&self.addresses);
+                    if let Some(port) = self.connection_tab.show(ui, &self.server_status, &urls) {
+                        self.server.restart(port);
+                        self.save_port(port);
+                    }
+                }
+                Tab::Log => self.log_tab(ui),
+            });
     }
 
     /// Asks for a `.wasm` file and loads it.
@@ -344,15 +434,6 @@ impl BridgeApp {
     fn reload(&mut self) {
         if let Some(path) = self.runner.loaded_path() {
             self.load(path);
-        }
-    }
-
-    /// The tab area: the tab strip and the active tab.
-    fn tab_area(&mut self, ui: &mut egui::Ui) {
-        components::tab_strip(ui, &mut self.tab);
-        ui.add_space(16.0);
-        match self.tab {
-            Tab::Log => self.log_tab(ui),
         }
     }
 
@@ -425,6 +506,18 @@ impl BridgeApp {
     }
 }
 
+/// The log category of a Server event (spec §8.1).
+fn server_category(event: &ServerEvent) -> Category {
+    if event.is_error() {
+        return Category::Error;
+    }
+    match event {
+        // Server restarts are the app's.
+        ServerEvent::Listening { .. } => Category::App,
+        _ => Category::Connection,
+    }
+}
+
 /// The log category of a Runner event (spec §8.1).
 fn category(event: &RunnerEvent) -> Category {
     if event.is_error() {
@@ -440,6 +533,7 @@ impl eframe::App for BridgeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.handle_events();
         self.game_dialog(&ui.ctx().clone());
+        self.refresh_addresses(ui.ctx());
         let column = Frame::NONE
             .fill(theme::PANEL)
             .inner_margin(Margin::same(16));
@@ -455,11 +549,7 @@ impl eframe::App for BridgeApp {
             .frame(column)
             .show(ui, |ui| self.status_column(ui, Width::Wide));
         egui::CentralPanel::default()
-            .frame(
-                Frame::NONE
-                    .fill(theme::WINDOW)
-                    .inner_margin(Margin::same(24)),
-            )
+            .frame(Frame::NONE.fill(theme::WINDOW))
             .show(ui, |ui| self.tab_area(ui));
     }
 }
@@ -508,6 +598,40 @@ mod tests {
         ];
         for (event, expected) in cases {
             assert_eq!(category(&event), expected, "{event:?}");
+        }
+    }
+
+    #[test]
+    fn server_events_are_logged_in_their_category() {
+        let address = "192.168.1.42:53122".parse().unwrap();
+        let cases = [
+            (
+                ServerEvent::BindFailed {
+                    port: 16834,
+                    error: "in use".to_owned(),
+                    in_use: true,
+                },
+                Category::Error,
+            ),
+            (ServerEvent::Listening { port: 16834 }, Category::App),
+            (
+                ServerEvent::TimerConnected { id: 0, address },
+                Category::Connection,
+            ),
+            (
+                ServerEvent::TimerDisconnected { id: 0, address },
+                Category::Connection,
+            ),
+            (
+                ServerEvent::HandshakeFailed {
+                    address,
+                    error: "not a WebSocket".to_owned(),
+                },
+                Category::Connection,
+            ),
+        ];
+        for (event, expected) in cases {
+            assert_eq!(server_category(&event), expected, "{event:?}");
         }
     }
 
