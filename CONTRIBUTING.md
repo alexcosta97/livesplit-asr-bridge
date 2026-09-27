@@ -35,6 +35,11 @@ development environment and the conventions every change follows.
    cargo test --locked
    ```
 
+4. For the release scripts and workflow linting, install the pinned tools with
+   [mise](https://mise.jdx.dev/) (`mise install`, see `mise.toml`), then run
+   `scripts/release/test-release-scripts.sh` and `actionlint`. The same tests
+   run on pull requests that change release files.
+
 ## Commits
 
 ### Conventional Commits

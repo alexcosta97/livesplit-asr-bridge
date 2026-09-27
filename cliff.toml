@@ -1,0 +1,35 @@
+# Release rules: see spec §14 and CONTRIBUTING.md.
+[changelog]
+# Only the groups: scripts/release/notes.sh adds the headings.
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{% endfor %}{% endfor %}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true     # non-conventional commits never cause a release
+filter_commits = true            # commits no parser matches are dropped
+protect_breaking_commits = true  # a breaking docs/chore/refactor commit still bumps
+# Only full releases count as tags. Release candidates are left out here, not
+# with ignore_tags, so --unreleased always starts at the last full release.
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+sort_commits = "oldest"
+commit_parsers = [
+  # field = "breaking" catches both `type!:` and a BREAKING CHANGE footer.
+  { field = "breaking", pattern = "true", group = "<!-- 0 -->Breaking changes" },
+  { message = "^feat", group = "<!-- 1 -->Features" },
+  { message = "^fix", group = "<!-- 2 -->Bug fixes" },
+  { message = "^perf", group = "<!-- 3 -->Performance" },
+  # Skipped before the bump is worked out. Not no_increment_regex, which would
+  # also ignore a breaking `refactor!:`.
+  { message = "^(docs|chore|ci|test|refactor|style|build)", skip = true },
+]
+
+[bump]
+features_always_bump_minor = true   # feat bumps minor, also below 1.0.0
+breaking_always_bump_major = false  # breaking bumps minor below 1.0.0, major from 1.0.0
+initial_tag = "v0.1.0"

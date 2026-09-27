@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer merge cancels an older run, including a release candidate still
+# waiting for approval, so only the latest candidate can be promoted.
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.next.outputs.release }}
+      version: ${{ steps.next.outputs.version }}
+      rc_version: ${{ steps.next.outputs.rc_version }}
+      rc_tag: ${{ steps.next.outputs.rc_tag }}
+      previous_rc_tag: ${{ steps.next.outputs.previous_rc_tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+      - id: next
+        run: scripts/release/next-version.sh
+
+  build-candidate:
+    name: build candidate
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.version.outputs.rc_version }}
+      ref: ${{ github.sha }}
+      artifact-name: candidate
+
+  candidate:
+    name: publish release candidate
+    needs: [version, build-candidate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: candidate-*
+          path: dist
+          merge-multiple: true
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC_TAG: ${{ needs.version.outputs.rc_tag }}
+          PREVIOUS_RC_TAG: ${{ needs.version.outputs.previous_rc_tag }}
+        run: |
+          scripts/release/notes.sh rc "$PREVIOUS_RC_TAG" > notes.md
+          if gh release view "$RC_TAG" > /dev/null 2>&1; then
+            gh release upload "$RC_TAG" dist/* --clobber
+          else
+            gh release create "$RC_TAG" dist/* --prerelease --target "$GITHUB_SHA" \
+              --title "$RC_TAG" --notes-file notes.md
+          fi
+
+  approve:
+    name: approve release
+    needs: [version, candidate]
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - run: echo "Promoting ${{ needs.version.outputs.rc_tag }} to v${{ needs.version.outputs.version }}"
+
+  build-final:
+    name: build release
+    needs: [version, approve]
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      ref: ${{ github.sha }}
+      artifact-name: final
+
+  release:
+    name: publish release
+    needs: [version, build-final]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: final-*
+          path: dist
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          scripts/release/notes.sh full > notes.md
+          gh release create "$TAG" dist/* --latest --target "$GITHUB_SHA" \
+            --title "$TAG" --notes-file notes.md

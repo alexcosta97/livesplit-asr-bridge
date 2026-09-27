@@ -1,0 +1,6 @@
+# Tools for the release scripts and workflow linting. Rust itself comes from
+# rustup via rust-toolchain.toml.
+[tools]
+git-cliff = "2.14.2"
+shellcheck = "0.11.0"
+actionlint = "1.7.12"
