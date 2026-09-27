@@ -408,6 +408,8 @@ Manual, before each public release:
     on `main`.
 - Tests run on pull requests only. They are not repeated on merge, because a
   pull request cannot merge without passing them.
+- These conventions, the development setup and how releases work are
+  documented for contributors in `CONTRIBUTING.md`.
 
 ## 14. Versioning and releases
 
@@ -475,6 +477,8 @@ to the newest full release.
 
 - README: what the app does (naming LiveSplit One in the first line), download
   link to `/releases/latest`, quick start, and links to the wiki.
+- CONTRIBUTING: development setup, commit, branch and pull request
+  conventions, merge requirements, and how releases work.
 - Wiki (its own backlog issue): setup, connecting LiveSplit One, settings and
   game association, log locations per OS, platform notes (section 11), and
   troubleshooting.
