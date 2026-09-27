@@ -41,6 +41,9 @@ pub const STATUS_ERROR: Color32 = Color32::from_rgb(0xFF, 0x3B, 0x3B);
 /// Unsaved changes.
 pub const STATUS_WARNING: Color32 = Color32::from_rgb(0xFF, 0xC2, 0x33);
 
+/// The Connection category's tag in the log.
+pub const LOG_CONNECTION: Color32 = Color32::from_rgb(0x7D, 0xD3, 0xFC);
+
 /// A card's background in the OK state: a faint tint of green.
 pub const TINT_OK: Color32 = Color32::from_rgb(0x0C, 0x18, 0x13);
 /// The error card's background: a faint tint of red.
