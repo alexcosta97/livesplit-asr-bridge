@@ -310,7 +310,7 @@ Stop here. The maintainer merges.
 
 **Interfaces:**
 - Consumes: the crate from Task 1 (`cargo` commands only).
-- Produces: check runs named `check (ubuntu-latest)`, `check (macos-latest)`, `check (windows-latest)`, `commitlint` and `pr-title`. Task 3 adds `release-scripts` to `ci.yml`. Required status checks in ruleset `24058678` use these exact names.
+- Produces: check runs named `check (ubuntu-latest)`, `check (macos-latest)`, `check (windows-latest)`, `commitlint` and `pr-title`. Required status checks in ruleset `24058678` use these exact names.
 
 `pr-title.yml` runs on `pull_request_target`, which always uses the workflow file from `main`. It therefore does not run on this task's own pull request, only on later ones.
 
@@ -521,17 +521,17 @@ On Task 3's pull request, `gh pr checks` lists all five checks, including `pr-ti
 - Create: `scripts/package.sh` (packages a release build for one target)
 - Create: `.github/workflows/build.yml` (reusable: builds and packages every target)
 - Create: `.github/workflows/release.yml` (release candidates, approval, full release)
-- Modify: `.github/workflows/ci.yml` (adds the `release-scripts` job)
+- Create: `.github/workflows/release-scripts.yml` (runs the script tests when release files change)
 - Modify: `CONTRIBUTING.md` (mentions `mise.toml` for the release tools)
 
 **Interfaces:**
-- Consumes: `LIVESPLIT_ASR_BRIDGE_VERSION` (Task 1), `ci.yml` (Task 2).
+- Consumes: `LIVESPLIT_ASR_BRIDGE_VERSION` (Task 1).
 - Produces:
   - `scripts/release/next-version.sh` — no arguments, run at the commit being released. Prints `key=value` lines, and appends them to `$GITHUB_OUTPUT` when set: `release` (`true`/`false`), `version` (`X.Y.Z`), `rc_version` (`X.Y.Z-rc.N`), `rc_tag` (`vX.Y.Z-rc.N`), `previous_rc_tag` (empty if none), `last_full_tag` (empty if none). When `release` is `false`, the other keys are empty.
   - `scripts/release/notes.sh rc [previous_rc_tag]` and `scripts/release/notes.sh full` — Markdown release notes on stdout, for the commit at `HEAD`.
   - `scripts/package.sh <target> <version>` — writes one archive to `dist/`.
   - `.github/workflows/build.yml` — `workflow_call` with inputs `version`, `ref` and `artifact-name`; uploads one artifact per target, named `<artifact-name>-<target>`.
-  - Check run `release-scripts`, added to the required checks.
+  - Workflow `Release scripts`, run only on pull requests that change release files. Not a required check: GitHub keeps path-filtered required checks pending forever on other pull requests, so it is advisory.
   - GitHub environment `release`.
 
 Key facts, verified against git-cliff 2.14.2:
@@ -1003,7 +1003,7 @@ jobs:
           fetch-depth: 0
       - uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff
+          tool: git-cliff@2.14.2
       - id: next
         run: scripts/release/next-version.sh
 
@@ -1029,7 +1029,7 @@ jobs:
           fetch-depth: 0
       - uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff
+          tool: git-cliff@2.14.2
       - uses: actions/download-artifact@v8
         with:
           pattern: candidate-*
@@ -1078,7 +1078,7 @@ jobs:
           fetch-depth: 0
       - uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff
+          tool: git-cliff@2.14.2
       - uses: actions/download-artifact@v8
         with:
           pattern: final-*
@@ -1094,11 +1094,32 @@ jobs:
             --title "$TAG" --notes-file notes.md
 ```
 
-- [ ] **Step 12: Add the release script checks to CI**
+- [ ] **Step 12: Add the release scripts workflow**
 
-Append this job to `.github/workflows/ci.yml`:
+`.github/workflows/release-scripts.yml`:
 
 ```yaml
+name: Release scripts
+
+# Only runs when release files change, so it never slows down or blocks normal
+# CI. For the same reason it is not a required check: GitHub keeps a
+# path-filtered required check pending forever on pull requests that don't
+# match the paths.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - cliff.toml
+      - mise.toml
+      - scripts/**
+      - .github/workflows/build.yml
+      - .github/workflows/release.yml
+      - .github/workflows/release-scripts.yml
+
+permissions:
+  contents: read
+
+jobs:
   release-scripts:
     name: release-scripts
     runs-on: ubuntu-latest
@@ -1106,7 +1127,7 @@ Append this job to `.github/workflows/ci.yml`:
       - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff
+          tool: git-cliff@2.14.2
       - run: shellcheck scripts/*.sh scripts/release/*.sh
       - run: scripts/release/test-release-scripts.sh
 ```
@@ -1116,7 +1137,8 @@ Add to `CONTRIBUTING.md`, at the end of "Development setup":
 ```markdown
 4. For the release scripts and workflow linting, install the pinned tools with
    [mise](https://mise.jdx.dev/) (`mise install`, see `mise.toml`), then run
-   `scripts/release/test-release-scripts.sh` and `actionlint`.
+   `scripts/release/test-release-scripts.sh` and `actionlint`. The same tests
+   run on pull requests that change release files.
 ```
 
 Run: `mise x -- actionlint`
@@ -1132,9 +1154,9 @@ gh pr create --title "ci: add the release pipeline" --body-file "$PR_BODY"
 gh pr checks --watch
 ```
 
-Expected: all five required checks from Task 2 pass, plus `release-scripts`.
+Expected: all five required checks from Task 2 pass, and so does the `release-scripts` check from the new workflow.
 
-Coordinator, before the merge: create the `release` environment with the maintainer (user id `23384791`) as required reviewer, and add `release-scripts` to the required checks:
+Coordinator, before the merge: create the `release` environment with the maintainer (user id `23384791`) as required reviewer:
 
 ```bash
 gh api -X PUT repos/alexcosta97/livesplit-asr-bridge/environments/release --input - <<'EOF'
@@ -1142,17 +1164,11 @@ gh api -X PUT repos/alexcosta97/livesplit-asr-bridge/environments/release --inpu
  "reviewers": [{"type": "User", "id": 23384791}],
  "deployment_branch_policy": null}
 EOF
-
-gh api repos/alexcosta97/livesplit-asr-bridge/rulesets/24058678 \
-  | jq '{name, target, enforcement, conditions, bypass_actors,
-         rules: [.rules[] | if .type == "required_status_checks"
-           then .parameters.required_status_checks += [{context: "release-scripts", integration_id: 15368}]
-           else . end]}' \
-  | gh api -X PUT repos/alexcosta97/livesplit-asr-bridge/rulesets/24058678 --input - \
-      --jq '.rules[] | select(.type == "required_status_checks") | [.parameters.required_status_checks[].context]'
+gh api repos/alexcosta97/livesplit-asr-bridge/environments/release \
+  --jq '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[].reviewer.login]'
 ```
 
-Expected: the environment exists with one reviewer, and the required checks list includes `release-scripts`.
+Expected: `["alexcosta97"]`.
 
 Stop here. The maintainer merges.
 
