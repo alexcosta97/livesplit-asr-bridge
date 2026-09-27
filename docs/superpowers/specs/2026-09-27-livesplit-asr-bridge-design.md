@@ -639,9 +639,11 @@ Manual, before each public release:
   checked in CI for the PR title and every commit.
 - **`main` ruleset:**
   - changes only through pull requests;
-  - required status checks, on Linux, macOS and Windows: formatting
-    (`cargo fmt --check`), lint (`cargo clippy -D warnings`), build, tests, and
-    the Conventional Commits checks;
+  - required status checks: formatting (`cargo fmt --check`), lint
+    (`cargo clippy -D warnings`) and tests on Linux, a build on Linux, macOS
+    and Windows, and the Conventional Commits checks. Formatting, lint and
+    tests don't depend on the OS, so they run once; the per-OS build still
+    catches code that doesn't compile on one OS;
   - all review conversations resolved;
   - signed commits required;
   - squash merging only, so each pull request becomes one conventional commit
