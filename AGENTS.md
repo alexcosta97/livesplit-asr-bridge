@@ -37,8 +37,10 @@ files involved and how to verify the result), and reviews their output
 against the spec before anything is committed or merged. Subagents do not
 decide what is correct; the coordinating session does.
 
-Before handing a build over for manual testing, commit the changes and push
-them to the pull request, once the checks in `CONTRIBUTING.md` pass. The
-build being tested must be what the pull request contains, since a pull
-request that tests well gets merged. If anything is left out of the pull
-request, say so plainly when handing the build over.
+Once the checks in `CONTRIBUTING.md` pass, open a pull request for the work,
+filled in from `.github/pull_request_template.md`, without waiting to be
+asked. Before handing a build over for manual testing, commit the changes and
+push them to the pull request. The build being tested must be what the pull
+request contains, since a pull request that tests well gets merged. If
+anything is left out of the pull request, say so plainly when handing the
+build over.
