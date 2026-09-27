@@ -1,6 +1,6 @@
 //! Timer card: whether LiveSplit One is connected, and where to connect.
 
-use eframe::egui::{Link, RichText, Sense, Ui, vec2};
+use eframe::egui::{Align, Layout, Link, RichText, Sense, Ui, vec2};
 
 use super::{
     Width,
@@ -21,8 +21,8 @@ use crate::{
 /// The Timer card: connected with the timer count, not connected with the
 /// addresses to connect to (all of them when wide, the first when compact),
 /// or server stopped. Not connected, it has "How do I connect?"; connected
-/// or not, a `?`. Returns whether either was clicked, to open the setup
-/// steps.
+/// or not, a `?`, at the card's right edge when connected. Returns whether
+/// either was clicked, to open the setup steps.
 pub fn timer_card(
     ui: &mut Ui,
     state: TimerState,
@@ -43,11 +43,18 @@ pub fn timer_card(
                 ui.add_space(4.0);
                 detail(ui, &timer_count(timers));
                 ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    detail(ui, "Addresses: Connection tab");
-                    steps |= help_button(ui);
-                });
+                // The `?` at the card's right edge, the text centred on it.
+                ui.allocate_ui_with_layout(
+                    vec2(ui.available_width(), ButtonSize::Xs.height()),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        detail(ui, "Addresses: Connection tab");
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            steps |= help_button(ui);
+                        });
+                    },
+                );
             }
             TimerState::NotConnected => {
                 status_word(
@@ -60,7 +67,7 @@ pub fn timer_card(
                 ui.add_space(4.0);
                 steps |= ui
                     .add(Link::new(
-                        RichText::new("How do I connect?").font(theme::body(13.0)),
+                        RichText::new("How do I connect?").font(theme::body_semibold(13.0)),
                     ))
                     .clicked();
                 ui.add_space(12.0);

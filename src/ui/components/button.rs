@@ -27,6 +27,11 @@ pub enum ButtonSize {
 }
 
 impl ButtonSize {
+    /// The height.
+    pub fn height(self) -> f32 {
+        self.metrics().0
+    }
+
     /// The height, horizontal padding and font size.
     fn metrics(self) -> (f32, f32, f32) {
         match self {

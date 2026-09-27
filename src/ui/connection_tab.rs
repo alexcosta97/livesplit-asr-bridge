@@ -15,12 +15,13 @@ const SECTION_GAP: f32 = 32.0;
 
 /// The Connection tab's own state: the port being edited, and the port the
 /// server was last started with. The app saves that port in `app.toml` when
-/// Restart server is pressed. It also holds whether How to connect is
-/// collapsed, and whether the tab scrolls to it the next time it is shown.
+/// Restart server is pressed. It also holds whether the user asked to see
+/// How to connect's steps while a timer is connected, and whether the tab
+/// scrolls to them the next time it is shown.
 pub struct ConnectionTab {
     port_text: String,
     applied_port: u16,
-    steps_collapsed: bool,
+    steps_expanded: bool,
     scroll_to_steps: bool,
 }
 
@@ -30,7 +31,7 @@ impl ConnectionTab {
         Self {
             port_text: port.to_string(),
             applied_port: port,
-            steps_collapsed: false,
+            steps_expanded: false,
             scroll_to_steps: false,
         }
     }
@@ -39,7 +40,7 @@ impl ConnectionTab {
     /// shown: for "How do I connect?", the Timer card's `?` and the first
     /// launch (spec §6.2, §6.9).
     pub fn show_steps(&mut self) {
-        self.steps_collapsed = false;
+        self.steps_expanded = true;
         self.scroll_to_steps = true;
     }
 
@@ -105,10 +106,16 @@ impl ConnectionTab {
             }
 
             ui.add_space(SECTION_GAP);
-            // The steps can be collapsed only while a timer is connected.
-            let collapsed = (!status.timers().is_empty()).then_some(&mut self.steps_collapsed);
+            // While a timer is connected the steps start collapsed, and
+            // stay expanded once the user asks for them. With no timer
+            // they are always shown, and the next connection collapses
+            // them again (spec §6.5).
+            if status.timers().is_empty() {
+                self.steps_expanded = false;
+            }
+            let expanded = (!status.timers().is_empty()).then_some(&mut self.steps_expanded);
             let steps =
-                components::how_to_connect(ui, urls, status.listening_port().is_some(), collapsed);
+                components::how_to_connect(ui, urls, status.listening_port().is_some(), expanded);
             if std::mem::take(&mut self.scroll_to_steps) {
                 // The tab has just opened, so it starts there rather than
                 // scrolling.
@@ -242,30 +249,41 @@ mod tests {
     fn the_steps_collapse_only_while_a_timer_is_connected() {
         let ctx = Context::default();
         let mut tab = ConnectionTab::new(16834);
+        let has = |on_screen: &[String], text: &str| on_screen.iter().any(|label| label == text);
+
+        // No timer: the steps are shown, with nothing to collapse them.
         let on_screen = draw(&ctx, &mut tab, &listening(0), 2000.0);
-        assert!(
-            !on_screen.iter().any(|text| text == "Hide steps"),
-            "{on_screen:?}"
-        );
+        assert!(has(&on_screen, "Copy an address"), "{on_screen:?}");
+        assert!(!has(&on_screen, "Show setup steps"), "{on_screen:?}");
+        assert!(!has(&on_screen, "Hide setup steps"), "{on_screen:?}");
 
+        // A timer connected: collapsed by default.
         let on_screen = draw(&ctx, &mut tab, &listening(1), 2000.0);
-        assert!(
-            on_screen.iter().any(|text| text == "Hide steps"),
-            "{on_screen:?}"
-        );
-        assert!(on_screen.iter().any(|text| text == "Copy an address"));
+        assert!(has(&on_screen, "Show setup steps"), "{on_screen:?}");
+        assert!(!has(&on_screen, "Copy an address"), "{on_screen:?}");
 
-        tab.steps_collapsed = true;
+        // Show setup steps expands them, with Hide setup steps.
+        tab.steps_expanded = true;
         let on_screen = draw(&ctx, &mut tab, &listening(1), 2000.0);
-        assert!(
-            on_screen.iter().any(|text| text == "Show steps"),
-            "{on_screen:?}"
-        );
-        assert!(!on_screen.iter().any(|text| text == "Copy an address"));
+        assert!(has(&on_screen, "Hide setup steps"), "{on_screen:?}");
+        assert!(has(&on_screen, "Copy an address"), "{on_screen:?}");
+
+        // Hide setup steps collapses them again.
+        tab.steps_expanded = false;
+        let on_screen = draw(&ctx, &mut tab, &listening(1), 2000.0);
+        assert!(has(&on_screen, "Show setup steps"), "{on_screen:?}");
+        assert!(!has(&on_screen, "Copy an address"), "{on_screen:?}");
 
         // Opening at the steps expands them.
         tab.show_steps();
         let on_screen = draw(&ctx, &mut tab, &listening(1), 2000.0);
-        assert!(on_screen.iter().any(|text| text == "Copy an address"));
+        assert!(has(&on_screen, "Hide setup steps"), "{on_screen:?}");
+        assert!(has(&on_screen, "Copy an address"), "{on_screen:?}");
+
+        // Once every timer has gone, the next connection collapses them.
+        draw(&ctx, &mut tab, &listening(0), 2000.0);
+        let on_screen = draw(&ctx, &mut tab, &listening(1), 2000.0);
+        assert!(has(&on_screen, "Show setup steps"), "{on_screen:?}");
+        assert!(!has(&on_screen, "Copy an address"), "{on_screen:?}");
     }
 }
