@@ -6,11 +6,24 @@ use std::{
     sync::mpsc::{self, Receiver, Sender, TryRecvError},
 };
 
-/// The file picker, while one is open.
+/// What a file is picked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickFor {
+    /// A `.wasm` file to load (Open…).
+    Open,
+    /// Where to save the log (Save log…).
+    SaveLog,
+    /// The file for the file selection setting with this key (Browse).
+    Setting(String),
+}
+
+/// The file picker, while one is open. There is one at a time, whatever
+/// it is for.
 #[derive(Debug, Default)]
 pub struct FilePick {
-    /// Receives the picked file, or `None` if the picker was cancelled.
-    pending: Option<Receiver<Option<PathBuf>>>,
+    /// What the open picker is for, and where the picked file arrives, or
+    /// `None` if the picker was cancelled.
+    pending: Option<(PickFor, Receiver<Option<PathBuf>>)>,
 }
 
 /// What [`FilePick::poll`] found.
@@ -20,7 +33,8 @@ pub enum PickPoll {
     Idle,
     /// The picker is still open.
     Waiting,
-    Picked(PathBuf),
+    /// A file was picked, for what the picker was opened for.
+    Picked(PickFor, PathBuf),
     /// The picker was closed without a file, or its thread ended without
     /// an answer.
     Cancelled,
@@ -32,14 +46,14 @@ impl FilePick {
         self.pending.is_some()
     }
 
-    /// Starts a pick, and returns where the picker's thread sends the
-    /// answer. `None` if a picker is already open.
-    pub fn begin(&mut self) -> Option<Sender<Option<PathBuf>>> {
+    /// Starts a pick for `for_`, and returns where the picker's thread
+    /// sends the answer. `None` if a picker is already open.
+    pub fn begin(&mut self, for_: PickFor) -> Option<Sender<Option<PathBuf>>> {
         if self.is_open() {
             return None;
         }
         let (sender, receiver) = mpsc::channel();
-        self.pending = Some(receiver);
+        self.pending = Some((for_, receiver));
         Some(sender)
     }
 
@@ -51,16 +65,21 @@ impl FilePick {
     /// Checks for the picker's answer, without waiting. Once there is one,
     /// no picker is open.
     pub fn poll(&mut self) -> PickPoll {
-        let Some(receiver) = &self.pending else {
+        let Some((_, receiver)) = &self.pending else {
             return PickPoll::Idle;
         };
-        let result = match receiver.try_recv() {
+        let answer = match receiver.try_recv() {
             Err(TryRecvError::Empty) => return PickPoll::Waiting,
-            Ok(Some(path)) => PickPoll::Picked(path),
-            Ok(None) | Err(TryRecvError::Disconnected) => PickPoll::Cancelled,
+            Ok(answer) => answer,
+            Err(TryRecvError::Disconnected) => None,
         };
-        self.pending = None;
-        result
+        let Some((for_, _)) = self.pending.take() else {
+            return PickPoll::Idle;
+        };
+        match answer {
+            Some(path) => PickPoll::Picked(for_, path),
+            None => PickPoll::Cancelled,
+        }
     }
 }
 
@@ -78,15 +97,29 @@ mod tests {
     #[test]
     fn only_one_picker_at_a_time() {
         let mut pick = FilePick::default();
-        let _sender = pick.begin().unwrap();
+        let _sender = pick.begin(PickFor::Open).unwrap();
         assert!(pick.is_open());
-        assert!(pick.begin().is_none());
+        assert!(pick.begin(PickFor::Open).is_none());
+    }
+
+    #[test]
+    fn a_second_pick_for_something_else_is_ignored() {
+        let mut pick = FilePick::default();
+        let sender = pick.begin(PickFor::SaveLog).unwrap();
+        assert!(pick.begin(PickFor::Setting("route".to_owned())).is_none());
+        assert!(pick.begin(PickFor::Open).is_none());
+        // The open picker keeps what it was for.
+        sender.send(Some(PathBuf::from("a.log"))).unwrap();
+        assert_eq!(
+            pick.poll(),
+            PickPoll::Picked(PickFor::SaveLog, PathBuf::from("a.log"))
+        );
     }
 
     #[test]
     fn waits_until_the_picker_answers() {
         let mut pick = FilePick::default();
-        let _sender = pick.begin().unwrap();
+        let _sender = pick.begin(PickFor::Open).unwrap();
         assert_eq!(pick.poll(), PickPoll::Waiting);
         assert!(pick.is_open());
     }
@@ -94,9 +127,12 @@ mod tests {
     #[test]
     fn picked_file_then_idle() {
         let mut pick = FilePick::default();
-        let sender = pick.begin().unwrap();
+        let sender = pick.begin(PickFor::Open).unwrap();
         sender.send(Some(PathBuf::from("a.wasm"))).unwrap();
-        assert_eq!(pick.poll(), PickPoll::Picked(PathBuf::from("a.wasm")));
+        assert_eq!(
+            pick.poll(),
+            PickPoll::Picked(PickFor::Open, PathBuf::from("a.wasm"))
+        );
         assert!(!pick.is_open());
         assert_eq!(pick.poll(), PickPoll::Idle);
     }
@@ -104,7 +140,7 @@ mod tests {
     #[test]
     fn no_file_is_cancelled() {
         let mut pick = FilePick::default();
-        let sender = pick.begin().unwrap();
+        let sender = pick.begin(PickFor::SaveLog).unwrap();
         sender.send(None).unwrap();
         assert_eq!(pick.poll(), PickPoll::Cancelled);
         assert!(!pick.is_open());
@@ -113,9 +149,9 @@ mod tests {
     #[test]
     fn thread_ending_without_an_answer_is_cancelled() {
         let mut pick = FilePick::default();
-        drop(pick.begin().unwrap());
+        drop(pick.begin(PickFor::Setting("route".to_owned())).unwrap());
         assert_eq!(pick.poll(), PickPoll::Cancelled);
         assert!(!pick.is_open());
-        assert!(pick.begin().is_some());
+        assert!(pick.begin(PickFor::Open).is_some());
     }
 }
