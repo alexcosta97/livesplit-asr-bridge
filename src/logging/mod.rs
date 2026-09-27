@@ -39,10 +39,12 @@ impl Logger {
             next_id: 0,
         };
         match dir {
-            None => logger.record(
-                Category::Error,
-                "Couldn't find the log folder, so the log isn't saved to disk".to_owned(),
-            ),
+            None => {
+                logger.record(
+                    Category::Error,
+                    "Couldn't find the log folder, so the log isn't saved to disk".to_owned(),
+                );
+            }
             Some(dir) => {
                 let (disk, errors) = DiskLog::open(dir, Local::now().date_naive());
                 logger.disk = Some(disk);
@@ -54,10 +56,11 @@ impl Logger {
         logger
     }
 
-    /// Records a line, stamped with the current time.
-    pub fn record(&mut self, category: Category, message: String) {
+    /// Records a line, stamped with the current time, and returns its id.
+    pub fn record(&mut self, category: Category, message: String) -> u64 {
+        let id = self.next_id;
         let entry = Entry {
-            id: self.next_id,
+            id,
             time: Local::now().naive_local(),
             category,
             message,
@@ -83,6 +86,7 @@ impl Logger {
                 );
             }
         }
+        id
     }
 
     /// The lines in the view.

@@ -4,6 +4,7 @@
 use std::{borrow::Cow, path::Path, time::Duration};
 
 use crate::{
+    logging::Category,
     runner::{RunnerEvent, file_name},
     server::ServerEvent,
 };
@@ -51,6 +52,18 @@ impl StatusError {
                 "Port {port} is already in use. Choose another port in Connection and restart the server."
             )
             .into(),
+        }
+    }
+
+    /// The log category ticked by Show in log, for the errors that need
+    /// more detail than the card has: the auto splitter's own messages
+    /// before a crash, and the runtime's messages about a failed load.
+    /// `None` for the errors without Show in log.
+    pub fn log_category(&self) -> Option<Category> {
+        match self {
+            Self::Crashed => Some(Category::AutoSplitter),
+            Self::LoadFailed { .. } => Some(Category::App),
+            Self::PortInUse { .. } | Self::ServerFailed { .. } => None,
         }
     }
 
@@ -194,7 +207,7 @@ pub fn format_tick_rate(interval: Duration) -> Option<String> {
 }
 
 /// The error card's text for a file that couldn't be loaded. It keeps only
-/// the top-level reason; the full error is in the activity list.
+/// the top-level reason; the full error is in the log.
 fn load_failed_message(path: &Path, error: &str, previous_running: bool) -> String {
     let name = file_name(path);
     let reason = short_reason(error);
