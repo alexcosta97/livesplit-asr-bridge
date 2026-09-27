@@ -1,6 +1,0 @@
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
-<div class="w-[440px] rounded-[4px] border border-[#3A3A40] bg-[#151517] p-[24px] flex flex-col gap-[16px]">
-  <div class="font-['Archivo_Black'] uppercase tracking-[-0.02em] text-[16px] text-[#F5F5F4]">Save your settings changes?</div>
-  <div class="font-['Inter'] text-[14px] text-[#F5F5F4] leading-[1.5]">You changed {{ count }} settings for {{ game }}. <span v-if="trigger === 'reload'">Reloading the auto splitter</span><span v-if="trigger === 'open'">Opening another auto splitter</span><span v-if="trigger === 'close'">Closing the app</span> without saving discards them.</div>
-  <div class="flex justify-end gap-[8px] pt-[4px]"><sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="cancel" :props="JSON.stringify({label: 'Cancel'})"></sd-component><sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="discard" :props="JSON.stringify({label: 'Discard'})"></sd-component><sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="save" :props="JSON.stringify({label: trigger === 'reload' ? 'Save and reload' : 'Save', variant: 'primary'})"></sd-component></div>
-</div>

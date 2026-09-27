@@ -462,8 +462,9 @@ setup steps, with **← Status** to go back.
 The screens are built from a fixed set of components. Each is implemented once
 in the app (as an egui widget) and in the mockups (as a Superdesign component),
 and every screen is made only of these, so a change to a component changes
-every screen that uses it. Their exact styling is in
-`.superdesign/components/library.py`, which follows the design system.
+every screen that uses it. The components live in the Superdesign project
+(the repository keeps their ids in `.superdesign/components/components.json`),
+and their exact values are in `.superdesign/design-system.md`.
 
 | Component | Variants and states | Used in |
 |---|---|---|

@@ -39,18 +39,32 @@ Jobs to be done:
 
 ## Components
 
-Every screen is built only from the reusable components in `.superdesign/components/`
-(`library.py` defines and syncs them; ids in `components.json`). Screens are in
-`.superdesign/screens/` (`screens.py` builds and imports them; draft ids in `screens.json`).
-To change how something looks, change its component and re-run `library.py`: every screen
-that uses it updates. Never restyle inside a screen. The list of components, variants and
-states is in the spec (§6.11).
+The Superdesign project is the source of truth for the mockups: 27 reusable components, and
+screens built only from them. The repository keeps only pointers: component ids in
+`.superdesign/components/components.json` and screen draft ids in
+`.superdesign/screens/screens.json`. The list of components, variants and states is in the
+spec (§6.11); this file holds the exact values they use.
 
-Superdesign notes learned the hard way: the component preview ignores `--css-imports` and has
-a white page, so each template loads the fonts itself and sets the page to ink; `<template
-v-if>` blocks don't render there, so conditional blocks use `<div v-if>`; slots don't work from
-hand-written drafts, so everything is driven by props; nested components take dynamic props
-with `:props="JSON.stringify({...})"`.
+- **To change how something looks, change the component, never a screen.** Every screen that
+  uses it updates. Restyling inside a screen breaks that.
+- **Editing a component:** in the Superdesign canvas editor, or from the CLI with
+  `update-component --component-id <id> --html-file <file>`. The CLI can't read a component's
+  source back (`list-components` returns only name, description and version), so first take
+  the current template from its preview page, which serves it unrendered:
+  `curl -s https://p.superdesign.dev/draftcomponent/<id>`. Keep the existing props unless
+  you mean to change them.
+- **Building a screen:** place components with
+  `<sd-component componentId="<id>" name="<Name>" instance="<unique>" props='{...}'></sd-component>`
+  and import the page with `import-design-draft` (no generation credits).
+
+Superdesign behaviours to know (learned while building them):
+- The component preview ignores `--css-imports` and has a white page, so each template
+  starts with its own font `<link>` and `<style>body{background:#0B0B0C}</style>`.
+- `<template v-if>` blocks don't render in the preview; conditional blocks use `<div v-if>`.
+- Slots don't work from hand-written drafts; everything is driven by props.
+- Nested components take dynamic props with `:props="JSON.stringify({...})"`; a static
+  `props='{"x": "{{ y }}"}'` is not interpolated. `v-if` on a nested `<sd-component>` works.
+- The preview stretches a component to the page width; inline things (like Button) use `w-fit`.
 
 ## Brand
 

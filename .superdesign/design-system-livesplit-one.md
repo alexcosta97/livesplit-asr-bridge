@@ -6,7 +6,7 @@
 > switches to it.
 >
 > **Light-mode mix-up (fixed 2026-09-27):** the first version of this file used LiveSplit
-> One's LIGHT scheme, because the site extraction (`website/one.livesplit.org/`) crawled
+> One's LIGHT scheme, because the site extraction crawled
 > one.livesplit.org in light mode. LiveSplit One is DARK by default: its stylesheet defines
 > the dark values on `:root` and only applies the light ones under
 > `@media (prefers-color-scheme: light)` or `:root[data-theme="light"]`. The values below are
