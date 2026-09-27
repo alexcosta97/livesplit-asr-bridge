@@ -1,0 +1,29 @@
+name: Release scripts
+
+# Only runs when release files change, so it never slows down or blocks normal
+# CI. For the same reason it is not a required check: GitHub keeps a
+# path-filtered required check pending forever on pull requests that don't
+# match the paths.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - cliff.toml
+      - mise.toml
+      - scripts/**
+      - .github/workflows/build.yml
+      - .github/workflows/release.yml
+      - .github/workflows/release-scripts.yml
+
+permissions:
+  contents: read
+
+jobs:
+  release-scripts:
+    name: release-scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: shellcheck scripts/*.sh scripts/release/*.sh
+      - run: scripts/release/test-release-scripts.sh
