@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "main-window": {
+      "targetKind": "new-target",
+      "projectId": "bca2406a-5118-4388-9e38-b0e37fab0d9f",
+      "activeDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [".superdesign/design-system.md"],
+      "fingerprints": { ".superdesign/design-system.md": "52313b7e2408ee54e08083408a4e5403ca960d3ae4b9d9264a3135a58e3342c7" },
+      "drafts": {
+        "ebfbea53-a813-409d-b074-06a7bba99e50": {
+          "title": "Main window — wide (setup), 1280x800, Settings tab",
+          "visualDirection": "speedrun / stream deck (Kinetic Orange adapted for egui), approach A status column",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-09-27T07:03:10Z"
+    }
+  }
+}
