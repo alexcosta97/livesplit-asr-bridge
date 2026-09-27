@@ -20,7 +20,7 @@ use crate::ui::{
 const FLASH: Duration = Duration::from_millis(300);
 
 /// The Last action card: the latest action in large type with its time, a
-/// note when it wasn't sent, and, when wide, the 2 previous actions as faint
+/// split's segment name when the timer gave it, a note when it wasn't sent, and, when wide, the 2 previous actions as faint
 /// lines; or the empty state. The orange edge flashes as an action arrives.
 pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: Instant) {
     let flashing = actions
@@ -55,6 +55,14 @@ pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: I
                 status_word(ui, None, &latest.word, theme::ACCENT, width);
             });
         });
+        // Only when the timer gave it: the app never makes one up.
+        if let Some(segment) = &latest.segment {
+            ui.add_space(2.0);
+            let name = RichText::new(segment)
+                .font(theme::body(14.0))
+                .color(theme::TEXT);
+            ui.add(Label::new(name).truncate());
+        }
         if !latest.sent {
             ui.add_space(4.0);
             ui.label(
@@ -68,7 +76,11 @@ pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: I
                 ui.add_space(if index == 0 { 12.0 } else { 4.0 });
                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                     ui.label(time(action, theme::TEXT_MUTED));
-                    let word = RichText::new(action.word.to_uppercase())
+                    let text = match &action.segment {
+                        Some(segment) => format!("{} · {segment}", action.word.to_uppercase()),
+                        None => action.word.to_uppercase(),
+                    };
+                    let word = RichText::new(text)
                         .font(theme::mono(12.0))
                         .color(theme::TEXT_MUTED);
                     ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
@@ -123,7 +135,12 @@ mod tests {
             .enumerate()
         {
             let time = NaiveTime::from_hms_opt(19, 31, index as u32).unwrap();
-            actions.apply(&RunnerEvent::TimerAction { action, sent_to }, time, now);
+            let event = RunnerEvent::TimerAction {
+                action,
+                sent_to,
+                segment: None,
+            };
+            actions.apply(&event, time, now);
         }
         (actions, now)
     }
@@ -153,6 +170,26 @@ mod tests {
         let text = shown(&actions, Width::Compact, now);
         assert!(text.contains("SPLIT"), "{text}");
         assert!(!text.contains("START"), "{text}");
+    }
+
+    #[test]
+    fn a_split_shows_its_segment_name() {
+        let mut actions = LastActions::default();
+        let now = Instant::now();
+        let time = NaiveTime::from_hms_opt(19, 31, 1).unwrap();
+        for segment in ["Los Santos — Ryder", "Los Santos — Gym Moves"] {
+            let event = RunnerEvent::TimerAction {
+                action: TimerAction::Split,
+                sent_to: 1,
+                segment: Some(segment.to_owned()),
+            };
+            actions.apply(&event, time, now);
+        }
+        let text = shown(&actions, Width::Wide, now);
+        assert!(text.contains("Los Santos — Gym Moves"), "{text}");
+        assert!(text.contains("SPLIT · Los Santos — Ryder"), "{text}");
+        let text = shown(&actions, Width::Compact, now);
+        assert!(text.contains("Los Santos — Gym Moves"), "{text}");
     }
 
     #[test]

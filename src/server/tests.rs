@@ -8,11 +8,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use tokio::{net::TcpStream, runtime::Runtime, time::timeout};
 use tokio_tungstenite::{WebSocketStream, client_async, tungstenite::Message};
 
-use super::*;
+use super::{
+    fake_timer::{FakeTimer, Model, eventually},
+    *,
+};
 
 /// Long enough for a slow CI machine; only reached when a test fails.
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -106,6 +109,17 @@ impl Harness {
         (client, *id, address)
     }
 
+    /// Connects a fake LiveSplit One with the timer in `model`'s state, and
+    /// waits for the server to report it.
+    fn fake(&self, port: u16, model: Model) -> (FakeTimer, ConnectionId) {
+        let timer = FakeTimer::connect(port, model);
+        let seen = self.wait_for(|event| matches!(event, ServerEvent::TimerConnected { .. }));
+        let Some(ServerEvent::TimerConnected { id, .. }) = seen.last() else {
+            unreachable!()
+        };
+        (timer, *id)
+    }
+
     /// Waits for the client's connection to end, returning whether the
     /// server sent a Close frame first.
     fn closed_by_server(&self, client: &mut Client) -> bool {
@@ -121,24 +135,6 @@ impl Harness {
                     Some(Err(_)) | None => return got_close,
                 }
             }
-        })
-    }
-
-    /// Sends a text message from the client, as LiveSplit One would.
-    fn reply(&self, client: &mut Client, text: &str) {
-        self.runtime
-            .block_on(client.send(Message::text(text.to_owned())))
-            .unwrap();
-    }
-
-    /// Reads the next message the client receives.
-    fn receive(&self, client: &mut Client) -> Message {
-        self.runtime.block_on(async {
-            timeout(TIMEOUT, client.next())
-                .await
-                .expect("no message arrived")
-                .expect("the connection closed")
-                .expect("the connection failed")
         })
     }
 }
@@ -185,20 +181,22 @@ fn a_dropped_connection_is_reported() {
     harness.wait_for(disconnected(id));
 }
 
+const SPLIT: &str = r#"{"command":"split"}"#;
+
 #[test]
 fn sends_commands_to_every_timer_from_any_thread() {
     let (harness, port) = Harness::listening();
-    let (mut first, _, _) = harness.connect(port);
-    let (mut second, _, _) = harness.connect(port);
+    let (first, _) = harness.fake(port, Model::new(&["A"]));
+    let (second, _) = harness.fake(port, Model::new(&["A"]));
 
     let link = harness.server().link();
     let sent = std::thread::spawn(move || link.send(TimerAction::Split))
         .join()
         .unwrap();
     assert_eq!(sent, 2);
-    let split = Message::text(r#"{"command":"split"}"#);
-    assert_eq!(harness.receive(&mut first), split);
-    assert_eq!(harness.receive(&mut second), split);
+    eventually("the split", || {
+        first.actions() == [SPLIT] && second.actions() == [SPLIT]
+    });
 }
 
 #[test]
@@ -208,41 +206,198 @@ fn with_no_timer_commands_are_dropped_not_queued() {
     assert_eq!(link.send(TimerAction::Start), 0);
 
     // A timer connecting afterwards gets only what is sent from then on.
-    let (mut client, _, _) = harness.connect(port);
+    let (timer, _) = harness.fake(port, Model::new(&["A"]));
     assert_eq!(link.send(TimerAction::Split), 1);
-    assert_eq!(
-        harness.receive(&mut client),
-        Message::text(r#"{"command":"split"}"#)
-    );
+    eventually("the split", || !timer.actions().is_empty());
+    assert_eq!(timer.actions(), [SPLIT]);
 }
 
 #[test]
 fn a_rejected_command_is_reported_with_its_name() {
     let (harness, port) = Harness::listening();
-    let (mut client, id, address) = harness.connect(port);
+    let (timer, id) = harness.fake(port, Model::new(&["A"]));
     let link = harness.server().link();
 
-    // Answered as LiveSplit One does: an event, then the answer.
+    // The start succeeds with an event then its answer, the first split
+    // finishes the run, and the second is rejected.
     link.send(TimerAction::Start);
-    harness.receive(&mut client);
-    harness.reply(&mut client, r#"{"event":"Started"}"#);
-    harness.reply(&mut client, r#"{"success":null}"#);
     link.send(TimerAction::Split);
-    harness.receive(&mut client);
-    harness.reply(&mut client, r#"{"error":{"code":"NoRunInProgress"}}"#);
+    link.send(TimerAction::Split);
 
     let seen = harness.wait_for(|event| matches!(event, ServerEvent::CommandRejected { .. }));
+    let rejections: Vec<_> = seen
+        .iter()
+        .filter(|event| matches!(event, ServerEvent::CommandRejected { .. }))
+        .collect();
+    let Some(ServerEvent::CommandRejected {
+        id: rejected,
+        command,
+        code,
+        ..
+    }) = rejections.first()
+    else {
+        unreachable!()
+    };
     assert_eq!(
-        seen.last(),
-        Some(&ServerEvent::CommandRejected {
-            id,
-            address,
-            command: Some("split".to_owned()),
-            code: "NoRunInProgress".to_owned(),
-            message: None,
-        })
+        (*rejected, command.as_deref(), code.as_str()),
+        (id, Some("split"), "RunFinished")
     );
-    assert!(!seen.last().unwrap().is_error());
+    assert_eq!(rejections.len(), 1, "{seen:?}");
+    assert!(!rejections[0].is_error());
+    assert_eq!(timer.actions().len(), 3);
+}
+
+/// A timer mid-run with 6 segments: 3 split, the 4th skipped, the 5th split,
+/// and running on the 6th.
+fn mid_run() -> Model {
+    let mut model = Model::new(&["A", "B", "C", "D", "E", "F"]);
+    for command in ["start", "split", "split", "split", "skipSplit", "split"] {
+        model.act(command).unwrap();
+    }
+    model
+}
+
+#[test]
+fn connecting_mid_run_reports_the_state_and_split_index() {
+    let (harness, port) = Harness::listening();
+    let (_timer, id) = harness.fake(port, mid_run());
+    let link = harness.server().link();
+
+    let seen = harness.wait_for(|event| matches!(event, ServerEvent::TimerState { .. }));
+    let Some(ServerEvent::TimerState {
+        id: tracked,
+        summary,
+        ..
+    }) = seen.last()
+    else {
+        unreachable!()
+    };
+    assert_eq!(*tracked, id);
+    assert_eq!(summary.to_string(), "Running · split 6");
+    assert_eq!(link.state(), TimerState::Running);
+    assert_eq!(link.current_split_index(), Some(5));
+
+    // Which earlier segments were split or skipped is asked separately.
+    eventually("the segments", || link.segment_splitted(4).is_some());
+    let segments: Vec<_> = (0..6).map(|index| link.segment_splitted(index)).collect();
+    assert_eq!(
+        segments,
+        [
+            Some(true),
+            Some(true),
+            Some(true),
+            Some(false),
+            Some(true),
+            None
+        ]
+    );
+    eventually("the segment name", || {
+        link.segment_name().as_deref() == Some("F")
+    });
+}
+
+#[test]
+fn events_update_the_tracked_state() {
+    let (harness, port) = Harness::listening();
+    let (timer, _) = harness.fake(port, Model::new(&["A", "B", "C"]));
+    let link = harness.server().link();
+    let is = |state: TimerState, index: Option<usize>| {
+        let link = link.clone();
+        move || link.state() == state && link.current_split_index() == index
+    };
+    eventually("the first state", || {
+        harness.server().shared.connections()[0]
+            .tracked
+            .summary()
+            .is_some()
+    });
+
+    link.send(TimerAction::Start);
+    eventually("start", is(TimerState::Running, Some(0)));
+    link.send(TimerAction::Split);
+    eventually("split", is(TimerState::Running, Some(1)));
+    assert_eq!(link.segment_splitted(0), Some(true));
+    link.send(TimerAction::SkipSplit);
+    eventually("skip", is(TimerState::Running, Some(2)));
+    assert_eq!(link.segment_splitted(1), Some(false));
+    link.send(TimerAction::UndoSplit);
+    eventually("undo", is(TimerState::Running, Some(1)));
+    assert_eq!(link.segment_splitted(1), None);
+    // Pausing and resuming happen on the timer, not from the auto splitter.
+    timer.act("pause", true);
+    eventually("pause", is(TimerState::Paused, Some(1)));
+    timer.act("resume", true);
+    eventually("resume", is(TimerState::Running, Some(1)));
+    link.send(TimerAction::Split);
+    link.send(TimerAction::Split);
+    eventually("the end", is(TimerState::Ended, Some(3)));
+    link.send(TimerAction::Reset);
+    eventually("reset", is(TimerState::NotRunning, None));
+    assert_eq!(link.segment_splitted(0), None);
+}
+
+#[test]
+fn changes_made_on_the_timer_are_picked_up_by_the_next_resync() {
+    let (harness, port) = Harness::listening();
+    let (timer, _) = harness.fake(port, Model::new(&["A", "B", "C"]));
+    let link = harness.server().link();
+    eventually("the first state", || {
+        harness.server().shared.connections()[0]
+            .tracked
+            .summary()
+            .is_some()
+    });
+
+    // The events are lost, as when LiveSplit One doesn't send them.
+    let started = Instant::now();
+    timer.act("start", false);
+    timer.act("split", false);
+    eventually("the resync", || link.current_split_index() == Some(1));
+    assert_eq!(link.state(), TimerState::Running);
+    assert!(
+        started.elapsed() < thread::RESYNC_INTERVAL + Duration::from_secs(1),
+        "took {:?}",
+        started.elapsed()
+    );
+    eventually("the segment", || link.segment_splitted(0) == Some(true));
+}
+
+#[test]
+fn the_next_timer_takes_over_when_the_primary_disconnects() {
+    let (harness, port) = Harness::listening();
+    let (first, first_id) = harness.fake(port, Model::new(&["A"]));
+    let (second, _) = harness.fake(port, mid_run());
+    let link = harness.server().link();
+    eventually("both states", || {
+        let connections = harness.server().shared.connections();
+        connections.iter().all(|c| c.tracked.summary().is_some())
+    });
+    // The first to connect is the primary.
+    assert_eq!(link.state(), TimerState::NotRunning);
+
+    let asked = |timer: &FakeTimer| {
+        timer
+            .received()
+            .iter()
+            .filter(|text| text.contains("getCurrentState"))
+            .count()
+    };
+    let asked_before = asked(&second);
+    first.disconnect();
+    harness.wait_for(disconnected(first_id));
+    assert_eq!(link.state(), TimerState::Running);
+    assert_eq!(link.current_split_index(), Some(5));
+    // The new primary is asked for its state again.
+    eventually("the new primary to be asked", || {
+        asked(&second) > asked_before
+    });
+
+    second.disconnect();
+    eventually("no timer", || {
+        harness.server().shared.connections().is_empty()
+    });
+    assert_eq!(link.state(), TimerState::NotRunning);
+    assert_eq!(link.current_split_index(), None);
 }
 
 #[test]

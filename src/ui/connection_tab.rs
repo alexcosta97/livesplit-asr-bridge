@@ -87,7 +87,8 @@ impl ConnectionTab {
                 if index > 0 {
                     ui.add_space(8.0);
                 }
-                components::timer_row(ui, timer.address);
+                // The first to connect is the one the tracked state follows.
+                components::timer_row(ui, timer.address, timer.state, index == 0);
             }
 
             ui.add_space(SECTION_GAP);

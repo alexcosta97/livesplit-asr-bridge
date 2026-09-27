@@ -3,7 +3,7 @@
 
 use std::net::SocketAddr;
 
-use crate::server::{ConnectionId, Network, NetworkAddress, ServerEvent};
+use crate::server::{ConnectionId, Network, NetworkAddress, ServerEvent, Summary};
 
 /// The state the Timer card shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +22,8 @@ pub enum TimerState {
 pub struct ConnectedTimer {
     pub id: ConnectionId,
     pub address: SocketAddr,
+    /// Its tracked state, once it answered.
+    pub state: Option<Summary>,
 }
 
 /// Why the server isn't listening, as the Connection tab shows it.
@@ -87,7 +89,13 @@ impl ServerStatus {
             ServerEvent::TimerConnected { id, address } => self.timers.push(ConnectedTimer {
                 id: *id,
                 address: *address,
+                state: None,
             }),
+            ServerEvent::TimerState { id, summary, .. } => {
+                if let Some(timer) = self.timers.iter_mut().find(|timer| timer.id == *id) {
+                    timer.state = Some(*summary);
+                }
+            }
             ServerEvent::TimerDisconnected { id, .. } => {
                 self.timers.retain(|timer| timer.id != *id);
             }
@@ -100,7 +108,8 @@ impl ServerStatus {
         self.listening
     }
 
-    /// The connected timers, in the order they connected.
+    /// The connected timers, in the order they connected. The first is the
+    /// primary timer, whose state the auto splitter follows (spec §5.3).
     pub fn timers(&self) -> &[ConnectedTimer] {
         &self.timers
     }
@@ -214,6 +223,30 @@ mod tests {
         assert_eq!(status.timer_state(), TimerState::Connected { timers: 1 });
         status.apply(&disconnected(1));
         assert_eq!(status.timer_state(), TimerState::NotConnected);
+    }
+
+    #[test]
+    fn keeps_each_timers_tracked_state() {
+        use crate::server::{Phase, Summary};
+        let running = Summary {
+            phase: Phase::Running,
+            index: Some(11),
+        };
+        let state = |id: ConnectionId, summary: Summary| ServerEvent::TimerState {
+            id,
+            address: address(50_000 + id as u16),
+            summary,
+        };
+        let status = status(&[
+            ServerEvent::Listening { port: 16834 },
+            connected(1),
+            connected(2),
+            state(2, running),
+            state(7, running),
+        ]);
+        let states: Vec<_> = status.timers().iter().map(|timer| timer.state).collect();
+        assert_eq!(states, [None, Some(running)]);
+        assert_eq!(running.to_string(), "Running · split 12");
     }
 
     #[test]

@@ -136,6 +136,7 @@ impl Status {
             }
             ServerEvent::TimerConnected { .. }
             | ServerEvent::TimerDisconnected { .. }
+            | ServerEvent::TimerState { .. }
             | ServerEvent::HandshakeFailed { .. }
             | ServerEvent::CommandRejected { .. } => {}
         }

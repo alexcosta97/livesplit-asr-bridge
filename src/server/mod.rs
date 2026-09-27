@@ -11,12 +11,16 @@
 //! [`Server::link`]: each action becomes a command (spec §5.1), sent to every
 //! connected timer through its queue in the registry, which never blocks the
 //! auto splitter thread. With no timer connected, the command is dropped.
-//! Tracking the timers' state comes later (#11).
+//!
+//! Each connection tracks its timer's state (spec §5.2), and the auto
+//! splitter's questions are answered from the primary timer's: the first to
+//! connect, then the longest connected once it leaves (spec §5.3).
 
 mod addresses;
 mod events;
 mod protocol;
 mod thread;
+mod tracked;
 
 use std::{
     sync::{Arc, Mutex, MutexGuard, atomic::AtomicU64, mpsc::Receiver},
@@ -30,9 +34,13 @@ use crate::runner::{TimerAction, TimerLink};
 
 pub use addresses::{Network, NetworkAddress, network_addresses};
 pub use events::{ConnectionId, ServerEvent};
+#[cfg(test)]
+pub use tracked::Phase;
+pub use tracked::Summary;
 
 use events::EventSink;
 use thread::Command;
+use tracked::Tracked;
 
 /// Runs the WebSocket server. Dropping it closes every connection, stops
 /// listening and waits for its thread to finish.
@@ -45,7 +53,9 @@ pub struct Server {
 /// What the Server thread and the handle share.
 struct Shared {
     events: EventSink,
-    /// The connected timers, in the order they connected.
+    /// The connected timers, in the order they connected. The first is the
+    /// primary timer, whose state the auto splitter's questions are answered
+    /// from.
     connections: Mutex<Vec<Connection>>,
     next_id: AtomicU64,
 }
@@ -55,14 +65,21 @@ struct Connection {
     id: ConnectionId,
     /// Commands for this timer. Its task sends them in order.
     outgoing: UnboundedSender<Outgoing>,
+    /// A copy of the timer's tracked state, which its task keeps up to date.
+    tracked: Tracked,
 }
 
-/// A command queued for a timer.
-struct Outgoing {
-    /// The command, as JSON text.
-    text: String,
-    /// Its name, to say which command a rejection is for.
-    command: &'static str,
+/// Something for a timer's task to send.
+enum Outgoing {
+    /// A command for the auto splitter's action.
+    Action {
+        /// The command, as JSON text.
+        text: String,
+        /// Its name, to say which command a rejection is for.
+        command: &'static str,
+    },
+    /// Ask for the timer's state now: it has become the primary timer.
+    Resync,
 }
 
 impl Server {
@@ -117,19 +134,38 @@ pub struct ServerLink {
     shared: Arc<Shared>,
 }
 
+impl ServerLink {
+    /// Answers from the primary timer's tracked state; with no timer
+    /// connected, from a timer that isn't running (spec §5.2).
+    fn primary<T>(&self, answer: impl FnOnce(&Tracked) -> T) -> T {
+        match self.shared.connections().first() {
+            Some(primary) => answer(&primary.tracked),
+            None => answer(&Tracked::default()),
+        }
+    }
+}
+
 impl TimerLink for ServerLink {
-    // The tracked timer state comes with #11. Until then, the timer is never
-    // running, as with no timer connected (spec §5.2).
     fn state(&self) -> TimerState {
-        TimerState::NotRunning
+        self.primary(Tracked::state)
     }
 
     fn current_split_index(&self) -> Option<usize> {
-        None
+        self.primary(Tracked::current_split_index)
     }
 
-    fn segment_splitted(&self, _index: usize) -> Option<bool> {
-        None
+    fn segment_splitted(&self, index: usize) -> Option<bool> {
+        self.primary(|tracked| tracked.segment_splitted(index))
+    }
+
+    fn segment_name(&self) -> Option<String> {
+        self.primary(|tracked| {
+            if tracked.state() == TimerState::Running {
+                tracked.segment_name().map(str::to_owned)
+            } else {
+                None
+            }
+        })
     }
 
     /// Queues the action's command for every connected timer, returning how
@@ -145,7 +181,7 @@ impl TimerLink for ServerLink {
         connections
             .iter()
             .filter(|connection| {
-                let outgoing = Outgoing {
+                let outgoing = Outgoing::Action {
                     text: text.clone(),
                     command,
                 };
@@ -174,5 +210,7 @@ impl Shared {
     }
 }
 
+#[cfg(test)]
+pub mod fake_timer;
 #[cfg(test)]
 mod tests;

@@ -20,9 +20,17 @@ impl BridgeTimer {
     }
 
     fn act(&self, action: TimerAction) {
+        // The segment being split, named before the split moves past it.
+        let segment = match action {
+            TimerAction::Split => self.link.segment_name(),
+            _ => None,
+        };
         let sent_to = self.link.send(action.clone());
-        self.events
-            .send(RunnerEvent::TimerAction { action, sent_to });
+        self.events.send(RunnerEvent::TimerAction {
+            action,
+            sent_to,
+            segment,
+        });
     }
 }
 

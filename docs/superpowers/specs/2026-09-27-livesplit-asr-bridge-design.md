@@ -170,6 +170,14 @@ by the Server:
    copy. This recovers from missed events and from changes made directly on
    the timer (hotkeys, menu actions).
 
+`getCurrentState` gives only the phase and the current split index, so the
+Server also asks which earlier segments have a split time
+(`getCurrentRunSplitTime`, in real time: none means the segment was skipped)
+whenever it doesn't know, for example after connecting mid-run, and the
+current segment's name (`getSegmentName`) for the Last action card. Once an
+attempt has ended, `getCurrentState` gives no index, so a timer that connects
+after the end of an attempt reports no split index until the next one starts.
+
 With no timer connected, the tracked state is "not running".
 
 ### 5.3 Multiple timers
@@ -319,8 +327,9 @@ notifications.
   "Not sent: no timer connected" note, since it was dropped (section 5.1). It
   tells the user the auto splitter works and the problem is the connection.
 - Custom variables (`setCustomVariable`) are logged but not shown here.
-- Whether LiveSplit One's server protocol exposes segment names is confirmed
-  against `livesplit-core` during implementation planning.
+- The segment name comes from the server protocol's `getSegmentName`: the
+  Server asks the primary timer (section 5.3) for the current segment's name,
+  and a split shows the name of the segment it split.
 - Empty state: "No actions yet", with "Actions appear here when the auto
   splitter starts, splits or resets."
 

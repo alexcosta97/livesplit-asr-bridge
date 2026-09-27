@@ -39,6 +39,12 @@ pub trait TimerLink: Send + Sync + 'static {
     fn state(&self) -> TimerState;
     fn current_split_index(&self) -> Option<usize>;
     fn segment_splitted(&self, index: usize) -> Option<bool>;
+    /// The name of the current segment, when the timer gave it and its
+    /// attempt is running. Asked just before a split, for the Last action
+    /// card; the app never makes one up (spec §6.2).
+    fn segment_name(&self) -> Option<String> {
+        None
+    }
     /// Sends the action to the timers, returning how many it was sent to: 0
     /// when it was dropped. Never blocks.
     fn send(&self, action: TimerAction) -> usize;

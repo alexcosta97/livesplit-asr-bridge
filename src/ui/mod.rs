@@ -977,6 +977,7 @@ mod tests {
                 RunnerEvent::TimerAction {
                     action: TimerAction::Split,
                     sent_to: 0,
+                    segment: None,
                 },
                 Category::Connection,
             ),
