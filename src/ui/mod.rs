@@ -24,7 +24,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use eframe::egui::{self, Frame, Margin, ScrollArea, ViewportCommand};
+use eframe::egui::{self, Frame, Margin, Rect, ScrollArea, UiBuilder, ViewportCommand, vec2};
 use livesplit_auto_splitting::{settings::WidgetKind, wasi_path};
 use toml::Value;
 
@@ -36,8 +36,8 @@ use crate::{
     version::VERSION,
 };
 use components::{
-    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, LOG_LINE_HEIGHT,
-    LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
+    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, HeaderButton, LogAction,
+    SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
 use file_pick::{FilePick, PickFor, PickPoll};
@@ -67,6 +67,11 @@ const COMPACT_BELOW: f32 = 640.0;
 const COLUMN_WIDTH: f32 = 300.0;
 /// The space between cards in the status column.
 const CARD_GAP: f32 = 12.0;
+/// The window width Show details asks for: the width the window opens at.
+const DETAILS_WIDTH: f32 = 800.0;
+/// How long Show details waits for the window to widen before showing the
+/// tab view instead, as with a tiling window manager.
+const WIDEN_WAIT: Duration = Duration::from_millis(500);
 
 /// The window title. It names LiveSplit One, because "LiveSplit" alone usually
 /// means the original Windows LiveSplit, which this app does not control.
@@ -150,8 +155,19 @@ pub struct BridgeApp {
     logger: Logger,
     /// The Log tab's filters, saved in `app.toml`.
     log_filters: Filters,
-    /// The log entry reached through Show in log (#14), highlighted.
+    /// The log entry reached through Show in log, highlighted.
     highlighted: Option<u64>,
+    /// The Log tab scrolls to the highlighted entry the next time it is
+    /// shown.
+    scroll_to_highlighted: bool,
+    /// The log entry of the error the error card shows, for Show in log.
+    error_entry: Option<u64>,
+    /// In the compact state, the tab view is shown instead of the status
+    /// column, until ← Status.
+    tab_view: bool,
+    /// When Show details asked the window to widen, until it has, or the
+    /// tab view is shown instead.
+    widening: Option<Instant>,
     /// The configuration folder, if the OS has one for the user.
     config: Option<Config>,
     /// The app's own settings, read from `app.toml` at start-up. The
@@ -218,6 +234,10 @@ impl BridgeApp {
             logger: Logger::new(logging::standard_dir()),
             log_filters: app_settings.log_filters(),
             highlighted: None,
+            scroll_to_highlighted: false,
+            error_entry: None,
+            tab_view: false,
+            widening: None,
             config,
             remember_window: app_settings.remember_window(),
             window: app_settings.window_geometry(),
@@ -238,10 +258,12 @@ impl BridgeApp {
             None => {
                 let _ = app.config();
             }
-            Some(Err(error)) => app.log(
-                Category::Error,
-                format!("Couldn't read the app's settings: {error}"),
-            ),
+            Some(Err(error)) => {
+                app.log(
+                    Category::Error,
+                    format!("Couldn't read the app's settings: {error}"),
+                );
+            }
             Some(Ok(_)) => {}
         }
         app
@@ -261,47 +283,61 @@ impl BridgeApp {
 
     fn handle_events(&mut self) {
         while let Ok(event) = self.events.try_recv() {
-            self.status.apply(&event);
-            self.last_actions
-                .apply(&event, chrono::Local::now().time(), Instant::now());
-            match &event {
-                RunnerEvent::Loaded { path, .. } => {
-                    self.game = self.loading.remove(path);
-                    let saved = self.game.as_ref().map(|game| game.settings.clone());
-                    self.settings.reset(saved.unwrap_or_default());
-                }
-                RunnerEvent::LoadFailed { path, .. } => {
-                    self.loading.remove(path);
-                }
-                RunnerEvent::Unloaded => {
-                    self.game = None;
-                    self.settings.reset(toml::Table::new());
-                }
-                RunnerEvent::TimerAction { action, .. } => {
-                    if repeats_game_time(&mut self.setting_game_time, action) {
-                        continue;
-                    }
-                }
-                RunnerEvent::SettingsWidgets(widgets) => {
-                    self.settings
-                        .set_widgets(widgets.0.iter().map(Setting::from).collect());
-                    // Shown in the Settings tab, not worth a message.
-                    continue;
-                }
-                _ => {}
-            }
-            self.log(category(&event), event.describe());
+            self.runner_event(event);
         }
         while let Ok(event) = self.server_events.try_recv() {
-            self.status.apply_server(&event);
-            self.server_status.apply(&event);
-            self.log(server_category(&event), event.describe());
+            self.server_event(event);
         }
     }
 
-    /// Records a line in the log.
-    fn log(&mut self, category: Category, message: String) {
-        self.logger.record(category, message);
+    /// Acts on what the Server reported, and logs it.
+    fn server_event(&mut self, event: ServerEvent) {
+        self.status.apply_server(&event);
+        self.server_status.apply(&event);
+        self.log(server_category(&event), event.describe());
+    }
+
+    /// Acts on what the Runner reported, and logs it.
+    fn runner_event(&mut self, event: RunnerEvent) {
+        self.status.apply(&event);
+        self.last_actions
+            .apply(&event, chrono::Local::now().time(), Instant::now());
+        match &event {
+            RunnerEvent::Loaded { path, .. } => {
+                self.game = self.loading.remove(path);
+                let saved = self.game.as_ref().map(|game| game.settings.clone());
+                self.settings.reset(saved.unwrap_or_default());
+            }
+            RunnerEvent::LoadFailed { path, .. } => {
+                self.loading.remove(path);
+            }
+            RunnerEvent::Unloaded => {
+                self.game = None;
+                self.settings.reset(toml::Table::new());
+            }
+            RunnerEvent::TimerAction { action, .. } => {
+                if repeats_game_time(&mut self.setting_game_time, action) {
+                    return;
+                }
+            }
+            RunnerEvent::SettingsWidgets(widgets) => {
+                self.settings
+                    .set_widgets(widgets.0.iter().map(Setting::from).collect());
+                // Shown in the Settings tab, not worth a message.
+                return;
+            }
+            _ => {}
+        }
+        let id = self.log(category(&event), event.describe());
+        if event.is_error() {
+            // The error the card now shows, reached by Show in log.
+            self.error_entry = Some(id);
+        }
+    }
+
+    /// Records a line in the log, and returns its id.
+    fn log(&mut self, category: Category, message: String) -> u64 {
+        self.logger.record(category, message)
     }
 
     /// The configuration folder, or `None` after reporting that there is
@@ -486,12 +522,15 @@ impl BridgeApp {
         let picking = self.file_pick.is_open();
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = CARD_GAP;
-            components::app_header(ui, width);
+            if components::app_header(ui, width, Some(HeaderButton::ShowDetails)) {
+                self.show_details(ui.ctx());
+            }
 
             if let Some(error) = self.status.error() {
                 match components::error_card(ui, error, width) {
+                    Some(ErrorAction::ShowInLog) => self.show_in_log(width),
                     Some(ErrorAction::Reload) => self.ask(Pending::Reload),
-                    Some(ErrorAction::OpenConnection) => self.tab = Tab::Connection,
+                    Some(ErrorAction::OpenConnection) => self.open_tab(Tab::Connection, width),
                     Some(ErrorAction::Dismiss) => self.status.dismiss_error(),
                     None => {}
                 }
@@ -518,8 +557,79 @@ impl BridgeApp {
         });
     }
 
-    /// The tab area: the tab strip, then the active tab.
-    fn tab_area(&mut self, ui: &mut egui::Ui) {
+    /// Shows `tab`. In the compact state that shows the tab view (spec
+    /// §6.3).
+    fn open_tab(&mut self, tab: Tab, width: Width) {
+        self.tab = tab;
+        if width == Width::Compact {
+            self.tab_view = true;
+        }
+    }
+
+    /// Show in log (spec §9): opens the Log tab with the error's category
+    /// ticked, scrolled to the error's entry, and the entry highlighted.
+    fn show_in_log(&mut self, width: Width) {
+        let Some(category) = self.status.error().and_then(|error| error.log_category()) else {
+            return;
+        };
+        let mut filters = self.log_filters;
+        filters.show(category);
+        if filters != self.log_filters {
+            self.log_filters = filters;
+            self.save_log_filters();
+        }
+        self.highlighted = self.error_entry;
+        self.scroll_to_highlighted = true;
+        self.open_tab(Tab::Log, width);
+    }
+
+    /// Show details (spec §6.3): asks the window to widen, and shows the
+    /// tab view if it doesn't.
+    fn show_details(&mut self, ctx: &egui::Context) {
+        let height = ctx.content_rect().height();
+        ctx.send_viewport_cmd(ViewportCommand::InnerSize(vec2(DETAILS_WIDTH, height)));
+        self.widening = Some(Instant::now());
+    }
+
+    /// After Show details, shows the tab view once the window has had time
+    /// to widen and hasn't.
+    fn check_widening(&mut self, ctx: &egui::Context, now: Instant) {
+        let Some(asked) = self.widening else {
+            return;
+        };
+        let waited = now.saturating_duration_since(asked);
+        if waited >= WIDEN_WAIT {
+            self.widening = None;
+            self.tab_view = true;
+        } else {
+            ctx.request_repaint_after(WIDEN_WAIT - waited);
+        }
+    }
+
+    /// The compact state's tab view: the header with ← Status, then the tab
+    /// area, in the space of the status column.
+    fn tab_view(&mut self, ui: &mut egui::Ui) {
+        let header = Frame::NONE
+            .fill(theme::PANEL)
+            .inner_margin(Margin::same(16))
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
+                if components::app_header(ui, Width::Compact, Some(HeaderButton::Back)) {
+                    self.tab_view = false;
+                }
+            });
+        let rect = header.response.rect;
+        ui.painter().hline(
+            rect.x_range(),
+            rect.bottom() - 0.5,
+            egui::Stroke::new(1.0, theme::BORDER),
+        );
+        self.tab_area(ui, Width::Compact);
+    }
+
+    /// The tab area: the tab strip, then the active tab, with less padding
+    /// in the compact state's tab view.
+    fn tab_area(&mut self, ui: &mut egui::Ui, width: Width) {
         ui.spacing_mut().item_spacing.y = 0.0;
         components::tab_strip(
             ui,
@@ -531,8 +641,12 @@ impl BridgeApp {
             ],
             &mut self.tab,
         );
+        let padding = match width {
+            Width::Wide => 24,
+            Width::Compact => 16,
+        };
         Frame::NONE
-            .inner_margin(Margin::same(24))
+            .inner_margin(Margin::same(padding))
             .show(ui, |ui| match self.tab {
                 Tab::Settings => self.settings_tab(ui),
                 Tab::Connection => {
@@ -846,13 +960,15 @@ impl BridgeApp {
             Some(value) => self
                 .settings
                 .set(&widget, Some(Value::String(value.into()))),
-            None => self.log(
-                Category::Error,
-                format!(
-                    "Couldn't give {} to the auto splitter: the path isn't supported",
-                    path.display()
-                ),
-            ),
+            None => {
+                self.log(
+                    Category::Error,
+                    format!(
+                        "Couldn't give {} to the auto splitter: the path isn't supported",
+                        path.display()
+                    ),
+                );
+            }
         }
     }
 
@@ -878,15 +994,58 @@ impl BridgeApp {
         }
         ui.add_space(12.0);
         let shown: Vec<_> = self.logger.view().shown(self.log_filters).collect();
-        ScrollArea::both()
-            .auto_shrink(false)
-            .stick_to_bottom(true)
-            .show_rows(ui, LOG_LINE_HEIGHT, shown.len(), |ui, rows| {
+        // Lines differ in height (a trace, the highlight), so each line's top
+        // is added up, and only the lines in view are drawn.
+        let heights: Vec<f32> = shown
+            .iter()
+            .map(|entry| components::log_line_height(entry, self.highlighted == Some(entry.id)))
+            .collect();
+        let tops: Vec<f32> = std::iter::once(0.0)
+            .chain(heights.iter().scan(0.0, |top, height| {
+                *top += height;
+                Some(*top)
+            }))
+            .collect();
+        let mut scroll = ScrollArea::both().auto_shrink(false);
+        // Show in log scrolls once to the highlighted entry, centred;
+        // following the newest line would scroll it away again.
+        let jump = std::mem::take(&mut self.scroll_to_highlighted)
+            .then_some(self.highlighted)
+            .flatten()
+            .and_then(|id| shown.iter().position(|entry| entry.id == id));
+        match jump {
+            Some(row) => {
+                let offset = tops[row] + heights[row] / 2.0 - ui.available_height() / 2.0;
+                scroll = scroll.vertical_scroll_offset(offset.max(0.0));
+            }
+            None => scroll = scroll.stick_to_bottom(true),
+        }
+        // Widened into the tab's padding, so the text of the lines lines up
+        // with the toolbar (see LOG_LINE_INSET).
+        let list = ui
+            .available_rect_before_wrap()
+            .expand2(vec2(components::LOG_LINE_INSET, 0.0));
+        ui.scope_builder(UiBuilder::new().max_rect(list), |ui| {
+            scroll.show_viewport(ui, |ui, viewport| {
+                ui.set_height(tops[shown.len()]);
                 ui.spacing_mut().item_spacing.y = 0.0;
-                for entry in &shown[rows] {
-                    components::log_line(ui, entry, self.highlighted == Some(entry.id));
+                let first = tops[1..].partition_point(|&bottom| bottom <= viewport.min.y);
+                let last = tops
+                    .partition_point(|&top| top < viewport.max.y)
+                    .min(shown.len());
+                let top = ui.max_rect().top();
+                for row in first..last {
+                    let entry = shown[row];
+                    let rect = Rect::from_x_y_ranges(
+                        ui.max_rect().x_range(),
+                        top + tops[row]..=top + tops[row + 1],
+                    );
+                    ui.scope_builder(UiBuilder::new().max_rect(rect).id_salt(entry.id), |ui| {
+                        components::log_line(ui, entry, self.highlighted == Some(entry.id));
+                    });
                 }
             });
+        });
     }
 
     /// Remembers the Log tab's filters in `app.toml`.
@@ -973,10 +1132,21 @@ impl eframe::App for BridgeApp {
             .fill(theme::PANEL)
             .inner_margin(Margin::same(16));
         if ui.max_rect().width() < COMPACT_BELOW {
-            egui::CentralPanel::default()
-                .frame(column)
-                .show(ui, |ui| self.status_column(ui, Width::Compact));
+            self.check_widening(ui.ctx(), Instant::now());
+            if self.tab_view {
+                egui::CentralPanel::default()
+                    .frame(Frame::NONE.fill(theme::WINDOW))
+                    .show(ui, |ui| self.tab_view(ui));
+            } else {
+                egui::CentralPanel::default()
+                    .frame(column)
+                    .show(ui, |ui| self.status_column(ui, Width::Compact));
+            }
         } else {
+            // Wide, the tab area is always shown: narrowing the window again
+            // shows the status column.
+            self.tab_view = false;
+            self.widening = None;
             egui::Panel::left("status")
                 .exact_size(COLUMN_WIDTH)
                 .resizable(false)
@@ -984,7 +1154,7 @@ impl eframe::App for BridgeApp {
                 .show(ui, |ui| self.status_column(ui, Width::Wide));
             egui::CentralPanel::default()
                 .frame(Frame::NONE.fill(theme::WINDOW))
-                .show(ui, |ui| self.tab_area(ui));
+                .show(ui, |ui| self.tab_area(ui, Width::Wide));
         }
         // The file picker is asked for mid-frame, where there is no `Frame`
         // to parent it to.
@@ -1306,6 +1476,222 @@ mod tests {
         for (event, expected) in cases {
             assert_eq!(server_category(&event), expected, "{event:?}");
         }
+    }
+
+    /// The app with its files in a temporary folder, and a few lines in the
+    /// log of every category.
+    fn app_with_lines() -> (tempfile::TempDir, BridgeApp) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::at(dir.path().join("config"));
+        let app = test_app(config);
+        (dir, app)
+    }
+
+    fn crashed() -> RunnerEvent {
+        RunnerEvent::Crashed {
+            error: "wasm trap: unreachable".to_owned(),
+        }
+    }
+
+    fn port_in_use() -> ServerEvent {
+        ServerEvent::BindFailed {
+            port: 16834,
+            error: "Address already in use (os error 98)".to_owned(),
+            in_use: true,
+        }
+    }
+
+    /// The id of the last line logged with `category`.
+    fn last_line(app: &BridgeApp, category: Category) -> u64 {
+        let all = Filters {
+            auto_splitter: true,
+            connection: true,
+            app: true,
+        };
+        app.logger
+            .view()
+            .shown(all)
+            .filter(|entry| entry.category == category)
+            .last()
+            .unwrap()
+            .id
+    }
+
+    #[test]
+    fn show_in_log_after_a_crash_opens_the_crash_with_the_auto_splitter_lines() {
+        let (_dir, mut app) = app_with_lines();
+        app.runner_event(RunnerEvent::AutoSplitterLog("about to crash".to_owned()));
+        app.runner_event(crashed());
+        let crash = last_line(&app, Category::Error);
+        app.show_in_log(Width::Wide);
+        assert_eq!(app.tab, Tab::Log);
+        assert_eq!(app.highlighted, Some(crash));
+        assert!(app.scroll_to_highlighted);
+        assert_eq!(
+            app.log_filters,
+            Filters {
+                auto_splitter: true,
+                ..Filters::default()
+            }
+        );
+        // The filters are remembered, like any other change to them.
+        assert!(app.app_settings.log_filters().auto_splitter);
+        assert!(!app.tab_view);
+    }
+
+    #[test]
+    fn show_in_log_after_a_failed_load_ticks_app_and_runtime() {
+        let (_dir, mut app) = app_with_lines();
+        app.runner_event(RunnerEvent::LoadFailed {
+            path: PathBuf::from("foo.wasm"),
+            error: "not a valid WebAssembly module".to_owned(),
+        });
+        let failure = last_line(&app, Category::Error);
+        app.show_in_log(Width::Wide);
+        assert_eq!(app.highlighted, Some(failure));
+        assert_eq!(
+            app.log_filters,
+            Filters {
+                app: true,
+                ..Filters::default()
+            }
+        );
+    }
+
+    #[test]
+    fn show_in_log_highlights_the_latest_error() {
+        let (_dir, mut app) = app_with_lines();
+        app.runner_event(crashed());
+        app.runner_event(RunnerEvent::LoadFailed {
+            path: PathBuf::from("foo.wasm"),
+            error: "bad".to_owned(),
+        });
+        let failure = last_line(&app, Category::Error);
+        app.show_in_log(Width::Wide);
+        assert_eq!(app.highlighted, Some(failure));
+    }
+
+    #[test]
+    fn port_in_use_has_no_show_in_log() {
+        let (_dir, mut app) = app_with_lines();
+        app.server_event(port_in_use());
+        app.show_in_log(Width::Wide);
+        assert_eq!(app.tab, Tab::Connection);
+        assert_eq!(app.highlighted, None);
+    }
+
+    #[test]
+    fn in_the_compact_state_tab_buttons_show_the_tab_view() {
+        let (_dir, mut app) = app_with_lines();
+        app.runner_event(crashed());
+        app.show_in_log(Width::Compact);
+        assert!(app.tab_view);
+        assert_eq!(app.tab, Tab::Log);
+
+        app.tab_view = false;
+        app.server_event(port_in_use());
+        app.open_tab(Tab::Connection, Width::Compact);
+        assert!(app.tab_view);
+        assert_eq!(app.tab, Tab::Connection);
+    }
+
+    #[test]
+    fn show_details_shows_the_tab_view_if_the_window_does_not_widen() {
+        let (_dir, mut app) = app_with_lines();
+        let ctx = app.ctx.clone();
+        app.show_details(&ctx);
+        let asked = app.widening.unwrap();
+
+        app.check_widening(&ctx, asked + WIDEN_WAIT / 2);
+        assert!(!app.tab_view);
+        app.check_widening(&ctx, asked + WIDEN_WAIT);
+        assert!(app.tab_view);
+        assert_eq!(app.widening, None);
+    }
+
+    #[test]
+    fn a_trace_pushes_the_next_line_down() {
+        let (_dir, mut app) = app_with_lines();
+        app.runner_event(RunnerEvent::Crashed {
+            error: "wasm trap\n    at update (wasm function 42)".to_owned(),
+        });
+        app.runner_event(RunnerEvent::AutoSplitterLog("after".to_owned()));
+        app.log_filters.show(Category::AutoSplitter);
+        app.show_in_log(Width::Wide);
+        let on_screen = draw_log_tab(&mut app);
+        let bottom = |needle: &str| {
+            on_screen
+                .iter()
+                .find(|(text, _)| text.contains(needle))
+                .map(|(_, rect)| *rect)
+                .unwrap_or_else(|| panic!("{needle} not in {on_screen:?}"))
+        };
+        let trace = bottom("wasm function 42");
+        assert!(trace.top() >= bottom("wasm trap").bottom());
+        assert!(bottom("after").top() >= trace.bottom());
+    }
+
+    /// Draws the Log tab in an 800 × 600 window, returning the log lines on
+    /// screen by their message.
+    fn draw_log_tab(app: &mut BridgeApp) -> Vec<(String, egui::Rect)> {
+        let ctx = app.ctx.clone();
+        theme::install(&ctx);
+        ctx.enable_accesskit();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let input = RawInput {
+            screen_rect: Some(screen),
+            ..RawInput::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| app.log_tab(ui));
+        });
+        // Nothing draws the frame, so its textures are dropped.
+        output.textures_delta.clear();
+        output
+            .platform_output
+            .accesskit_update
+            .map(|update| update.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(_, node)| {
+                let bounds = node.bounds()?;
+                let rect = egui::Rect::from_min_max(
+                    egui::pos2(bounds.x0 as f32, bounds.y0 as f32),
+                    egui::pos2(bounds.x1 as f32, bounds.y1 as f32),
+                );
+                Some((node.label().or(node.value())?.to_owned(), rect))
+            })
+            .filter(|(_, rect)| screen.intersects(*rect))
+            .collect()
+    }
+
+    #[test]
+    fn show_in_log_scrolls_to_the_entry() {
+        let (_dir, mut app) = app_with_lines();
+        app.runner_event(crashed());
+        for n in 0..500 {
+            app.runner_event(RunnerEvent::AutoSplitterLog(format!("line {n}")));
+        }
+        // The Log tab follows the newest line, so the crash is out of view.
+        app.log_filters.show(Category::AutoSplitter);
+        // The first frame measures the lines; the second is at the bottom.
+        draw_log_tab(&mut app);
+        let on_screen = draw_log_tab(&mut app);
+        assert!(
+            on_screen.iter().any(|(text, _)| text == "line 499"),
+            "{on_screen:?}"
+        );
+        assert!(!on_screen.iter().any(|(text, _)| text.contains("wasm trap")));
+
+        app.show_in_log(Width::Wide);
+        let on_screen = draw_log_tab(&mut app);
+        assert!(
+            on_screen.iter().any(|(text, _)| text.contains("wasm trap")),
+            "{on_screen:?}"
+        );
+        // Then it stays there rather than jumping back to the newest line.
+        let on_screen = draw_log_tab(&mut app);
+        assert!(on_screen.iter().any(|(text, _)| text.contains("wasm trap")));
     }
 
     #[test]

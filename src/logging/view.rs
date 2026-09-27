@@ -26,6 +26,16 @@ impl Filters {
             Category::App => self.app,
         }
     }
+
+    /// Ticks the filter of `category`, so its lines are shown.
+    pub fn show(&mut self, category: Category) {
+        match category {
+            Category::Error => {}
+            Category::AutoSplitter => self.auto_splitter = true,
+            Category::Connection => self.connection = true,
+            Category::App => self.app = true,
+        }
+    }
 }
 
 /// The most recent lines of every category, oldest first.
@@ -143,6 +153,21 @@ mod tests {
         }
         assert_eq!(view.len(), CAPACITY);
         assert_eq!(view.shown(Filters::default()).next().unwrap().id, 5);
+    }
+
+    #[test]
+    fn show_ticks_only_that_category() {
+        let mut filters = Filters::default();
+        filters.show(Category::Connection);
+        assert_eq!(
+            filters,
+            Filters {
+                connection: true,
+                ..Filters::default()
+            }
+        );
+        filters.show(Category::Error);
+        assert!(!filters.auto_splitter && !filters.app);
     }
 
     #[test]
