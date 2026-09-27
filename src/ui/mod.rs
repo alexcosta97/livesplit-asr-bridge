@@ -1,6 +1,9 @@
-//! The application window: the status column and, when wide, the tabs.
+//! The application window: the status column and, when wide, the tab
+//! area.
 
 mod components;
+mod connection_tab;
+mod server_status;
 mod settings;
 mod settings_tab;
 mod status;
@@ -10,7 +13,7 @@ use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
     sync::{Arc, mpsc::Receiver},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use eframe::egui::{self, Frame, Label, Margin, RichText, ScrollArea, ViewportCommand};
@@ -20,12 +23,15 @@ use toml::Value;
 use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters},
     runner::{NoTimer, Runner, RunnerEvent, file_name},
+    server::{self, NetworkAddress, Server, ServerEvent},
     version::VERSION,
 };
 use components::{
-    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, SplitterAction, Tab,
+    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, SplitterAction,
     UnsavedAction, UnsavedTrigger, Width,
 };
+use connection_tab::ConnectionTab;
+use server_status::ServerStatus;
 use settings::{Setting, SettingsEditor};
 use settings_tab::SettingsAction;
 use status::Status;
@@ -39,9 +45,13 @@ pub const APP_NAME: &str = "livesplit-asr-bridge";
 /// The name shown to people, in the window title.
 pub const DISPLAY_NAME: &str = "LiveSplit One ASR Bridge";
 
-/// How many recent Runner messages the window keeps, until the Log tab
-/// replaces this list.
+/// How many recent Runner and Server messages the window keeps, until the
+/// Log tab replaces this list.
 const RECENT_MESSAGES: usize = 500;
+
+/// How often the machine's addresses are read again, so a VPN coming up
+/// appears.
+const ADDRESSES_REFRESH: Duration = Duration::from_secs(5);
 
 /// Below this window width, the status column fills the window.
 const COMPACT_BELOW: f32 = 640.0;
@@ -56,11 +66,12 @@ pub fn window_title() -> String {
     format!("{DISPLAY_NAME} {VERSION}")
 }
 
-/// The tabs of the tab area. Later issues add Connection and Preferences.
+/// The tabs of the tab area. Preferences comes with #13.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TabId {
+enum Tab {
     Settings,
-    /// The Runner's recent messages, until the Log tab (#12) replaces them.
+    Connection,
+    /// Holds the recent activity list until the Log tab (#12).
     Log,
 }
 
@@ -82,19 +93,27 @@ impl Pending {
     }
 }
 
-/// The application. Later issues add the Timer and Last action cards and the
-/// other tabs.
+/// The application. Later issues add the Last action card and the other
+/// tabs.
 pub struct BridgeApp {
     ctx: egui::Context,
     runner: Runner,
     events: Receiver<RunnerEvent>,
+    server: Server,
+    server_events: Receiver<ServerEvent>,
     status: Status,
+    server_status: ServerStatus,
+    /// The machine's addresses, and when they were read.
+    addresses: Vec<NetworkAddress>,
+    addresses_read: Instant,
+    tab: Tab,
+    connection_tab: ConnectionTab,
     /// Each message, and whether it is an error.
     recent: VecDeque<(String, bool)>,
     /// The configuration folder, if the OS has one for the user.
     config: Option<Config>,
     /// The app's own settings, read from `app.toml` at start-up. The
-    /// server (#9) listens on its port.
+    /// server listens on its port, and Restart server saves it.
     app_settings: AppSettings,
     /// The game of each auto splitter being loaded, until it is loaded.
     loading: HashMap<PathBuf, Game>,
@@ -104,7 +123,6 @@ pub struct BridgeApp {
     dialog: Option<(GameDialog, PathBuf)>,
     /// The loaded auto splitter's settings, and the edits not saved yet.
     settings: SettingsEditor,
-    tab: TabId,
     /// What the open Unsaved dialog is asking about.
     pending: Option<Pending>,
     /// Closing was asked for and the unsaved settings dealt with.
@@ -118,39 +136,66 @@ impl BridgeApp {
 
     /// The application, with its files in `config`.
     fn with_config(ctx: &egui::Context, config: Option<Config>) -> Self {
-        let repaint = ctx.clone();
+        let wake = {
+            let ctx = ctx.clone();
+            move || ctx.request_repaint()
+        };
         // The Server replaces NoTimer (#10, #11).
-        let (runner, events) = Runner::new(Arc::new(NoTimer), move || repaint.request_repaint());
+        let (runner, events) = Runner::new(Arc::new(NoTimer), wake.clone());
+        let loaded = config.as_ref().map(AppSettings::load);
+        let app_settings = match &loaded {
+            Some(Ok(settings)) => settings.clone(),
+            _ => AppSettings::default(),
+        };
+        let port = app_settings.port();
+        let (server, server_events) = Server::new(port, wake);
         let mut app = Self {
             ctx: ctx.clone(),
             runner,
             events,
+            server,
+            server_events,
             status: Status::default(),
+            server_status: ServerStatus::default(),
+            addresses: server::network_addresses(),
+            addresses_read: Instant::now(),
+            tab: Tab::Connection,
+            connection_tab: ConnectionTab::new(port),
             recent: VecDeque::new(),
             config,
-            app_settings: AppSettings::default(),
+            app_settings,
             loading: HashMap::new(),
             game: None,
             dialog: None,
             settings: SettingsEditor::default(),
-            tab: TabId::Settings,
             pending: None,
             closing: false,
         };
-        app.app_settings = app.read_app_settings();
+        // `app.toml` is read before the server starts, since the server
+        // listens on its port; what went wrong is reported once the app can.
+        match loaded {
+            // Reports that there is no configuration folder.
+            None => {
+                let _ = app.config();
+            }
+            Some(Err(error)) => {
+                app.note(format!("Couldn't read the app's settings: {error}"), true)
+            }
+            Some(Ok(_)) => {}
+        }
         app
     }
 
-    /// Reads `app.toml`. If it can't be read, the error is reported and the
-    /// defaults are used.
-    fn read_app_settings(&mut self) -> AppSettings {
+    /// Saves the port the server was restarted on in `app.toml`, so the
+    /// next start listens on it too.
+    fn save_port(&mut self, port: u16) {
+        self.app_settings.set_port(port);
         let Some(config) = self.config() else {
-            return AppSettings::default();
+            return;
         };
-        AppSettings::load(&config).unwrap_or_else(|error| {
-            self.note(format!("Couldn't read the app's settings: {error}"), true);
-            AppSettings::default()
-        })
+        if let Err(error) = self.app_settings.save(&config) {
+            self.note(format!("Couldn't save the port: {error}"), true);
+        }
     }
 
     fn handle_events(&mut self) {
@@ -177,6 +222,11 @@ impl BridgeApp {
                 }
                 _ => {}
             }
+            self.note(event.describe(), event.is_error());
+        }
+        while let Ok(event) = self.server_events.try_recv() {
+            self.status.apply_server(&event);
+            self.server_status.apply(&event);
             self.note(event.describe(), event.is_error());
         }
     }
@@ -349,6 +399,15 @@ impl BridgeApp {
         }
     }
 
+    /// Reads the machine's addresses again every few seconds.
+    fn refresh_addresses(&mut self, ctx: &egui::Context) {
+        if self.addresses_read.elapsed() >= ADDRESSES_REFRESH {
+            self.addresses = server::network_addresses();
+            self.addresses_read = Instant::now();
+        }
+        ctx.request_repaint_after(ADDRESSES_REFRESH.saturating_sub(self.addresses_read.elapsed()));
+    }
+
     /// The status column: the header, the error card while there is one, the
     /// auto splitter and the game. It scrolls rather than clip a card.
     fn status_column(&mut self, ui: &mut egui::Ui, width: Width) {
@@ -362,6 +421,7 @@ impl BridgeApp {
             if let Some(error) = self.status.error() {
                 match components::error_card(ui, error, width) {
                     Some(ErrorAction::Reload) => self.ask(Pending::Reload),
+                    Some(ErrorAction::OpenConnection) => self.tab = Tab::Connection,
                     Some(ErrorAction::Dismiss) => self.status.dismiss_error(),
                     None => {}
                 }
@@ -380,7 +440,50 @@ impl BridgeApp {
 
             let detail = self.status.game_detail(width == Width::Compact);
             components::game_card(ui, &self.status.game(), detail.as_deref(), width);
+
+            let urls = self.server_status.urls(&self.addresses);
+            components::timer_card(ui, self.server_status.timer_state(), &urls, width);
         });
+    }
+
+    /// The tab area: the tab strip, then the active tab.
+    fn tab_area(&mut self, ui: &mut egui::Ui) {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        components::tab_strip(
+            ui,
+            &[
+                (Tab::Settings, "Settings", self.settings.is_unsaved()),
+                (Tab::Connection, "Connection", false),
+                (Tab::Log, "Log", false),
+            ],
+            &mut self.tab,
+        );
+        Frame::NONE
+            .inner_margin(Margin::same(24))
+            .show(ui, |ui| match self.tab {
+                Tab::Settings => self.settings_tab(ui),
+                Tab::Connection => {
+                    let urls = self.server_status.urls(&self.addresses);
+                    if let Some(port) = self.connection_tab.show(ui, &self.server_status, &urls) {
+                        self.server.restart(port);
+                        self.save_port(port);
+                    }
+                }
+                Tab::Log => self.recent_activity(ui),
+            });
+    }
+
+    /// The Settings tab, and what it asks for.
+    fn settings_tab(&mut self, ui: &mut egui::Ui) {
+        let loaded = self.runner.loaded_path().is_some();
+        match settings_tab::settings_tab(ui, &mut self.settings, loaded, Instant::now()) {
+            Some(SettingsAction::Save) => {
+                self.save_settings();
+            }
+            Some(SettingsAction::Open) => self.open(),
+            Some(SettingsAction::Browse(key)) => self.browse(&key),
+            None => {}
+        }
     }
 
     /// Asks for a `.wasm` file and loads it, once the unsaved settings are
@@ -524,38 +627,6 @@ impl BridgeApp {
         }
     }
 
-    /// The tab area: the tab strip and the active tab.
-    fn tabs(&mut self, ui: &mut egui::Ui) {
-        let tabs = [
-            Tab {
-                id: TabId::Settings,
-                label: "Settings",
-                unsaved: self.settings.is_unsaved(),
-            },
-            Tab {
-                id: TabId::Log,
-                label: "Log",
-                unsaved: false,
-            },
-        ];
-        components::tab_strip(ui, &tabs, &mut self.tab);
-        ui.add_space(24.0);
-        match self.tab {
-            TabId::Settings => {
-                let loaded = self.runner.loaded_path().is_some();
-                match settings_tab::settings_tab(ui, &mut self.settings, loaded, Instant::now()) {
-                    Some(SettingsAction::Save) => {
-                        self.save_settings();
-                    }
-                    Some(SettingsAction::Open) => self.open(),
-                    Some(SettingsAction::Browse(key)) => self.browse(&key),
-                    None => {}
-                }
-            }
-            TabId::Log => self.recent_activity(ui),
-        }
-    }
-
     /// Loads the same file again, with its game's saved settings.
     fn reload(&mut self) {
         if let Some(path) = self.runner.loaded_path() {
@@ -563,7 +634,8 @@ impl BridgeApp {
         }
     }
 
-    /// The Runner's recent messages, until the Log tab (#12) replaces them.
+    /// The Runner's and the Server's recent messages, until the Log tab
+    /// (#12) replaces them.
     fn recent_activity(&self, ui: &mut egui::Ui) {
         ScrollArea::vertical()
             .auto_shrink(false)
@@ -591,6 +663,7 @@ impl eframe::App for BridgeApp {
         self.check_close();
         self.game_dialog(&ui.ctx().clone());
         self.unsaved_dialog();
+        self.refresh_addresses(ui.ctx());
         let column = Frame::NONE
             .fill(theme::PANEL)
             .inner_margin(Margin::same(16));
@@ -606,11 +679,8 @@ impl eframe::App for BridgeApp {
             .frame(column)
             .show(ui, |ui| self.status_column(ui, Width::Wide));
         egui::CentralPanel::default()
-            .frame(Frame::NONE.fill(theme::WINDOW).inner_margin(Margin {
-                top: 8,
-                ..Margin::same(24)
-            }))
-            .show(ui, |ui| self.tabs(ui));
+            .frame(Frame::NONE.fill(theme::WINDOW))
+            .show(ui, |ui| self.tab_area(ui));
     }
 }
 

@@ -42,9 +42,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # The release-scripts `package` job calls this workflow from pull
+      # requests, which should restore but not save release caches.
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build
         shell: bash
         env:

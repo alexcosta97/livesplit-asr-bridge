@@ -13,10 +13,6 @@ use super::{Config, read_if_exists, write_replacing};
 
 /// The server's port when none is saved: the same default as the original
 /// LiveSplit server (spec §6.5).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the server (#9) listens on the port")
-)]
 pub const DEFAULT_PORT: u16 = 16834;
 
 const PORT: &str = "port";
@@ -41,20 +37,12 @@ impl AppSettings {
     }
 
     /// Writes `app.toml`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Restart server saves the port (#9)")
-    )]
     pub fn save(&self, config: &Config) -> Result<(), String> {
         write_replacing(&config.app_file(), &self.table.to_string())
     }
 
     /// The server's port: the saved one, or [`DEFAULT_PORT`] if none is
     /// saved or the saved value isn't a port.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the server (#9) listens on the port")
-    )]
     pub fn port(&self) -> u16 {
         match self.table.get(PORT) {
             Some(Value::Integer(port)) => u16::try_from(*port)
@@ -66,10 +54,6 @@ impl AppSettings {
     }
 
     /// Sets the port to save.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Restart server saves the port (#9)")
-    )]
     pub fn set_port(&mut self, port: u16) {
         self.table
             .insert(PORT.to_owned(), Value::Integer(i64::from(port)));
