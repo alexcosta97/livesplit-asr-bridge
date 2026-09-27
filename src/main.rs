@@ -1,3 +1,4 @@
+mod config;
 mod runner;
 mod ui;
 mod version;

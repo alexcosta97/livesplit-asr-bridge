@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use livesplit_auto_splitting::{AutoSplitter, Process};
+use livesplit_auto_splitting::{AutoSplitter, Process, settings};
 
 use super::{RunnerEvent, events::EventSink, timer::BridgeTimer};
 
@@ -13,6 +13,8 @@ use super::{RunnerEvent, events::EventSink, timer::BridgeTimer};
 pub(super) enum Command {
     /// Run this auto splitter instead of the current one.
     Replace(Box<AutoSplitter<BridgeTimer>>),
+    /// Give the running auto splitter these settings.
+    SetSettings(settings::Map),
     Unload,
     Shutdown,
 }
@@ -54,6 +56,12 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
             Some(_) => commands.recv_timeout(next_tick.saturating_duration_since(Instant::now())),
         };
         match received {
+            // New settings take effect on the next tick, which stays on
+            // schedule.
+            Ok(command @ Command::SetSettings(_)) => {
+                apply(command, &mut active, &events);
+                continue;
+            }
             Ok(command) => {
                 if let Flow::Stop = apply(command, &mut active, &events) {
                     return;
@@ -81,8 +89,13 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
 
         if let Err(error) = result {
             // Reload, unload and shutdown send their command before
-            // interrupting, so an interrupted tick finds it waiting.
-            if let Ok(command) = commands.try_recv() {
+            // interrupting, so an interrupted tick finds it waiting. Settings
+            // don't interrupt, so they are skipped: the tick really failed.
+            let mut waiting = commands.try_recv();
+            while let Ok(Command::SetSettings(_)) = waiting {
+                waiting = commands.try_recv();
+            }
+            if let Ok(command) = waiting {
                 if let Flow::Stop = apply(command, &mut active, &events) {
                     return;
                 }
@@ -129,6 +142,13 @@ fn apply(command: Command, active: &mut Option<Active>, events: &EventSink) -> F
         Command::Replace(auto_splitter) => {
             *active = Some(Active::new(auto_splitter));
             Flow::Continue
+        }
+        Command::SetSettings(settings) => {
+            if let Some(current) = active {
+                current.auto_splitter.set_settings_map(settings);
+            }
+            // The same auto splitter keeps running, still attached.
+            return Flow::Continue;
         }
         Command::Unload => {
             *active = None;

@@ -5,6 +5,9 @@
 //! implements. Everything that happens (loads, crashes, log messages, timer
 //! actions, the game being attached) is reported as a [`RunnerEvent`].
 //!
+//! Each auto splitter starts with the settings it is given, which are the
+//! saved settings of its game (spec §7.2).
+//!
 //! A hung auto splitter never blocks the caller: loading compiles on a
 //! background thread, and reload, unload and dropping the [`Runner`]
 //! interrupt the running auto splitter through the runtime.
@@ -24,7 +27,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use livesplit_auto_splitting::{AutoSplitter, Config, InterruptHandle, Runtime};
+use livesplit_auto_splitting::{AutoSplitter, Config, InterruptHandle, Runtime, settings};
 
 pub use events::{RunnerEvent, file_name};
 pub use link::{NoTimer, TimerAction, TimerLink};
@@ -91,10 +94,11 @@ impl Runner {
         (runner, receiver)
     }
 
-    /// Loads the auto splitter at `path` in the background. On success it
-    /// replaces the running auto splitter; on failure the running one keeps
-    /// running. Either way, the outcome is reported as an event.
-    pub fn load(&self, path: PathBuf) {
+    /// Loads the auto splitter at `path` in the background, starting it with
+    /// `settings`. On success it replaces the running auto splitter; on
+    /// failure the running one keeps running. Either way, the outcome is
+    /// reported as an event.
+    pub fn load(&self, path: PathBuf, settings: settings::Map) {
         let request = {
             let mut control = self.shared.control();
             control.latest_request += 1;
@@ -105,7 +109,7 @@ impl Runner {
             .name("auto splitter loader".into())
             .spawn({
                 let path = path.clone();
-                move || shared.finish_load(path, request)
+                move || shared.finish_load(path, settings, request)
             });
         if let Err(error) = spawned {
             self.shared.events.send(RunnerEvent::LoadFailed {
@@ -115,13 +119,27 @@ impl Runner {
         }
     }
 
-    /// Loads the same file again, for example after the auto splitter was
-    /// rebuilt. Does nothing if no auto splitter has been loaded.
-    pub fn reload(&self) {
+    /// Loads the same file again with `settings`, for example after the auto
+    /// splitter was rebuilt. Does nothing if no auto splitter has been
+    /// loaded.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the UI reloads through `load`, with the game's settings"
+        )
+    )]
+    pub fn reload(&self, settings: settings::Map) {
         let path = self.shared.control().path.clone();
         if let Some(path) = path {
-            self.load(path);
+            self.load(path, settings);
         }
+    }
+
+    /// Gives the running auto splitter new settings, between two ticks. An
+    /// auto splitter still loading keeps the settings it was loaded with.
+    pub fn set_settings(&self, settings: settings::Map) {
+        let _ = self.shared.commands.send(Command::SetSettings(settings));
     }
 
     /// Stops and unloads the running auto splitter, interrupting it if it
@@ -174,8 +192,8 @@ impl Shared {
 
     /// Runs on a loader thread: compiles the auto splitter, then hands it to
     /// the Runner thread unless a newer request arrived in the meantime.
-    fn finish_load(&self, path: PathBuf, request: u64) {
-        let result = self.instantiate(&path);
+    fn finish_load(&self, path: PathBuf, settings: settings::Map, request: u64) {
+        let result = self.instantiate(&path, settings);
 
         let mut control = self.control();
         if control.shut_down || control.latest_request != request {
@@ -210,13 +228,14 @@ impl Shared {
     fn instantiate(
         &self,
         path: &Path,
+        settings: settings::Map,
     ) -> Result<(AutoSplitter<BridgeTimer>, InterruptHandle), String> {
         let module = fs::read(path).map_err(|error| format!("couldn't read the file: {error}"))?;
         let runtime = Runtime::new(Config::default()).map_err(|error| error_chain(&error))?;
         let timer = BridgeTimer::new(self.link.clone(), self.events.clone());
         let auto_splitter = runtime
             .compile(&module)
-            .and_then(|compiled| compiled.instantiate(timer, None, None))
+            .and_then(|compiled| compiled.instantiate(timer, Some(settings), None))
             .map_err(|error| error_chain(&error))?;
         let interrupt = auto_splitter.interrupt_handle();
         Ok((auto_splitter, interrupt))
