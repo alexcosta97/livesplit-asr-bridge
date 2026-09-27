@@ -481,34 +481,46 @@ to the newest full release.
 
 ## 16. Backlog
 
-Tracked as GitHub issues once the repository exists. First version:
+Tracked as GitHub issues, created in this order.
 
-1. Load a local `.wasm` auto splitter (Open…, Reload, game association).
-2. Settings tab with drafts, Save and Revert to defaults, saved per game.
-3. WebSocket server with connection URL display, port setting and Restart
-   server.
-4. Forward all timer actions; drop and log commands when no timer is
-   connected.
-5. Tracked timer state (on-connect query, events, periodic re-sync, multiple
-   timers).
-6. Log tab with categories, on-disk logs with rotation and retention.
-7. Preferences tab (remember window size and position).
-8. Error surfacing with Show in log.
-9. Repository conventions and CI checks.
-10. Release pipeline (release candidates, approval, full releases, notes).
+Foundations:
+
+1. Project scaffold: Cargo project, egui window skeleton, version embedded at
+   build time, `license = "MIT OR Apache-2.0"`.
+2. CI checks on pull requests (section 13), added as required status checks in
+   the `main` ruleset.
+3. Release pipeline (section 14).
+
+First version:
+
+4. Runner: load a local `.wasm` into the upstream runtime, tick loop, Reload,
+   interrupt on unload.
+5. Game association (`splitters.toml`) and per-game settings storage with the
+   merge rules (section 7).
+6. Settings tab: drafts, Save, Revert to defaults, unsaved-changes prompts.
+7. WebSocket server: connection URLs, port setting, Restart server.
+8. Timer bridging: forward every timer action; drop and log commands when no
+   timer is connected.
+9. Tracked timer state: on-connect query, events, 2-second re-sync, multiple
+   timers.
+10. Log tab with categories, on-disk logs with daily rotation, 7-day retention
+    and size cap.
+11. Preferences tab: remember window size and position.
+12. Error surfacing with Show in log.
+13. First-launch experience and the "How do I connect?" link.
 
 Later:
 
-11. User documentation wiki.
-12. Browse and download auto splitters from LiveSplit's official list.
-13. Encrypted `wss://` connections (Safari support, and future Chrome
+14. User documentation wiki.
+15. Browse and download auto splitters from LiveSplit's official list.
+16. Encrypted `wss://` connections (Safari support, and future Chrome
     requirements).
-14. Code signing and notarisation for macOS and Windows.
-15. Support the original Windows LiveSplit by connecting to its Server
+17. Code signing and notarisation for macOS and Windows.
+18. Support the original Windows LiveSplit by connecting to its Server
     component.
-16. Detect when the connected timer is already running its own auto splitter,
+19. Detect when the connected timer is already running its own auto splitter,
     and stand down (needs research: the protocol does not expose this).
-17. Run legacy ASL scripts (very bottom of the backlog).
+20. Run legacy ASL scripts (very bottom of the backlog).
 
 ## 17. License
 
