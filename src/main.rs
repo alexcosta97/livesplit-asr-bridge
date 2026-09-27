@@ -1,5 +1,6 @@
 mod config;
 mod runner;
+mod server;
 mod ui;
 mod version;
 

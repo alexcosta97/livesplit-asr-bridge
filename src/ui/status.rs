@@ -1,8 +1,12 @@
-//! What the status column shows, worked out from the Runner's events.
+//! What the status column shows, worked out from the Runner's events, and
+//! the error card's error, from the Runner's and the Server's.
 
-use std::{path::Path, time::Duration};
+use std::{borrow::Cow, path::Path, time::Duration};
 
-use crate::runner::{RunnerEvent, file_name};
+use crate::{
+    runner::{RunnerEvent, file_name},
+    server::ServerEvent,
+};
 
 /// The error card's text for a crash.
 const CRASHED_MESSAGE: &str =
@@ -29,15 +33,30 @@ pub enum StatusError {
     Crashed,
     /// A file couldn't be loaded.
     LoadFailed { message: String },
+    /// The server couldn't listen because another program has the port. The
+    /// card offers Open Connection.
+    PortInUse { port: u16 },
+    /// The server couldn't listen for another reason. The card offers Open
+    /// Connection.
+    ServerFailed { message: String },
 }
 
 impl StatusError {
     /// The text of the error card.
-    pub fn message(&self) -> &str {
+    pub fn message(&self) -> Cow<'_, str> {
         match self {
-            Self::Crashed => CRASHED_MESSAGE,
-            Self::LoadFailed { message } => message,
+            Self::Crashed => CRASHED_MESSAGE.into(),
+            Self::LoadFailed { message } | Self::ServerFailed { message } => message.into(),
+            Self::PortInUse { port } => format!(
+                "Port {port} is already in use. Choose another port in Connection and restart the server."
+            )
+            .into(),
         }
+    }
+
+    /// Whether the Server reported this error, rather than the Runner.
+    pub fn is_server(&self) -> bool {
+        matches!(self, Self::PortInUse { .. } | Self::ServerFailed { .. })
     }
 }
 
@@ -63,10 +82,12 @@ impl Status {
                 self.crashed = false;
                 self.process = None;
                 self.tick_rate = Some(*tick_rate);
-                // Whatever the error described, a crash or an earlier failed
-                // load, is over: the auto splitter now running is the one
-                // just loaded.
-                self.error = None;
+                // Whatever an auto splitter error described, a crash or an
+                // earlier failed load, is over: the auto splitter now
+                // running is the one just loaded. A server error isn't.
+                if self.error.as_ref().is_some_and(|error| !error.is_server()) {
+                    self.error = None;
+                }
             }
             RunnerEvent::LoadFailed { path, error } => {
                 self.error = Some(StatusError::LoadFailed {
@@ -92,6 +113,29 @@ impl Status {
             RunnerEvent::AutoSplitterLog(_)
             | RunnerEvent::RuntimeLog { .. }
             | RunnerEvent::TimerAction(_) => {}
+        }
+    }
+
+    /// Updates the error with a Server event: a failure to listen replaces
+    /// it, and listening again clears a server error.
+    pub fn apply_server(&mut self, event: &ServerEvent) {
+        match event {
+            ServerEvent::Listening { .. } => {
+                if self.error.as_ref().is_some_and(StatusError::is_server) {
+                    self.error = None;
+                }
+            }
+            ServerEvent::BindFailed {
+                port, in_use: true, ..
+            } => self.error = Some(StatusError::PortInUse { port: *port }),
+            ServerEvent::BindFailed { port, error, .. } => {
+                self.error = Some(StatusError::ServerFailed {
+                    message: server_failed_message(*port, error),
+                });
+            }
+            ServerEvent::TimerConnected { .. }
+            | ServerEvent::TimerDisconnected { .. }
+            | ServerEvent::HandshakeFailed { .. } => {}
         }
     }
 
@@ -162,6 +206,27 @@ fn load_failed_message(path: &Path, error: &str, previous_running: bool) -> Stri
         message.push_str(" The previous auto splitter is still running.");
     }
     message
+}
+
+/// The error card's text for a server that couldn't listen, for a reason
+/// other than the port being in use.
+fn server_failed_message(port: u16, error: &str) -> String {
+    let reason = io_reason(error);
+    if reason.is_empty() {
+        format!("Couldn't start the server on port {port}.")
+    } else {
+        format!("Couldn't start the server on port {port}: {reason}.")
+    }
+}
+
+/// An I/O error's message without the OS error number, like "permission
+/// denied" from "Permission denied (os error 13)".
+fn io_reason(error: &str) -> String {
+    let error = match error.rfind(" (os error ") {
+        Some(start) if error.ends_with(')') => &error[..start],
+        _ => error,
+    };
+    short_reason(error)
 }
 
 /// The top-level message of an error the Runner reported. The Runner joins an
@@ -377,6 +442,111 @@ mod tests {
     fn a_successful_load_clears_the_error() {
         let status = status(&[loaded(50), crashed(), loaded(50)]);
         assert_eq!(status.error(), None);
+    }
+
+    fn port_in_use() -> ServerEvent {
+        ServerEvent::BindFailed {
+            port: 16834,
+            error: "Address already in use (os error 98)".to_owned(),
+            in_use: true,
+        }
+    }
+
+    fn listening() -> ServerEvent {
+        ServerEvent::Listening { port: 16834 }
+    }
+
+    #[test]
+    fn port_in_use_shows_its_error() {
+        let mut status = Status::default();
+        status.apply_server(&port_in_use());
+        let error = status.error().unwrap();
+        assert_eq!(error, &StatusError::PortInUse { port: 16834 });
+        assert!(error.is_server());
+        assert_eq!(
+            error.message(),
+            "Port 16834 is already in use. Choose another port in Connection and restart the server."
+        );
+    }
+
+    #[test]
+    fn other_bind_failures_give_a_short_reason() {
+        let mut status = Status::default();
+        status.apply_server(&ServerEvent::BindFailed {
+            port: 80,
+            error: "Permission denied (os error 13)".to_owned(),
+            in_use: false,
+        });
+        let error = status.error().unwrap();
+        assert!(error.is_server());
+        assert_eq!(
+            error.message(),
+            "Couldn't start the server on port 80: permission denied."
+        );
+    }
+
+    #[test]
+    fn loading_an_auto_splitter_keeps_a_server_error() {
+        let mut status = Status::default();
+        status.apply_server(&port_in_use());
+        status.apply(&loaded(50));
+        assert_eq!(
+            status.error(),
+            Some(&StatusError::PortInUse { port: 16834 })
+        );
+    }
+
+    #[test]
+    fn listening_clears_a_server_error() {
+        let mut status = Status::default();
+        status.apply_server(&port_in_use());
+        status.apply_server(&listening());
+        assert_eq!(status.error(), None);
+    }
+
+    #[test]
+    fn listening_keeps_an_auto_splitter_error() {
+        let mut status = status(&[loaded(50), crashed()]);
+        status.apply_server(&listening());
+        assert_eq!(status.error(), Some(&StatusError::Crashed));
+    }
+
+    #[test]
+    fn a_server_error_replaces_an_auto_splitter_error_and_back() {
+        let mut status = status(&[loaded(50), crashed()]);
+        status.apply_server(&port_in_use());
+        assert_eq!(
+            status.error(),
+            Some(&StatusError::PortInUse { port: 16834 })
+        );
+        status.apply(&crashed());
+        assert_eq!(status.error(), Some(&StatusError::Crashed));
+    }
+
+    #[test]
+    fn timer_events_leave_the_error_alone() {
+        let mut status = Status::default();
+        status.apply_server(&port_in_use());
+        let address = "192.168.1.42:53122".parse().unwrap();
+        status.apply_server(&ServerEvent::TimerConnected { id: 1, address });
+        status.apply_server(&ServerEvent::TimerDisconnected { id: 1, address });
+        assert_eq!(
+            status.error(),
+            Some(&StatusError::PortInUse { port: 16834 })
+        );
+    }
+
+    #[test]
+    fn io_reason_drops_the_os_error_number() {
+        assert_eq!(
+            io_reason("Permission denied (os error 13)"),
+            "permission denied"
+        );
+        assert_eq!(io_reason("couldn't start"), "couldn't start");
+        assert_eq!(
+            server_failed_message(1, ""),
+            "Couldn't start the server on port 1."
+        );
     }
 
     #[test]
