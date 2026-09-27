@@ -1330,7 +1330,7 @@ mod tests {
     fn app_with_lines() -> (tempfile::TempDir, BridgeApp) {
         let dir = tempfile::tempdir().unwrap();
         let config = Config::at(dir.path().join("config"));
-        let app = BridgeApp::with_config(&egui::Context::default(), Some(config));
+        let app = test_app(config);
         (dir, app)
     }
 
