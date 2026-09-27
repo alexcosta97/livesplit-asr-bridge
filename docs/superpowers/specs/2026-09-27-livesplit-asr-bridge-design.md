@@ -232,11 +232,11 @@ the right.
 ││ ws://100.101.7.3:16834  [Copy] ││                                            │
 ││ [?]                            ││                                            │
 │└────────────────────────────────┘│                                            │
-│┌ LAST ACTION ───────────────────┐│                                            │
-││ SPLIT                 19:31:01 ││                                            │
+│┌ LAST ACTION ─────────  19:31:01┐│                                            │
+││ SPLIT                          ││                                            │
 ││ Los Santos — Gym Moves         ││                                            │
-││ START                 19:02:44 ││                                            │
-││ RESET                 19:02:40 ││                                            │
+││ 19:02:44  START                ││                                            │
+││ 19:02:40  RESET                ││                                            │
 │└────────────────────────────────┘│                                            │
 └──────────────────────────────────┴────────────────────────────────────────────┘
 ```
@@ -314,16 +314,20 @@ notifications.
 
 **Last action card:**
 
-- The latest timer action in large type, with its time: START, SPLIT (with
+- The latest timer action in large type, with its time on the card's label
+  line: START, SPLIT (with
   the segment name only when the connected timer provides it; the app never
   makes up a name such as "Split 12"), SKIP SPLIT, UNDO SPLIT, RESET, GAME TIME
   (for example "GAME TIME 1:23:45.600"), PAUSE GAME TIME or RESUME GAME TIME.
-- The 2 previous actions below it, as faint lines. This is only the recent
-  history of this session; it is not stored.
+- The 2 previous actions below it, as faint lines that start with their time
+  ("19:02:44  START"), in the wide and compact states alike. This is only the
+  recent history of this session; it is not stored.
+- While it shows an action, the card has an orange left edge. Its background
+  flashes a faint orange for about 300 ms when an action arrives.
 - Auto splitters often set the game time on every tick. A GAME TIME right
   after another GAME TIME replaces it rather than adding a line, so the other
   actions stay on the card. The card flashes only for the first one.
-- An action taken while no timer is connected is still shown, with a faint
+- An action taken while no timer is connected is still shown, with an amber
   "Not sent: no timer connected" note, since it was dropped (section 5.1). It
   tells the user the auto splitter works and the problem is the connection.
 - Custom variables (`setCustomVariable`) are logged but not shown here.
@@ -350,9 +354,11 @@ notifications.
 ││ 1 timer · LiveSplit One          ││
 ││ Addresses: Connection tab [?]    ││
 │└──────────────────────────────────┘│
-│┌ LAST ACTION ─────────────────────┐│
-││ SPLIT                  19:31:01  ││
+│┌ LAST ACTION ───────────  19:31:01┐│
+││ SPLIT                            ││
 ││ Los Santos — Gym Moves           ││
+││ 19:02:44  START                  ││
+││ 19:02:40  RESET                  ││
 │└──────────────────────────────────┘│
 └────────────────────────────────────┘
 ```
