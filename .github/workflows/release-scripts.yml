@@ -27,3 +27,13 @@ jobs:
       - uses: jdx/mise-action@v4
       - run: shellcheck scripts/*.sh scripts/release/*.sh
       - run: scripts/release/test-release-scripts.sh
+
+  # Builds and packages every target the way a release does, so packaging
+  # changes (such as macOS signing) are checked before they reach a release.
+  package:
+    name: package
+    uses: ./.github/workflows/build.yml
+    with:
+      version: 0.0.0-dev
+      ref: ${{ github.event.pull_request.head.sha }}
+      artifact-name: package-test
