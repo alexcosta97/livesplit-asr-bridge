@@ -1,4 +1,9 @@
-# LiveSplit One ASR Bridge — ALTERNATIVE look: "like LiveSplit One"
+# LiveSplit One ASR Bridge — ALTERNATIVE look: "like LiveSplit One" (REJECTED)
+
+> **Rejected on 2026-09-27.** The owner prefers the approved style in `design-system.md`.
+> This exploration is also inaccurate: the extraction crawled one.livesplit.org in light mode,
+> but LiveSplit One is dark by default (its light values only apply under
+> `prefers-color-scheme: light`). Do not use this file for new designs.
 
 Exploration only. The approved design is `design-system.md` (speedrun / stream deck). This file
 keeps EVERYTHING from `design-system.md` (product context, approach-A layout, compact state,
