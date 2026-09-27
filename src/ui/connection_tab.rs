@@ -1,7 +1,7 @@
 //! The Connection tab: the server's port, the connected timers and how to
 //! connect.
 
-use eframe::egui::{RichText, ScrollArea, Ui};
+use eframe::egui::{Align, RichText, ScrollArea, Ui, style::ScrollAnimation};
 
 use super::{
     components::{self, PortNote},
@@ -15,10 +15,13 @@ const SECTION_GAP: f32 = 32.0;
 
 /// The Connection tab's own state: the port being edited, and the port the
 /// server was last started with. The app saves that port in `app.toml` when
-/// Restart server is pressed.
+/// Restart server is pressed. It also holds whether How to connect is
+/// collapsed, and whether the tab scrolls to it the next time it is shown.
 pub struct ConnectionTab {
     port_text: String,
     applied_port: u16,
+    steps_collapsed: bool,
+    scroll_to_steps: bool,
 }
 
 impl ConnectionTab {
@@ -27,7 +30,17 @@ impl ConnectionTab {
         Self {
             port_text: port.to_string(),
             applied_port: port,
+            steps_collapsed: false,
+            scroll_to_steps: false,
         }
+    }
+
+    /// Opens the tab at How to connect, expanded, the next time it is
+    /// shown: for "How do I connect?", the Timer card's `?` and the first
+    /// launch (spec §6.2, §6.9).
+    pub fn show_steps(&mut self) {
+        self.steps_collapsed = false;
+        self.scroll_to_steps = true;
     }
 
     /// The port in the field, if it is one: 1 to 65535.
@@ -92,7 +105,15 @@ impl ConnectionTab {
             }
 
             ui.add_space(SECTION_GAP);
-            components::how_to_connect(ui, urls, status.listening_port().is_some());
+            // The steps can be collapsed only while a timer is connected.
+            let collapsed = (!status.timers().is_empty()).then_some(&mut self.steps_collapsed);
+            let steps =
+                components::how_to_connect(ui, urls, status.listening_port().is_some(), collapsed);
+            if std::mem::take(&mut self.scroll_to_steps) {
+                // The tab has just opened, so it starts there rather than
+                // scrolling.
+                steps.scroll_to_me_animation(Some(Align::Min), ScrollAnimation::none());
+            }
         });
         restart
     }
@@ -100,7 +121,10 @@ impl ConnectionTab {
 
 #[cfg(test)]
 mod tests {
+    use eframe::egui::{self, Context, RawInput, Rect, vec2};
+
     use super::*;
+    use crate::server::ServerEvent;
 
     fn tab(text: &str) -> ConnectionTab {
         let mut tab = ConnectionTab::new(16834);
@@ -141,5 +165,107 @@ mod tests {
         assert_eq!(tab.apply_port(), 16834);
         assert_eq!(tab.port_text, "16834");
         assert_eq!(tab.port_note(), PortNote::Applied);
+    }
+
+    /// The server's status: listening, with `timers` timers connected.
+    fn listening(timers: u64) -> ServerStatus {
+        let mut status = ServerStatus::default();
+        status.apply(&ServerEvent::Listening { port: 16834 });
+        for id in 0..timers {
+            status.apply(&ServerEvent::TimerConnected {
+                id,
+                address: ([192, 168, 1, 42], 53122).into(),
+            });
+        }
+        status
+    }
+
+    /// Draws the tab in a window `height` tall, returning the labels on
+    /// screen.
+    fn draw(
+        ctx: &Context,
+        tab: &mut ConnectionTab,
+        status: &ServerStatus,
+        height: f32,
+    ) -> Vec<String> {
+        theme::install(ctx);
+        ctx.enable_accesskit();
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, vec2(500.0, height));
+        let input = RawInput {
+            screen_rect: Some(screen),
+            ..RawInput::default()
+        };
+        let urls = [(Network::Lan, "ws://192.168.1.20:16834".to_owned())];
+        let mut output = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| tab.show(ui, status, &urls));
+        });
+        // Nothing draws the frame, so its textures are dropped.
+        output.textures_delta.clear();
+        output
+            .platform_output
+            .accesskit_update
+            .map(|update| update.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, node)| {
+                node.bounds()
+                    .is_some_and(|bounds| bounds.y0 < f64::from(height) && bounds.y1 > 0.0)
+            })
+            .filter_map(|(_, node)| node.label().or(node.value()).map(str::to_owned))
+            .collect()
+    }
+
+    #[test]
+    fn show_steps_scrolls_to_how_to_connect() {
+        let ctx = Context::default();
+        let status = listening(0);
+        let mut tab = ConnectionTab::new(16834);
+        let on_screen = draw(&ctx, &mut tab, &status, 160.0);
+        assert!(
+            !on_screen.iter().any(|text| text == "HOW TO CONNECT"),
+            "{on_screen:?}"
+        );
+
+        tab.show_steps();
+        // The scroll area reaches its target over the next frames.
+        for _ in 0..3 {
+            draw(&ctx, &mut tab, &status, 160.0);
+        }
+        let on_screen = draw(&ctx, &mut tab, &status, 160.0);
+        assert!(
+            on_screen.iter().any(|text| text == "HOW TO CONNECT"),
+            "{on_screen:?}"
+        );
+    }
+
+    #[test]
+    fn the_steps_collapse_only_while_a_timer_is_connected() {
+        let ctx = Context::default();
+        let mut tab = ConnectionTab::new(16834);
+        let on_screen = draw(&ctx, &mut tab, &listening(0), 2000.0);
+        assert!(
+            !on_screen.iter().any(|text| text == "Hide steps"),
+            "{on_screen:?}"
+        );
+
+        let on_screen = draw(&ctx, &mut tab, &listening(1), 2000.0);
+        assert!(
+            on_screen.iter().any(|text| text == "Hide steps"),
+            "{on_screen:?}"
+        );
+        assert!(on_screen.iter().any(|text| text == "Copy an address"));
+
+        tab.steps_collapsed = true;
+        let on_screen = draw(&ctx, &mut tab, &listening(1), 2000.0);
+        assert!(
+            on_screen.iter().any(|text| text == "Show steps"),
+            "{on_screen:?}"
+        );
+        assert!(!on_screen.iter().any(|text| text == "Copy an address"));
+
+        // Opening at the steps expands them.
+        tab.show_steps();
+        let on_screen = draw(&ctx, &mut tab, &listening(1), 2000.0);
+        assert!(on_screen.iter().any(|text| text == "Copy an address"));
     }
 }

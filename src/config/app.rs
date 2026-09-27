@@ -2,6 +2,7 @@
 //!
 //! ```toml
 //! port = 16834
+//! first_launch = false
 //!
 //! [log_filters]
 //! auto_splitter = true
@@ -29,6 +30,7 @@ use crate::logging::Filters;
 pub const DEFAULT_PORT: u16 = 16834;
 
 const PORT: &str = "port";
+const FIRST_LAUNCH: &str = "first_launch";
 const LOG_FILTERS: &str = "log_filters";
 const AUTO_SPLITTER: &str = "auto_splitter";
 const CONNECTION: &str = "connection";
@@ -91,6 +93,18 @@ impl AppSettings {
     pub fn set_port(&mut self, port: u16) {
         self.table
             .insert(PORT.to_owned(), Value::Integer(i64::from(port)));
+    }
+
+    /// Whether this is the app's first launch (spec §6.9): true until it
+    /// is saved as false.
+    pub fn first_launch(&self) -> bool {
+        self.table.get(FIRST_LAUNCH).and_then(Value::as_bool) != Some(false)
+    }
+
+    /// Notes that the app has been launched, to save.
+    pub fn set_launched(&mut self) {
+        self.table
+            .insert(FIRST_LAUNCH.to_owned(), Value::Boolean(false));
     }
 
     /// The Log tab's filters: the saved ones, or only errors if none are
@@ -252,6 +266,20 @@ mod tests {
         let saved = AppSettings::load(&config).unwrap();
         assert_eq!(saved.port(), 20000);
         assert_eq!(saved.table["later"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn it_is_the_first_launch_until_saved_otherwise() {
+        let (_dir, config) = config();
+        let mut settings = AppSettings::load(&config).unwrap();
+        assert!(settings.first_launch());
+        settings.set_launched();
+        settings.save(&config).unwrap();
+        assert_eq!(
+            fs::read_to_string(config.dir().join("app.toml")).unwrap(),
+            "first_launch = false\n"
+        );
+        assert!(!AppSettings::load(&config).unwrap().first_launch());
     }
 
     #[test]

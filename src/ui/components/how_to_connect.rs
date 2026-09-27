@@ -1,11 +1,16 @@
 //! How to connect: the setup steps, in the Connection tab.
 
 use eframe::egui::{
-    Align, Align2, Frame, Label, Layout, Margin, RichText, Sense, Stroke, TextFormat, Ui,
+    Align, Align2, Frame, Label, Layout, Margin, Response, RichText, Sense, Stroke, TextFormat, Ui,
     text::LayoutJob, vec2,
 };
 
-use super::{Width, address_row::address_row, section_label::section_label};
+use super::{
+    Width,
+    address_row::address_row,
+    button::{Button, ButtonSize},
+    section_label::section_label,
+};
 use crate::{server::Network, ui::theme};
 
 /// The diameter of a step's number.
@@ -18,11 +23,21 @@ const FONT_SIZE: f32 = 14.0;
 /// How to connect: three numbered steps, the first with every address and
 /// its Copy, and the note that LiveSplit One must run in a Chrome-based
 /// browser. `listening` is whether the server listens, to explain an empty
-/// address list. Collapsing, and opening at these steps, come with #15.
-pub fn how_to_connect(ui: &mut Ui, urls: &[(Network, String)], listening: bool) {
+/// address list. With `collapsed`, while a timer is connected, the section
+/// has Hide steps or Show steps, which collapses or expands it. Returns the
+/// section's response, to scroll to it.
+pub fn how_to_connect(
+    ui: &mut Ui,
+    urls: &[(Network, String)],
+    listening: bool,
+    collapsed: Option<&mut bool>,
+) -> Response {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 16.0;
-        section_label(ui, "How to connect");
+        let shown = header(ui, collapsed);
+        if !shown {
+            return;
+        }
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 18.0;
             step(ui, 1, |ui| {
@@ -63,7 +78,34 @@ pub fn how_to_connect(ui: &mut Ui, urls: &[(Network, String)], listening: bool) 
                 );
             });
         });
+    })
+    .response
+}
+
+/// The section label, with Hide steps or Show steps at the right when the
+/// section can be collapsed. Returns whether the steps are shown.
+fn header(ui: &mut Ui, collapsed: Option<&mut bool>) -> bool {
+    let Some(collapsed) = collapsed else {
+        section_label(ui, "How to connect");
+        return true;
+    };
+    ui.horizontal(|ui| {
+        section_label(ui, "How to connect");
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            let label = if *collapsed {
+                "Show steps"
+            } else {
+                "Hide steps"
+            };
+            if ui
+                .add(Button::secondary(label).size(ButtonSize::Xs))
+                .clicked()
+            {
+                *collapsed = !*collapsed;
+            }
+        });
     });
+    !*collapsed
 }
 
 /// A numbered step: the number in a circle, then its content.

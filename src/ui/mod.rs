@@ -165,6 +165,9 @@ pub struct BridgeApp {
     /// In the compact state, the tab view is shown instead of the status
     /// column, until ← Status.
     tab_view: bool,
+    /// On the first launch, until the first frame: a window that starts
+    /// compact shows the tab view (spec §6.9).
+    first_launch_view: bool,
     /// When Show details asked the window to widen, until it has, or the
     /// tab view is shown instead.
     widening: Option<Instant>,
@@ -214,6 +217,13 @@ impl BridgeApp {
             _ => AppSettings::default(),
         };
         let port = app_settings.port();
+        // With no configuration folder nothing is remembered, so every
+        // launch is the first.
+        let first_launch = match &loaded {
+            None => true,
+            Some(Ok(settings)) => settings.first_launch(),
+            Some(Err(_)) => false,
+        };
         let (server, server_events) = Server::new(port, wake.clone());
         // The auto splitter controls the timers connected to the Server.
         let (runner, events) = Runner::new(server.link(), wake);
@@ -229,7 +239,7 @@ impl BridgeApp {
             setting_game_time: false,
             addresses: server::network_addresses(),
             addresses_read: Instant::now(),
-            tab: Tab::Connection,
+            tab: Tab::Settings,
             connection_tab: ConnectionTab::new(port),
             logger: Logger::new(logging::standard_dir()),
             log_filters: app_settings.log_filters(),
@@ -237,6 +247,7 @@ impl BridgeApp {
             scroll_to_highlighted: false,
             error_entry: None,
             tab_view: false,
+            first_launch_view: false,
             widening: None,
             config,
             remember_window: app_settings.remember_window(),
@@ -266,7 +277,29 @@ impl BridgeApp {
             }
             Some(Ok(_)) => {}
         }
+        if first_launch {
+            app.first_launch();
+        }
         app
+    }
+
+    /// The first launch (spec §6.9): opens the Connection tab at the setup
+    /// steps, in the tab view if the window starts compact, and remembers
+    /// that the app has been launched.
+    fn first_launch(&mut self) {
+        self.tab = Tab::Connection;
+        self.connection_tab.show_steps();
+        self.first_launch_view = true;
+        self.app_settings.set_launched();
+        let Some(config) = self.config.clone() else {
+            return;
+        };
+        if let Err(error) = self.app_settings.save(&config) {
+            self.log(
+                Category::Error,
+                format!("Couldn't remember that the app was launched: {error}"),
+            );
+        }
     }
 
     /// Saves the port the server was restarted on in `app.toml`, so the
@@ -551,7 +584,9 @@ impl BridgeApp {
             components::game_card(ui, &self.status.game(), detail.as_deref(), width);
 
             let urls = self.server_status.urls(&self.addresses);
-            components::timer_card(ui, self.server_status.timer_state(), &urls, width);
+            if components::timer_card(ui, self.server_status.timer_state(), &urls, width) {
+                self.show_connection_steps(width);
+            }
 
             components::last_action_card(ui, &self.last_actions, width, Instant::now());
         });
@@ -564,6 +599,13 @@ impl BridgeApp {
         if width == Width::Compact {
             self.tab_view = true;
         }
+    }
+
+    /// "How do I connect?" and the Timer card's `?` (spec §6.2): open the
+    /// Connection tab at the setup steps.
+    fn show_connection_steps(&mut self, width: Width) {
+        self.connection_tab.show_steps();
+        self.open_tab(Tab::Connection, width);
     }
 
     /// Show in log (spec §9): opens the Log tab with the error's category
@@ -1131,7 +1173,11 @@ impl eframe::App for BridgeApp {
         let column = Frame::NONE
             .fill(theme::PANEL)
             .inner_margin(Margin::same(16));
+        let first_launch_view = std::mem::take(&mut self.first_launch_view);
         if ui.max_rect().width() < COMPACT_BELOW {
+            if first_launch_view {
+                self.tab_view = true;
+            }
             self.check_widening(ui.ctx(), Instant::now());
             if self.tab_view {
                 egui::CentralPanel::default()
@@ -1594,6 +1640,76 @@ mod tests {
         app.open_tab(Tab::Connection, Width::Compact);
         assert!(app.tab_view);
         assert_eq!(app.tab, Tab::Connection);
+    }
+
+    #[test]
+    fn the_first_launch_opens_the_connection_steps_and_later_ones_do_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::at(dir.path().join("config"));
+        let app = test_app(config.clone());
+        assert_eq!(app.tab, Tab::Connection);
+        assert!(app.first_launch_view);
+        assert!(!AppSettings::load(&config).unwrap().first_launch());
+
+        let app = test_app(config);
+        assert_eq!(app.tab, Tab::Settings);
+        assert!(!app.first_launch_view);
+    }
+
+    /// Draws one frame of the app in a window `width` wide.
+    fn draw_app(app: &mut BridgeApp, width: f32) {
+        let ctx = app.ctx.clone();
+        theme::install(&ctx);
+        let input = RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 600.0),
+            )),
+            ..RawInput::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            let mut frame = eframe::Frame::_new_kittest();
+            eframe::App::ui(app, ui, &mut frame);
+        });
+        // Nothing draws the frame, so its textures are dropped.
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn a_first_launch_in_a_compact_window_shows_the_tab_view() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = test_app(Config::at(dir.path().join("config")));
+        draw_app(&mut app, 400.0);
+        assert!(app.tab_view);
+        assert_eq!(app.tab, Tab::Connection);
+
+        // Only at the start: ← Status stays on the status column.
+        app.tab_view = false;
+        draw_app(&mut app, 400.0);
+        assert!(!app.tab_view);
+    }
+
+    #[test]
+    fn a_first_launch_in_a_wide_window_shows_no_tab_view_later() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = test_app(Config::at(dir.path().join("config")));
+        draw_app(&mut app, 800.0);
+        draw_app(&mut app, 400.0);
+        assert!(!app.tab_view);
+    }
+
+    #[test]
+    fn the_timer_card_opens_the_connection_steps() {
+        let (_dir, mut app) = app_with_lines();
+        app.tab = Tab::Log;
+        app.show_connection_steps(Width::Wide);
+        assert_eq!(app.tab, Tab::Connection);
+        assert!(!app.tab_view);
+
+        app.tab = Tab::Log;
+        app.show_connection_steps(Width::Compact);
+        assert_eq!(app.tab, Tab::Connection);
+        assert!(app.tab_view);
     }
 
     #[test]
