@@ -3,7 +3,12 @@
 
 use eframe::egui::{Label, RichText, Ui};
 
-use super::{button::Button, card::card, reload_hint, section_label::section_label};
+use super::{
+    button::{Button, ButtonSize},
+    card::card,
+    reload_hint,
+    section_label::section_label,
+};
 use crate::ui::theme;
 
 /// What was clicked on the Auto splitter card or the Splitter strip.
@@ -11,15 +16,22 @@ use crate::ui::theme;
 pub enum SplitterAction {
     Open,
     Reload,
+    /// Change the game the loaded auto splitter is for.
+    Change,
 }
 
-/// The Auto splitter card: the loaded file, or "NO AUTO SPLITTER" with help,
-/// then Open… and Reload. The game line and Change come with the game
-/// association (#7).
-pub fn splitter_card(ui: &mut Ui, loaded: Option<&str>) -> Option<SplitterAction> {
+/// The Auto splitter card: the loaded file and its game with Change, or "NO
+/// AUTO SPLITTER" with help, then Open… and Reload. `game` is the loaded auto
+/// splitter's game, if it has one.
+pub fn splitter_card(
+    ui: &mut Ui,
+    loaded: Option<&str>,
+    game: Option<&str>,
+) -> Option<SplitterAction> {
     card(ui, None, |ui| {
         section_label(ui, "Auto splitter");
         ui.add_space(12.0);
+        let mut change = false;
         match loaded {
             Some(file_name) => {
                 ui.add(
@@ -30,6 +42,17 @@ pub fn splitter_card(ui: &mut Ui, loaded: Option<&str>) -> Option<SplitterAction
                     )
                     .truncate(),
                 );
+                ui.add_space(4.0);
+                let (text, color) = match game {
+                    Some(game) => (game, theme::TEXT_SECONDARY),
+                    None => ("No game", theme::TEXT_MUTED),
+                };
+                ui.add(Label::new(RichText::new(text).font(theme::body(13.0)).color(color)).wrap());
+                ui.add_space(8.0);
+                change = ui
+                    .add(Button::secondary("Change").size(ButtonSize::Xs))
+                    .on_hover_text("Choose which game this auto splitter is for")
+                    .clicked();
             }
             None => {
                 ui.label(
@@ -50,7 +73,9 @@ pub fn splitter_card(ui: &mut Ui, loaded: Option<&str>) -> Option<SplitterAction
             ui.spacing_mut().item_spacing.x = 8.0;
             let open = ui.add(Button::primary("Open…"));
             let reload = reload_hint(ui.add(Button::secondary("Reload").enabled(loaded.is_some())));
-            if open.clicked() {
+            if change {
+                Some(SplitterAction::Change)
+            } else if open.clicked() {
                 Some(SplitterAction::Open)
             } else if reload.clicked() {
                 Some(SplitterAction::Reload)

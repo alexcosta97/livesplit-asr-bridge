@@ -10,7 +10,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use livesplit_auto_splitting::{TimerState, time};
+use livesplit_auto_splitting::{
+    TimerState,
+    settings::{Map, Value},
+    time,
+};
 
 use super::*;
 
@@ -19,6 +23,7 @@ const SLOW: &str = include_str!("test_auto_splitters/slow.wat");
 const HANG: &str = include_str!("test_auto_splitters/hang.wat");
 const TRAP: &str = include_str!("test_auto_splitters/trap.wat");
 const ATTACH: &str = include_str!("test_auto_splitters/attach.wat");
+const SETTING: &str = include_str!("test_auto_splitters/setting.wat");
 
 /// Long enough for a slow CI machine to compile an auto splitter.
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -97,7 +102,7 @@ impl Harness {
     }
 
     fn load(&self, path: &Path) -> Vec<RunnerEvent> {
-        self.runner.load(path.to_owned());
+        self.runner.load(path.to_owned(), Map::new());
         self.wait_for(|event| matches!(event, RunnerEvent::Loaded { path: p, .. } if p == path))
     }
 
@@ -252,7 +257,7 @@ fn reload_picks_up_a_rebuilt_file() {
     harness.wait_for(|event| *event == log("version 1"));
 
     write_wasm(&path, &logging("version 2"));
-    harness.runner.reload();
+    harness.runner.reload(Map::new());
     harness.wait_for(|event| matches!(event, RunnerEvent::Loaded { .. }));
     harness.wait_for(|event| *event == log("version 2"));
 }
@@ -266,7 +271,7 @@ fn a_file_that_fails_to_load_leaves_the_previous_auto_splitter_running() {
 
     let broken = harness.dir.path().join("broken.wasm");
     fs::write(&broken, b"not a wasm file").unwrap();
-    harness.runner.load(broken.clone());
+    harness.runner.load(broken.clone(), Map::new());
     harness
         .wait_for(|event| matches!(event, RunnerEvent::LoadFailed { path, .. } if *path == broken));
 
@@ -278,11 +283,11 @@ fn a_file_that_fails_to_load_leaves_the_previous_auto_splitter_running() {
 fn a_missing_file_or_update_function_fails_to_load() {
     let harness = Harness::new();
     let missing = harness.dir.path().join("missing.wasm");
-    harness.runner.load(missing);
+    harness.runner.load(missing, Map::new());
     harness.wait_for(|event| matches!(event, RunnerEvent::LoadFailed { .. }));
 
     let no_update = harness.write("no-update.wasm", r#"(module (memory (export "memory") 1))"#);
-    harness.runner.load(no_update);
+    harness.runner.load(no_update, Map::new());
     let events = harness.wait_for(|event| matches!(event, RunnerEvent::LoadFailed { .. }));
     let RunnerEvent::LoadFailed { error, .. } = events.last().unwrap() else {
         unreachable!()
@@ -300,7 +305,7 @@ fn reload_interrupts_a_hung_auto_splitter() {
     std::thread::sleep(Duration::from_millis(200));
 
     write_wasm(&path, &logging("unstuck"));
-    harness.runner.reload();
+    harness.runner.reload(Map::new());
     let events = harness.wait_for(|event| *event == log("unstuck"));
     assert!(!events.iter().any(is_crash), "{events:#?}");
 }
@@ -352,7 +357,7 @@ fn a_crash_is_reported_and_reload_starts_it_again() {
     assert_eq!(harness.runner.loaded_path(), Some(path.clone()));
 
     write_wasm(&path, &logging("fixed"));
-    harness.runner.reload();
+    harness.runner.reload(Map::new());
     harness.wait_for(|event| *event == log("fixed"));
 }
 
@@ -467,7 +472,7 @@ fn state_queries_go_through_the_timer_link() {
     let path = dir.path().join("state-aware.wasm");
     write_wasm(&path, include_str!("test_auto_splitters/state_aware.wat"));
     let (runner, events) = Runner::new(Arc::new(StateTrackingLink::default()), || {});
-    runner.load(path);
+    runner.load(path, Map::new());
 
     assert_eq!(
         actions_until_reset(&events),
@@ -489,7 +494,7 @@ fn with_no_timer_an_auto_splitter_that_checks_the_state_only_tries_to_start() {
     let path = dir.path().join("state-aware.wasm");
     write_wasm(&path, include_str!("test_auto_splitters/state_aware.wat"));
     let (runner, events) = Runner::new(Arc::new(NoTimer), || {});
-    runner.load(path);
+    runner.load(path, Map::new());
 
     let deadline = Instant::now() + Duration::from_millis(500);
     let mut actions = Vec::new();
@@ -502,5 +507,41 @@ fn with_no_timer_an_auto_splitter_that_checks_the_state_only_tries_to_start() {
     assert!(
         actions.iter().all(|action| *action == TimerAction::Start),
         "{actions:?}"
+    );
+}
+
+fn gym(on: bool) -> Map {
+    let mut settings = Map::new();
+    settings.insert("gym".into(), Value::Bool(on));
+    settings
+}
+
+#[test]
+fn starts_with_the_settings_it_is_given() {
+    let harness = Harness::new();
+    let path = harness.write("setting.wasm", SETTING);
+    harness.runner.load(path.clone(), gym(true));
+    harness.wait_for(|event| *event == log("on"));
+
+    harness.runner.reload(Map::new());
+    harness.wait_for(|event| matches!(event, RunnerEvent::Loaded { .. }));
+    harness.wait_for(|event| *event == log("unset"));
+}
+
+#[test]
+fn new_settings_reach_the_running_auto_splitter() {
+    let harness = Harness::new();
+    let path = harness.write("setting.wasm", SETTING);
+    harness.runner.load(path, gym(false));
+    harness.wait_for(|event| *event == log("off"));
+
+    harness.runner.set_settings(gym(true));
+    let events = harness.wait_for(|event| *event == log("on"));
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            RunnerEvent::Loaded { .. } | RunnerEvent::GameDetached
+        )),
+        "{events:#?}"
     );
 }
