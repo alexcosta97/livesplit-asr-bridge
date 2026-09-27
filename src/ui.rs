@@ -30,7 +30,6 @@ impl eframe::App for BridgeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::version::VERSION;
 
     #[test]
     fn title_names_livesplit_one() {
