@@ -4,6 +4,7 @@
 //! ```text
 //! <config folder>/
 //!   app.toml            the app's own settings, such as the server port
+//!                       and the window's size and position
 //!   splitters.toml      maps each known .wasm path to a game
 //!   games/
 //!     <game-slug>.toml  display name and saved auto splitter settings
@@ -28,7 +29,7 @@ use std::{
 
 use crate::ui::APP_NAME;
 
-pub use app::AppSettings;
+pub use app::{AppSettings, WindowGeometry};
 pub use games::{Game, GameSummary};
 pub use names::{name_from_file, slug};
 #[expect(
@@ -62,10 +63,6 @@ impl Config {
     }
 
     /// The configuration folder.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the Preferences tab shows it (#13)")
-    )]
     pub fn dir(&self) -> &Path {
         &self.dir
     }

@@ -15,8 +15,16 @@ fn main() -> eframe::Result {
     // running window with its entry.
     let viewport = egui::ViewportBuilder::default()
         .with_app_id(ui::APP_NAME)
-        .with_title(ui::window_title())
-        .with_inner_size([800.0, 600.0]);
+        .with_title(ui::window_title());
+    // `app.toml` is read before the window opens, since it says where the
+    // window goes.
+    let config = config::Config::standard();
+    let loaded = config.as_ref().map(config::AppSettings::load);
+    let settings = match &loaded {
+        Some(Ok(settings)) => settings.clone(),
+        _ => config::AppSettings::default(),
+    };
+    let viewport = ui::window_viewport(viewport, &settings);
     let options = eframe::NativeOptions {
         viewport: window_icon(viewport),
         ..Default::default()
@@ -26,7 +34,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             ui::install_theme(&cc.egui_ctx);
-            Ok(Box::new(ui::BridgeApp::new(&cc.egui_ctx)))
+            Ok(Box::new(ui::BridgeApp::new(&cc.egui_ctx, config, loaded)))
         }),
     )
 }
