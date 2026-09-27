@@ -21,8 +21,8 @@ use crate::{
 /// The Timer card: connected with the timer count, not connected with the
 /// addresses to connect to (all of them when wide, the first when compact),
 /// or server stopped. Not connected, it has "How do I connect?"; connected
-/// or not, a `?`, at the card's right edge when connected. Returns whether
-/// either was clicked, to open the setup steps.
+/// and wide, "Addresses: Connection tab" with a `?` at the card's right
+/// edge. Returns whether either was clicked, to open the setup steps.
 pub fn timer_card(
     ui: &mut Ui,
     state: TimerState,
@@ -42,19 +42,24 @@ pub fn timer_card(
                 status_word(ui, Some(Dot::Filled), "Connected", theme::STATUS_OK, width);
                 ui.add_space(4.0);
                 detail(ui, &timer_count(timers));
-                ui.add_space(12.0);
-                // The `?` at the card's right edge, the text centred on it.
-                ui.allocate_ui_with_layout(
-                    vec2(ui.available_width(), ButtonSize::Xs.height()),
-                    Layout::left_to_right(Align::Center),
-                    |ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        detail(ui, "Addresses: Connection tab");
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            steps |= help_button(ui);
-                        });
-                    },
-                );
+                if width == Width::Wide {
+                    ui.add_space(12.0);
+                    // The `?` at the card's right edge, the text centred on it.
+                    ui.allocate_ui_with_layout(
+                        vec2(ui.available_width(), ButtonSize::Xs.height()),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            detail(ui, "Addresses: Connection tab");
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                steps |= ui
+                                    .add(Button::secondary("?").size(ButtonSize::Xs))
+                                    .on_hover_text("How to connect")
+                                    .clicked();
+                            });
+                        },
+                    );
+                }
             }
             TimerState::NotConnected => {
                 status_word(
@@ -86,8 +91,6 @@ pub fn timer_card(
                     }
                     address_row(ui, network.label(), url, width);
                 }
-                ui.add_space(8.0);
-                steps |= help_button(ui);
             }
             TimerState::ServerStopped => {
                 status_word(
@@ -104,13 +107,6 @@ pub fn timer_card(
         steps
     })
     .inner
-}
-
-/// The `?` that opens the setup steps. Returns whether it was clicked.
-fn help_button(ui: &mut Ui) -> bool {
-    ui.add(Button::secondary("?").size(ButtonSize::Xs))
-        .on_hover_text("How to connect")
-        .clicked()
 }
 
 /// A mono detail line, like the timer count.
@@ -176,25 +172,27 @@ mod tests {
     }
 
     #[test]
-    fn not_connected_has_the_link_and_the_question_mark() {
+    fn not_connected_has_the_link_and_no_question_mark() {
         for width in [Width::Wide, Width::Compact] {
             assert_eq!(
                 controls(TimerState::NotConnected, width),
-                ["button: ?", "button: Copy", "link: How do I connect?"],
+                ["button: Copy", "link: How do I connect?"],
                 "{width:?}"
             );
         }
     }
 
     #[test]
-    fn connected_has_only_the_question_mark() {
-        for width in [Width::Wide, Width::Compact] {
-            assert_eq!(
-                controls(TimerState::Connected { timers: 1 }, width),
-                ["button: ?"],
-                "{width:?}"
-            );
-        }
+    fn connected_wide_has_only_the_question_mark() {
+        assert_eq!(
+            controls(TimerState::Connected { timers: 1 }, Width::Wide),
+            ["button: ?"]
+        );
+    }
+
+    #[test]
+    fn connected_compact_has_no_controls() {
+        assert!(controls(TimerState::Connected { timers: 1 }, Width::Compact).is_empty());
     }
 
     #[test]
