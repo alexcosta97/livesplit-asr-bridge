@@ -7,10 +7,10 @@ development environment and the conventions every change follows.
 
 - All work is tracked in the
   [issues](https://github.com/alexcosta97/livesplit-asr-bridge/issues), and
-  every pull request must link one. If there's no issue for what you want to
-  do, open one first with the matching template: **Task** for a well-defined
-  piece of work, **Feature request** for a new idea, or **Bug report** for
-  something that doesn't work.
+  every pull request must link one, except Renovate's dependency updates. If
+  there's no issue for what you want to do, open one first with the matching
+  template: **Task** for a well-defined piece of work, **Feature request** for
+  a new idea, or **Bug report** for something that doesn't work.
 - For anything beyond a small fix, comment on the issue before starting, so
   the approach can be agreed first.
 - The design is described in
@@ -115,6 +115,22 @@ example `feat/port-setting` or `fix/reconnect-state`.
   - all commits are signed.
 - **Merging:** only maintainers can merge into `main`, using squash merge.
   The branch is deleted after merging.
+
+## Dependency updates
+
+[Renovate](https://docs.renovatebot.com/) opens pull requests every week to
+update dependencies, configured in `renovate.json`. Their titles follow the
+conventions above, and the type decides whether the update is released:
+
+- `fix(deps)`: crates that ship in the app, including the LiveSplit crates and
+  `Cargo.lock` refreshes. These produce a release.
+- `ci(deps)`: GitHub Actions. No release.
+- `chore(deps)`: tools pinned in `mise.toml` and development-only crates. No
+  release.
+
+Renovate's pull requests are the one exception to the linked-issue rule. They
+go through the same checks and are merged by a maintainer like any other pull
+request. The Dependency Dashboard issue lists pending updates.
 
 ## Releases
 

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits", "schedule:weekly"],
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "platformCommit": "enabled",
+  "automerge": false,
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "lockFileMaintenance": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "Crates that ship in the app: fix, so the update is released",
+      "matchManagers": ["cargo"],
+      "matchDepTypes": ["dependencies", "workspace.dependencies"],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "Development-only crates: no release",
+      "matchManagers": ["cargo"],
+      "matchDepTypes": ["dev-dependencies", "build-dependencies"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "GitHub Actions: no release",
+      "matchManagers": ["github-actions"],
+      "semanticCommitType": "ci"
+    },
+    {
+      "description": "Tools pinned in mise.toml: no release",
+      "matchManagers": ["mise"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "Cargo.lock refreshes change what ships: fix, so the update is released",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "The LiveSplit crates, by git rev: grouped, labelled and prioritised",
+      "matchManagers": ["cargo"],
+      "matchDepNames": ["livesplit-*"],
+      "groupName": "LiveSplit crates",
+      "addLabels": ["livesplit"],
+      "prPriority": 10,
+      "semanticCommitType": "fix"
+    }
+  ]
+}
