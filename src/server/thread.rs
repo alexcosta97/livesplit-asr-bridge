@@ -2,6 +2,7 @@
 //! and runs one task per connection.
 
 use std::{
+    collections::VecDeque,
     io,
     net::{Ipv4Addr, SocketAddr},
     sync::{Arc, atomic::Ordering},
@@ -23,7 +24,10 @@ use tokio_tungstenite::{
     },
 };
 
-use super::{Connection, ServerEvent, Shared};
+use super::{
+    Connection, Outgoing, ServerEvent, Shared,
+    protocol::{self, Received},
+};
 
 /// How long a new connection has to complete the WebSocket handshake, so a
 /// connection that never does doesn't linger.
@@ -34,6 +38,9 @@ const CLOSE_TIMEOUT: Duration = Duration::from_millis(500);
 /// How long to wait after a failed accept, for example when the process is
 /// out of file descriptors, so the loop doesn't spin.
 const ACCEPT_RETRY: Duration = Duration::from_millis(100);
+/// How many sent commands are remembered while waiting for their answers, so
+/// a timer that never answers can't use unbounded memory.
+const MAX_UNANSWERED: usize = 1_000;
 
 /// Instructions for the Server thread.
 pub(super) enum Command {
@@ -128,7 +135,7 @@ async fn accept(listener: Option<&TcpListener>) -> io::Result<(TcpStream, Socket
 /// What woke a connection up.
 enum Step {
     Received(Option<Result<Message, tokio_tungstenite::tungstenite::Error>>),
-    Outgoing(Message),
+    Outgoing(Outgoing),
     Close,
 }
 
@@ -163,7 +170,10 @@ async fn connection(
     };
 
     let (outgoing, mut queue) = mpsc::unbounded_channel();
-    let _registration = Registration::new(&shared, address, outgoing);
+    let registration = Registration::new(&shared, address, outgoing);
+    // The names of the commands sent and not answered yet, oldest first.
+    // LiveSplit One answers each command, in order.
+    let mut unanswered = VecDeque::new();
 
     loop {
         let step = tokio::select! {
@@ -172,14 +182,21 @@ async fn connection(
             _ = closed.changed() => Step::Close,
         };
         match step {
-            // Timers' messages are handled from #11. Pings are answered by
-            // tungstenite itself, and a Close from the timer ends the stream.
+            Step::Received(Some(Ok(Message::Text(text)))) => {
+                received(&text, &mut unanswered, &registration);
+            }
+            // Other messages are ignored. Pings are answered by tungstenite
+            // itself, and a Close from the timer ends the stream.
             Step::Received(Some(Ok(_))) => {}
             Step::Received(Some(Err(_)) | None) => return,
-            Step::Outgoing(message) => {
-                if socket.send(message).await.is_err() {
+            Step::Outgoing(Outgoing { text, command }) => {
+                if socket.send(Message::text(text)).await.is_err() {
                     return;
                 }
+                if unanswered.len() == MAX_UNANSWERED {
+                    unanswered.pop_front();
+                }
+                unanswered.push_back(command);
             }
             Step::Close => {
                 let frame = CloseFrame {
@@ -191,6 +208,31 @@ async fn connection(
                 return;
             }
         }
+    }
+}
+
+/// Handles a text message from a timer: an answer to the oldest unanswered
+/// command, or something else, like an event, which is handled from #11. A
+/// rejected command is reported, but isn't an error (spec §9).
+fn received(text: &str, unanswered: &mut VecDeque<&'static str>, registration: &Registration) {
+    match protocol::parse(text) {
+        Received::Success => {
+            unanswered.pop_front();
+        }
+        Received::Error { code, message } => {
+            let command = unanswered.pop_front().map(str::to_owned);
+            registration
+                .shared
+                .events
+                .send(ServerEvent::CommandRejected {
+                    id: registration.id,
+                    address: registration.address,
+                    command,
+                    code,
+                    message,
+                });
+        }
+        Received::Other => {}
     }
 }
 
@@ -206,7 +248,7 @@ impl Registration {
     fn new(
         shared: &Arc<Shared>,
         address: SocketAddr,
-        outgoing: mpsc::UnboundedSender<Message>,
+        outgoing: mpsc::UnboundedSender<Outgoing>,
     ) -> Self {
         let id = shared.next_id.fetch_add(1, Ordering::Relaxed);
         shared.connections().push(Connection { id, outgoing });

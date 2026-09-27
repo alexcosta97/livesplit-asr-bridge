@@ -127,7 +127,8 @@ for what egui can render.
 
 ### Motion
 
-Minimal: the Last action card flashes its orange edge for ~300 ms when a new action arrives.
+Minimal: the Last action card's background flashes a faint orange for ~300 ms when a new action arrives
+(its orange edge stays while it shows an action).
 The Copy confirmation. Nothing else animates.
 
 ## Content to use in mockups (realistic GTA SA DE data)
@@ -169,7 +170,8 @@ Every mockup must stay consistent with these rules.
   UNDO SPLIT, RESET, GAME TIME 1:23:45.600, PAUSE GAME TIME, RESUME GAME TIME. SPLIT shows
   the segment name only when the timer provides it; otherwise just "SPLIT" (never an
   invented name like "Split 12"). An action taken with no
-  timer connected is still shown, with a faint mono note "Not sent: no timer connected". Custom
+  timer connected is still shown, with an amber mono note "Not sent: no timer connected". A GAME
+  TIME right after another replaces it (auto splitters set it every tick). Custom
   variables are NOT shown here (log only). Empty state: "NO ACTIONS YET" muted, "Actions appear
   here when the auto splitter starts, splits or resets."
 - **Error card**: does NOT exist when there is no error (no placeholder, no empty space).
@@ -199,9 +201,13 @@ Every mockup must stay consistent with these rules.
   many splitters use it), buttons **Use this game** (primary) and **Cancel**. When changing,
   the title is "Change game" and the current game is selected.
 - **Unsaved settings** (Reload / Open another file / Change game / closing the app with unsaved
-  settings): "Save your settings changes?", text naming the change count, buttons **Save and
-  reload** (primary; **Save** when opening another file, changing the game or closing the
-  app), **Discard**, **Cancel**.
+  settings): "Save your settings changes?", body text in primary text colour naming the change
+  count, the game and what discards them ("You changed 3 settings for GTA San Andreas.
+  Reloading the auto splitter without saving discards them."; "Opening another auto
+  splitter", "Changing the game", "Closing the app" for the other triggers), buttons aligned
+  right: **Cancel**, **Discard**, **Save and reload** (primary; **Save** when opening another
+  file, changing the game or closing the app). Opening another file asks before the file
+  picker.
 
 ### Tabs
 - **Settings:** fixed toolbar (Save, Revert to defaults, status text: "● Unsaved changes"

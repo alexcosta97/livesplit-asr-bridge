@@ -48,6 +48,8 @@ pub const LOG_CONNECTION: Color32 = Color32::from_rgb(0x7D, 0xD3, 0xFC);
 pub const TINT_OK: Color32 = Color32::from_rgb(0x0C, 0x18, 0x13);
 /// The error card's background: a faint tint of red.
 pub const TINT_ERROR: Color32 = Color32::from_rgb(0x1A, 0x0E, 0x0F);
+/// The Last action card's flash: a faint tint of the accent.
+pub const TINT_ACCENT: Color32 = Color32::from_rgb(0x1A, 0x0F, 0x0B);
 
 /// The corner radius of cards, buttons and inputs.
 pub const RADIUS: u8 = 4;

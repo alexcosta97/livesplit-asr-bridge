@@ -4,6 +4,7 @@
 mod components;
 mod connection_tab;
 mod folder;
+mod last_action;
 mod preferences_tab;
 mod server_status;
 mod settings;
@@ -15,7 +16,7 @@ use std::{
     collections::HashMap,
     fs,
     path::PathBuf,
-    sync::{Arc, mpsc::Receiver},
+    sync::mpsc::Receiver,
     time::{Duration, Instant},
 };
 
@@ -26,7 +27,7 @@ use toml::Value;
 use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters, WindowGeometry},
     logging::{self, Category, Filters, Logger},
-    runner::{NoTimer, Runner, RunnerEvent, file_name},
+    runner::{Runner, RunnerEvent, TimerAction, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
     version::VERSION,
 };
@@ -35,6 +36,7 @@ use components::{
     LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
+use last_action::LastActions;
 use preferences_tab::PreferencesAction;
 use server_status::ServerStatus;
 use settings::{Setting, SettingsEditor};
@@ -101,7 +103,8 @@ enum Tab {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Pending {
     Reload,
-    Open(PathBuf),
+    /// Ask for a `.wasm` file and load it.
+    Open,
     /// Change the loaded auto splitter's game: the game's settings replace
     /// the draft.
     ChangeGame,
@@ -112,15 +115,14 @@ impl Pending {
     fn trigger(&self) -> UnsavedTrigger {
         match self {
             Self::Reload => UnsavedTrigger::Reload,
-            Self::Open(_) => UnsavedTrigger::Open,
+            Self::Open => UnsavedTrigger::Open,
             Self::ChangeGame => UnsavedTrigger::ChangeGame,
             Self::Close => UnsavedTrigger::Close,
         }
     }
 }
 
-/// The application. Later issues add the Last action card and the other
-/// tabs.
+/// The application. Later issues add the other tabs.
 pub struct BridgeApp {
     ctx: egui::Context,
     runner: Runner,
@@ -129,6 +131,10 @@ pub struct BridgeApp {
     server_events: Receiver<ServerEvent>,
     status: Status,
     server_status: ServerStatus,
+    last_actions: LastActions,
+    /// Whether the latest timer action set the game time, so another game
+    /// time right after it isn't logged.
+    setting_game_time: bool,
     /// The machine's addresses, and when they were read.
     addresses: Vec<NetworkAddress>,
     addresses_read: Instant,
@@ -162,6 +168,8 @@ pub struct BridgeApp {
     settings: SettingsEditor,
     /// What the open Unsaved dialog is asking about.
     pending: Option<Pending>,
+    /// Asks for the `.wasm` file to open. Tests replace the file dialog.
+    pick_splitter: fn() -> Option<PathBuf>,
     /// Closing was asked for and the unsaved settings dealt with.
     closing: bool,
 }
@@ -178,14 +186,14 @@ impl BridgeApp {
             let ctx = ctx.clone();
             move || ctx.request_repaint()
         };
-        // The Server replaces NoTimer (#10, #11).
-        let (runner, events) = Runner::new(Arc::new(NoTimer), wake.clone());
         let app_settings = match &loaded {
             Some(Ok(settings)) => settings.clone(),
             _ => AppSettings::default(),
         };
         let port = app_settings.port();
-        let (server, server_events) = Server::new(port, wake);
+        let (server, server_events) = Server::new(port, wake.clone());
+        // The auto splitter controls the timers connected to the Server.
+        let (runner, events) = Runner::new(server.link(), wake);
         let mut app = Self {
             ctx: ctx.clone(),
             runner,
@@ -194,6 +202,8 @@ impl BridgeApp {
             server_events,
             status: Status::default(),
             server_status: ServerStatus::default(),
+            last_actions: LastActions::default(),
+            setting_game_time: false,
             addresses: server::network_addresses(),
             addresses_read: Instant::now(),
             tab: Tab::Connection,
@@ -210,6 +220,7 @@ impl BridgeApp {
             dialog: None,
             settings: SettingsEditor::default(),
             pending: None,
+            pick_splitter,
             closing: false,
         };
         // `app.toml` is read before the server starts, since the server
@@ -243,6 +254,8 @@ impl BridgeApp {
     fn handle_events(&mut self) {
         while let Ok(event) = self.events.try_recv() {
             self.status.apply(&event);
+            self.last_actions
+                .apply(&event, chrono::Local::now().time(), Instant::now());
             match &event {
                 RunnerEvent::Loaded { path, .. } => {
                     self.game = self.loading.remove(path);
@@ -255,6 +268,11 @@ impl BridgeApp {
                 RunnerEvent::Unloaded => {
                     self.game = None;
                     self.settings.reset(toml::Table::new());
+                }
+                RunnerEvent::TimerAction { action, .. } => {
+                    if repeats_game_time(&mut self.setting_game_time, action) {
+                        continue;
+                    }
                 }
                 RunnerEvent::SettingsWidgets(widgets) => {
                     self.settings
@@ -451,7 +469,8 @@ impl BridgeApp {
     }
 
     /// The status column: the header, the error card while there is one, the
-    /// auto splitter and the game. It scrolls rather than clip a card.
+    /// auto splitter, the game, the timer and the last action. It scrolls
+    /// rather than clip a card.
     fn status_column(&mut self, ui: &mut egui::Ui, width: Width) {
         let loaded = self.runner.loaded_path().map(|path| file_name(&path));
         let loaded = loaded.as_deref();
@@ -485,6 +504,8 @@ impl BridgeApp {
 
             let urls = self.server_status.urls(&self.addresses);
             components::timer_card(ui, self.server_status.timer_state(), &urls, width);
+
+            components::last_action_card(ui, &self.last_actions, width, Instant::now());
         });
     }
 
@@ -606,14 +627,9 @@ impl BridgeApp {
     }
 
     /// Asks for a `.wasm` file and loads it, once the unsaved settings are
-    /// dealt with.
+    /// dealt with, so the file dialog comes after the Unsaved dialog.
     fn open(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Auto splitter", &["wasm"])
-            .pick_file()
-        {
-            self.ask(Pending::Open(path));
-        }
+        self.ask(Pending::Open);
     }
 
     /// Does `pending` now, or first asks what to do with the unsaved
@@ -629,7 +645,11 @@ impl BridgeApp {
     fn proceed(&mut self, pending: Pending) {
         match pending {
             Pending::Reload => self.reload(),
-            Pending::Open(path) => self.load(path),
+            Pending::Open => {
+                if let Some(path) = (self.pick_splitter)() {
+                    self.load(path);
+                }
+            }
             Pending::ChangeGame => self.change_game(),
             Pending::Close => {
                 self.closing = true;
@@ -652,8 +672,9 @@ impl BridgeApp {
         let Some(pending) = &self.pending else {
             return;
         };
+        let game = self.game.as_ref().map(|game| game.name.as_str());
         if let Some(action) =
-            components::unsaved_dialog(&self.ctx, pending.trigger(), self.settings.changes())
+            components::unsaved_dialog(&self.ctx, pending.trigger(), self.settings.changes(), game)
         {
             self.answer_unsaved(action);
         }
@@ -839,15 +860,34 @@ fn server_category(event: &ServerEvent) -> Category {
     }
 }
 
+/// Whether `action` sets the game time right after another game time, so it
+/// isn't logged: auto splitters often set it on every tick, which would fill
+/// the log (spec §8.1). `setting_game_time` follows the latest action.
+fn repeats_game_time(setting_game_time: &mut bool, action: &TimerAction) -> bool {
+    let game_time = matches!(action, TimerAction::SetGameTime(_));
+    let repeat = game_time && *setting_game_time;
+    *setting_game_time = game_time;
+    repeat
+}
+
 /// The log category of a Runner event (spec §8.1).
 fn category(event: &RunnerEvent) -> Category {
     if event.is_error() {
         return Category::Error;
     }
     match event {
-        RunnerEvent::AutoSplitterLog(_) | RunnerEvent::TimerAction(_) => Category::AutoSplitter,
+        RunnerEvent::AutoSplitterLog(_) => Category::AutoSplitter,
+        // Commands sent and dropped (spec §8.1).
+        RunnerEvent::TimerAction { .. } => Category::Connection,
         _ => Category::App,
     }
+}
+
+/// Asks for a `.wasm` file with the file dialog.
+fn pick_splitter() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Auto splitter", &["wasm"])
+        .pick_file()
 }
 
 impl eframe::App for BridgeApp {
@@ -885,6 +925,7 @@ impl eframe::App for BridgeApp {
 #[cfg(test)]
 mod tests {
     use eframe::egui::{RawInput, ViewportEvent, ViewportId};
+    use livesplit_auto_splitting::time;
 
     use super::*;
 
@@ -930,11 +971,38 @@ mod tests {
         let (_dir, mut app) = app_with_unsaved_edit();
         app.ask(Pending::Reload);
         assert_eq!(app.pending, Some(Pending::Reload));
-        let path = PathBuf::from("/other.wasm");
-        app.ask(Pending::Open(path.clone()));
-        assert_eq!(app.pending, Some(Pending::Open(path)));
+        app.ask(Pending::Open);
+        assert_eq!(app.pending, Some(Pending::Open));
         app.ask(Pending::ChangeGame);
         assert_eq!(app.pending, Some(Pending::ChangeGame));
+    }
+
+    #[test]
+    fn open_asks_before_the_file_dialog() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pick_splitter = || panic!("the file dialog opened before the answer");
+        app.open();
+        assert_eq!(app.pending, Some(Pending::Open));
+    }
+
+    #[test]
+    fn answering_open_shows_the_file_dialog_then_loads_the_file() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pick_splitter = || Some(PathBuf::from("/other.wasm"));
+        app.open();
+        app.answer_unsaved(UnsavedAction::Discard);
+        // The file has no game yet, so loading it asks which game it is for.
+        let path = app.dialog.as_ref().map(|(_, path)| path.clone());
+        assert_eq!(path, Some(PathBuf::from("/other.wasm")));
+    }
+
+    #[test]
+    fn cancelling_open_shows_no_file_dialog() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pick_splitter = || panic!("the file dialog opened after Cancel");
+        app.open();
+        app.answer_unsaved(UnsavedAction::Cancel);
+        assert_eq!(app.pending, None);
     }
 
     #[test]
@@ -1026,8 +1094,11 @@ mod tests {
                 Category::App,
             ),
             (
-                RunnerEvent::TimerAction(crate::runner::TimerAction::Split),
-                Category::AutoSplitter,
+                RunnerEvent::TimerAction {
+                    action: TimerAction::Split,
+                    sent_to: 0,
+                },
+                Category::Connection,
             ),
             (RunnerEvent::GameDetached, Category::App),
             (
@@ -1065,6 +1136,16 @@ mod tests {
                 ServerEvent::HandshakeFailed {
                     address,
                     error: "not a WebSocket".to_owned(),
+                },
+                Category::Connection,
+            ),
+            (
+                ServerEvent::CommandRejected {
+                    id: 0,
+                    address,
+                    command: Some("split".to_owned()),
+                    code: "NoRunInProgress".to_owned(),
+                    message: None,
                 },
                 Category::Connection,
             ),
@@ -1134,6 +1215,33 @@ mod tests {
         let saved = saved_settings(&app);
         assert!(!saved.remember_window());
         assert_eq!(saved.window_geometry(), WindowGeometry::default());
+    }
+
+    #[test]
+    fn only_the_first_of_several_game_times_in_a_row_is_logged() {
+        let game_time = |seconds| TimerAction::SetGameTime(time::Duration::seconds(seconds));
+        let mut setting_game_time = false;
+        let logged: Vec<_> = [
+            TimerAction::Start,
+            game_time(1),
+            game_time(2),
+            game_time(3),
+            TimerAction::Split,
+            game_time(4),
+            game_time(5),
+        ]
+        .into_iter()
+        .filter(|action| !repeats_game_time(&mut setting_game_time, action))
+        .collect();
+        assert_eq!(
+            logged,
+            [
+                TimerAction::Start,
+                game_time(1),
+                TimerAction::Split,
+                game_time(4)
+            ]
+        );
     }
 
     #[test]

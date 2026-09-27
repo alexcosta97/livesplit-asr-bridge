@@ -30,7 +30,9 @@ use std::{
 use livesplit_auto_splitting::{AutoSplitter, Config, InterruptHandle, Runtime, settings};
 
 pub use events::{RunnerEvent, Widgets, file_name};
-pub use link::{NoTimer, TimerAction, TimerLink};
+#[cfg(test)]
+pub use link::NoTimer;
+pub use link::{TimerAction, TimerLink};
 
 use events::EventSink;
 use thread::Command;

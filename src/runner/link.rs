@@ -39,14 +39,16 @@ pub trait TimerLink: Send + Sync + 'static {
     fn state(&self) -> TimerState;
     fn current_split_index(&self) -> Option<usize>;
     fn segment_splitted(&self, index: usize) -> Option<bool>;
-    fn send(&self, action: TimerAction);
+    /// Sends the action to the timers, returning how many it was sent to: 0
+    /// when it was dropped. Never blocks.
+    fn send(&self, action: TimerAction) -> usize;
 }
 
-/// Stands in until the Server exists: the timer is never running, and actions
-/// go nowhere. The Runner reports every action as an event, so they are
-/// still logged.
+/// No timer at all: it is never running, and actions go nowhere.
+#[cfg(test)]
 pub struct NoTimer;
 
+#[cfg(test)]
 impl TimerLink for NoTimer {
     fn state(&self) -> TimerState {
         TimerState::NotRunning
@@ -60,5 +62,7 @@ impl TimerLink for NoTimer {
         None
     }
 
-    fn send(&self, _action: TimerAction) {}
+    fn send(&self, _action: TimerAction) -> usize {
+        0
+    }
 }
