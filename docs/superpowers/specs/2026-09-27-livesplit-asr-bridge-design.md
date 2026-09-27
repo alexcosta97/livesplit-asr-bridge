@@ -165,68 +165,213 @@ the Server re-queries its state.
 
 ## 6. User interface
 
+The layout, states and visual style below come from the design system in
+`.superdesign/design-system.md`, which holds the exact colours, sizes and
+spacing. Mockups are in the
+[Superdesign project](https://superdesign.dev/teams/7cefed93-e527-4a6c-96ed-1cf24495b924/projects/bca2406a-5118-4388-9e38-b0e37fab0d9f).
+
+The window has two uses. Wide, it is for setup: loading an auto splitter,
+editing its settings, connecting LiveSplit One and reading logs. Compact, it is
+for glancing mid-run, for example as a narrow tiled window on Hyprland or on a
+second monitor, to confirm in under a second that everything works.
+
 ### 6.1 Main window
 
+Wide layout: a status column on the left, always visible, and the tab area on
+the right.
+
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ Auto splitter: gta_sa_de_autosplitter.wasm   [Open…] [Reload]│
-│ Game: GTA San Andreas DE [change]   ● attached to game       │
-│ Timer: ○ not connected. How do I connect? ◄── link           │
-│ Connect LiveSplit One to:  ws://10.0.177.167:16834 [Copy] [?]│
-├──────────────┬──────────────┬──────────┬─────────────────────┤
-│ [Settings]   │  Connection  │   Log    │  Preferences        │
-├──────────────┴──────────────┴──────────┴─────────────────────┤
-│ (tab content)                                                │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────┬────────────────────────────────────────────┐
+│ LIVESPLIT ONE ASR BRIDGE         │ SETTINGS •  CONNECTION  LOG  PREFERENCES   │
+│ 0.1.0                            │ ══════════                                 │
+│┌ ERROR ─────────────────────────┐├────────────────────────────────────────────┤
+││ Couldn't load foo.wasm: not a  ││ (tab content)                              │
+││ valid WebAssembly module. The  ││                                            │
+││ previous auto splitter is      ││                                            │
+││ still running.                 ││                                            │
+││ [Show in log] [Dismiss]        ││                                            │
+│└────────────────────────────────┘│                                            │
+│┌ AUTO SPLITTER ─────────────────┐│                                            │
+││ gta_sa_de_autosplitter.wasm    ││                                            │
+││ GTA San Andreas — DE           ││                                            │
+││ [Change]                       ││                                            │
+││ [Open…] [Reload]               ││                                            │
+│└────────────────────────────────┘│                                            │
+│┌ GAME ──────────────────────────┐│                                            │
+││ ● ATTACHED                     ││                                            │
+││ SanAndreas.exe · 20 Hz         ││                                            │
+│└────────────────────────────────┘│                                            │
+│┌ TIMER ─────────────────────────┐│                                            │
+││ ○ NOT CONNECTED                ││                                            │
+││ How do I connect?              ││                                            │
+││ ws://192.168.1.20:16834 [Copy] ││                                            │
+││ ws://100.101.7.3:16834  [Copy] ││                                            │
+││ [?]                            ││                                            │
+│└────────────────────────────────┘│                                            │
+│┌ LAST ACTION ───────────────────┐│                                            │
+││ SPLIT                 19:31:01 ││                                            │
+││ Los Santos — Gym Moves         ││                                            │
+││ START                 19:02:44 ││                                            │
+││ RESET                 19:02:40 ││                                            │
+│└────────────────────────────────┘│                                            │
+└──────────────────────────────────┴────────────────────────────────────────────┘
 ```
 
-**Status bar** (always visible):
+- The status column is about 300 px wide. Its cards are described in
+  section 6.2.
+- The tab area holds the Settings, Connection, Log and Preferences tabs
+  (sections 6.4 to 6.7). The active tab is underlined in orange; a `•` on the
+  Settings tab label marks unsaved settings.
+- Below about 640 px of window width the window switches to the compact
+  state (section 6.3).
 
-- Loaded auto splitter file name, with **Open…** (file picker for `.wasm`) and
-  **Reload** (reloads the same file, for picking up a rebuilt auto splitter).
-- The game the auto splitter is associated with (section 7.3), with a way to
-  change it.
-- Game status: whether the auto splitter is attached to a game process, based
-  on the runtime's process attach and detach notifications. "Waiting for
-  game…" when not attached; this is normal, not an error.
-- Timer status: while no timer is connected, "How do I connect?", which opens
-  the Connection tab scrolled to its setup steps. Once connected, the number
-  of connected timers.
-- The connection URL for each non-loopback IPv4 address of the machine (for
-  example both a LAN address and a VPN address), each with **Copy**, and a `?`
-  that opens the setup steps.
-- The most recent error, in red, until dismissed (section 9).
+### 6.2 Status column
 
-### 6.2 Settings tab
+Top to bottom: the wordmark "LIVESPLIT ONE ASR BRIDGE" with the version, the
+error card (only while there is an error), then the Auto splitter, Game, Timer
+and Last action cards.
+
+If the cards do not fit the window height, the column scrolls, as a last
+resort. Cards are never clipped.
+
+**Error card:**
+
+- Does not exist when there is no error: no placeholder, no empty space.
+- When there is an error, it appears at the top of the column, under the
+  wordmark and above the Auto splitter card, pushing every other card down.
+- Shows only the most recent error, in red, until dismissed.
+- Kinds and buttons:
+
+  | Kind | Message (example) | Buttons |
+  |---|---|---|
+  | Auto splitter crashed | "The auto splitter stopped because of an error." | **Show in log**, **Reload**, **Dismiss** |
+  | Load failed | "Couldn't load foo.wasm: not a valid WebAssembly module. The previous auto splitter is still running." | **Show in log**, **Dismiss** |
+  | Port in use | "Port 16834 is already in use. Choose another port in Connection and restart the server." | **Open Connection**, **Dismiss** |
+
+- Every error card has **Dismiss**. Section 9 covers the error situations.
+
+**Auto splitter card:**
+
+- The loaded file name, and the game it is associated with (section 7.3),
+  with **Change**, which opens the "Change game" dialog (section 6.8).
+- **Open…** (file picker for `.wasm`) and **Reload** (reloads the same file,
+  for picking up a rebuilt auto splitter).
+- With nothing loaded: "NO AUTO SPLITTER", the help text "Open a .wasm auto
+  splitter to start.", **Open…** as the primary button, and **Reload**
+  disabled.
+
+**Game card:** based on the runtime's process attach and detach
+notifications.
+
+- **ATTACHED**: the process name and the tick rate, for example
+  "SanAndreas.exe · 20 Hz".
+- **WAITING FOR GAME…**: the auto splitter runs but is not attached to a game
+  process. This is normal, not an error.
+- **STOPPED**: "The auto splitter isn't running", after the auto splitter
+  crashed, until it is reloaded.
+- **—**: "Load an auto splitter first", when nothing is loaded.
+
+**Timer card:**
+
+- **CONNECTED · N TIMERS**, or **NOT CONNECTED** with "How do I connect?",
+  which opens the Connection tab at its setup steps.
+- While no timer is connected, the card lists the connection URL for each
+  non-loopback IPv4 address of the machine (for example both a LAN address and
+  a VPN address), each with **Copy**, and one `?` that opens the setup steps.
+- Once a timer is connected, the URLs are hidden. The card shows a line
+  pointing to the Connection tab, where the addresses remain, and the `?`.
+- The URLs always use the port the server is actually listening on, never a
+  port that was edited but not yet applied.
+- When the last timer disconnects, the card goes back to NOT CONNECTED.
+
+**Last action card:**
+
+- The latest timer action in large type, with its time: START, SPLIT (with
+  the segment name when known), SKIP SPLIT, UNDO SPLIT, RESET, GAME TIME
+  (for example "GAME TIME 1:23:45.600"), PAUSE GAME TIME or RESUME GAME TIME.
+- The 2 previous actions below it, as faint lines. This is only the recent
+  history of this session; it is not stored.
+- Custom variables (`setCustomVariable`) are logged but not shown here.
+- Empty state: "No actions yet", with "Actions appear here when the auto
+  splitter starts, splits or resets."
+
+### 6.3 Compact state
+
+```
+┌────────────────────────────────────┐
+│ LIVESPLIT ONE ASR BRIDGE 0.1.0     │
+│                    [Show details]  │
+│ gta_sa_de_autosplitter.wasm        │
+│                          [Reload]  │
+│┌ GAME ────────────────────────────┐│
+││ ● ATTACHED                       ││
+││ SanAndreas.exe · 20 Hz           ││
+│└──────────────────────────────────┘│
+│┌ TIMER ───────────────────────────┐│
+││ ● CONNECTED · 1 TIMER            ││
+││ Addresses: Connection tab [?]    ││
+│└──────────────────────────────────┘│
+│┌ LAST ACTION ─────────────────────┐│
+││ SPLIT                  19:31:01  ││
+││ Los Santos — Gym Moves           ││
+│└──────────────────────────────────┘│
+└────────────────────────────────────┘
+```
+
+- Below about 640 px of window width, the tab area is hidden and the status
+  column fills the window. The status words are bigger.
+- A thin splitter strip replaces the Auto splitter card: the file name and
+  **Reload**, or "No auto splitter loaded" and **Open…**.
+- The error card, Game, Timer and Last action cards keep their order and
+  states. While no timer is connected, the Timer card shows the first
+  connection URL with **Copy**, and "How do I connect?".
+- **Show details** widens the window where the window manager allows it.
+  Otherwise, for example with a tiling window manager, it swaps the status
+  column for the tab view in the same space, with **← Status** to come back.
+- Buttons that open a tab (**Show in log**, **Open Connection**, "How do I
+  connect?", `?`) show the tab view the same way.
+
+### 6.4 Settings tab
 
 - A fixed toolbar with **Save** and **Revert to defaults**, and a status text.
   Only the settings list below it scrolls.
 - The settings list renders the auto splitter's published widgets in order:
-  titles (with heading levels), checkboxes, choices, file selections, and any
-  other widget kind the runtime exposes, with their tooltips.
+  headings (with heading levels), checkboxes, choices, file selections (the
+  path with **Browse…**), and any other widget kind the runtime exposes, with
+  their tooltips.
 - Edits are drafts. The running auto splitter keeps using the saved settings
   until **Save** is pressed, so a stray click mid-run cannot change behaviour.
-- Unsaved changes are visible: "● Unsaved changes" next to the buttons, a `•`
-  on the tab label, and **Save** enabled only when there is something to
-  save. After saving, "✓ Saved" is shown briefly.
+- Unsaved changes are visible: "● Unsaved changes" in the toolbar, a `•` on
+  the tab label, and **Save** enabled only when there is something to save.
+  After saving, "✓ Saved" is shown briefly.
 - **Revert to defaults** replaces the draft with the auto splitter's default
   values, as unsaved changes, so it still requires **Save** to take effect.
 - Closing the app, opening a different `.wasm`, or pressing **Reload** with
-  unsaved changes asks **Save / Discard / Cancel**.
-- With no auto splitter loaded, the tab explains how to load one.
+  unsaved changes opens the unsaved-settings dialog (section 6.8).
+- With no auto splitter loaded, the tab explains how to load one, with
+  **Open…**.
 
-### 6.3 Connection tab
+### 6.5 Connection tab
 
-- **Port** (default `16834`, the same default as the original LiveSplit
-  server). Changing it shows "Restart the server to apply".
-- **Restart server**, always enabled: closes connections, rebinds the port and
-  starts accepting connections again. Also useful for troubleshooting.
-- **Connected timers**: each connection with its address and the tracked
-  state, for example "running, split 12".
-- **How to connect** section: copy the URL; in LiveSplit One open Settings →
-  Connect to Server and paste it; allow local network access when Chrome asks.
+- **SERVER**: **Port** (default `16834`, the same default as the original
+  LiveSplit server) and **Restart server**. Editing the port shows "Restart
+  the server to apply". **Restart server** is always enabled: it closes
+  connections, rebinds the port and starts accepting connections again. It is
+  also useful for troubleshooting.
+- If the port is in use, the error is also shown inline in this section.
+- **CONNECTED TIMERS**: each connection with its address and the tracked
+  state, for example "Running · split 12". A **PRIMARY** tag marks the timer
+  the tracked state follows (section 5.3). With none: "No timers connected
+  yet."
+- **HOW TO CONNECT**, 3 numbered steps:
+  1. Copy an address (the connection URLs, each with **Copy**).
+  2. In LiveSplit One, open Settings → Connect to Server and paste it.
+  3. When Chrome asks, allow local network access.
 
-### 6.4 Log tab
+  It notes that LiveSplit One must run in a Chrome-based browser. The section
+  can be collapsed while a timer is connected.
+
+### 6.6 Log tab
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -246,17 +391,52 @@ the Server re-queries its state.
 - **Copy** and **Save log…** export the lines currently shown. **Clear**
   empties the in-app view. **Open log folder** opens the on-disk log folder.
 - Filter choices are remembered.
+- The entry reached through **Show in log** is highlighted.
 
-### 6.5 Preferences tab
+### 6.7 Preferences tab
 
 - **Remember window size and position**, on by default, with a note that users
   of tiling window managers may want it off. When off, the app does not set a
   window size or position and leaves it to the window manager.
+- **About**: the version, and the config folder and log folder, each with
+  **Open**.
 
-### 6.6 First launch
+### 6.8 Dialogs
+
+Dialogs are drawn inside the window (egui modal), centred, with the rest of
+the window dimmed behind them.
+
+- **"Which game is this auto splitter for?"**, when a new `.wasm` is loaded
+  (section 7.3): a name field pre-filled from the file name, a list of games
+  already set up with how many auto splitters use each, and **Use this game**
+  and **Cancel**. **Change** on the Auto splitter card opens the same dialog,
+  titled "Change game", with the current game selected.
+- **"Save your settings changes?"**, when the app is closed, a different
+  `.wasm` is opened or **Reload** is pressed with unsaved settings: text
+  naming how many settings changed, and **Save and reload** (**Save** for the
+  other triggers), **Discard** and **Cancel**.
+
+### 6.9 First launch
 
 With no existing app configuration, the app opens on the Connection tab with
 the setup steps visible.
+
+### 6.10 Visual style
+
+- Dark surfaces: a near-black window background, slightly lighter cards and
+  panels, 1 px borders.
+- One accent colour, orange, for primary actions, the active tab, the Last
+  action card, focus rings and links.
+- Status colours are used only for status, never for decoration: green for
+  attached and connected, neutral grey for waiting and not connected (normal
+  states), red for errors, amber for unsaved changes.
+- Fonts: **Archivo Black** for status words and titles (uppercase), **Space
+  Mono** for labels, URLs, file names, times and log lines, **Inter** for body
+  text and controls. All three are under the SIL Open Font License and are
+  embedded in the binary.
+- Everything is drawable with egui: flat fills, 1 px strokes, rounded
+  rectangles and text. No gradients, blur or shadows.
+- Exact colours, sizes and spacing are in `.superdesign/design-system.md`.
 
 ## 7. Configuration and settings storage
 
@@ -298,9 +478,10 @@ every auto splitter associated with that game.
 - When a `.wasm` is loaded, the app looks it up in `splitters.toml`.
 - **Known file:** the associated game's settings are loaded without asking.
 - **New file:** the app asks "Which game is this auto splitter for?", with the
-  field pre-filled from the file name and a list of games already set up. The
-  answer is saved to `splitters.toml`.
-- The association can be changed from the status bar.
+  field pre-filled from the file name and a list of games already set up
+  (section 6.8). The answer is saved to `splitters.toml`.
+- The association can be changed with **Change** on the Auto splitter card
+  (section 6.2).
 
 ## 8. Logging
 
@@ -308,7 +489,7 @@ every auto splitter associated with that game.
 
 | Category | Contents | Display |
 |---|---|---|
-| Errors | Load failures, auto splitter crashes, server start failures, connection errors | Always shown, also in the status bar |
+| Errors | Load failures, auto splitter crashes, server start failures, connection errors | Always shown, also in the error card (section 6.2) |
 | Auto splitter | Messages printed by the auto splitter | Optional filter |
 | Connection | Timers connecting and disconnecting, commands sent, events and responses received, dropped commands | Optional filter |
 | App & runtime | Process attach and detach, tick rate changes, settings saved, server restarts, reloads | Optional filter |
@@ -335,17 +516,19 @@ These locations are documented in all user-facing documentation.
 
 | Situation | Behaviour |
 |---|---|
-| The `.wasm` fails to load | Error with a short reason in the status bar, full detail in the log; the previously loaded auto splitter keeps running |
-| The auto splitter crashes (traps) | Error saying it stopped, with **Show in log** and a pointer to **Reload**; the runtime has already stopped it |
+| The `.wasm` fails to load | Error card with a short reason, **Show in log** and **Dismiss**, full detail in the log; the previously loaded auto splitter keeps running |
+| The auto splitter crashes (traps) | Error card saying it stopped, with **Show in log**, **Reload** and **Dismiss**; the Game card shows STOPPED until Reload; the runtime has already stopped it |
 | The auto splitter hangs | Reload, unload and closing the app interrupt it through the runtime |
-| The game is not running | Game status "Waiting for game…"; not an error |
-| The port is in use | Error in the status bar and the Connection tab suggesting another port and **Restart server** |
-| A timer disconnects | Logged; with no timers left, tracked state becomes "not running" and commands are dropped |
+| The game is not running | Game card "WAITING FOR GAME…"; not an error |
+| The port is in use | Error card with **Open Connection** and **Dismiss**, and the same error inline in the Connection tab, suggesting another port and **Restart server** |
+| A timer disconnects | Logged; with no timers left, tracked state becomes "not running", the Timer card shows NOT CONNECTED and commands are dropped |
 | LiveSplit One rejects a command (for example split with no run in progress) | Logged in the Connection category; not an error |
 
-Errors that need more detail than one line carry a **Show in log** button,
-which opens the Log tab with the relevant category ticked, scrolled to the
-entry.
+Errors are shown in the error card at the top of the status column
+(section 6.2): only the most recent one, until dismissed. Errors that need
+more detail than one line carry a **Show in log** button, which opens the Log
+tab with the relevant category ticked, scrolled to the entry and with the
+entry highlighted.
 
 ## 10. Security considerations
 

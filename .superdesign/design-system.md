@@ -17,19 +17,19 @@ Jobs to be done:
 
 - **Left status column**, fixed ~300 px wide, full height, always visible. Top to bottom:
   1. App wordmark "LIVESPLIT ONE ASR BRIDGE" + version (small, mono).
-  2. **Auto splitter card**: file name (e.g. `gta_sa_de_autosplitter.wasm`), associated game
+  2. **Error card** (only when there is an error; see "Flows and states"): red, the message,
+     its buttons (e.g. **Show in log**, **Reload**) and **Dismiss**. Absent otherwise.
+  3. **Auto splitter card**: file name (e.g. `gta_sa_de_autosplitter.wasm`), associated game
      ("GTA San Andreas — Definitive Edition", with a small "Change" link), buttons **Open…**
      and **Reload**.
-  3. **Game** status card: ATTACHED (green) / WAITING FOR GAME… (neutral, this is normal, not
-     an error). Detail line: process name, e.g. `SanAndreas.exe`.
-  4. **Timer** status card: CONNECTED · 1 TIMER (green) / NOT CONNECTED (neutral) with a
-     "How do I connect?" link. Always shows the connection URL `ws://10.0.177.167:16834`
-     in mono with a **Copy** button (one row per non-loopback IPv4 address).
-  5. **Last action** card: the most recent timer action, big and readable, e.g.
+  4. **Game** status card: ATTACHED (green) / WAITING FOR GAME… (neutral, this is normal, not
+     an error). Detail line: process name and tick rate, e.g. `SanAndreas.exe · 20 Hz`.
+  5. **Timer** status card: CONNECTED · 1 TIMER (green) / NOT CONNECTED (neutral) with a
+     "How do I connect?" link; the connection URLs appear only while NOT CONNECTED (see
+     "Flows and states").
+  6. **Last action** card: the most recent timer action, big and readable, e.g.
      "SPLIT" + "Los Santos — Gym Moves" + time `19:31:01`. Other actions: START, RESET,
      GAME TIME 1:23:45.600, PAUSE GAME TIME.
-  6. **Error card** (only when there is an error): red, the message, **Show in log** and
-     **Dismiss**.
 - **Right content area**: a tab strip — SETTINGS, CONNECTION, LOG, PREFERENCES — and the tab
   content below it. A `•` on the SETTINGS tab label when there are unsaved settings.
 - **Compact state**: when the window is narrower than ~640 px, the content area is hidden
@@ -156,8 +156,8 @@ Every mockup must stay consistent with these rules.
   many splitters use it), buttons **Use this game** (primary) and **Cancel**. When changing,
   the title is "Change game" and the current game is selected.
 - **Unsaved settings** (Reload / Open another file / closing the app with unsaved settings):
-  "Save your settings changes?", text naming the change count, buttons **Save** (primary),
-  **Discard**, **Cancel**.
+  "Save your settings changes?", text naming the change count, buttons **Save and reload**
+  (primary; **Save** when opening another file or closing the app), **Discard**, **Cancel**.
 
 ### Tabs
 - **Settings:** fixed toolbar (Save, Revert to defaults, status text: "● Unsaved changes"
