@@ -449,6 +449,11 @@ setup steps, with **← Status** to go back.
 - Everything is drawable with egui: flat fills, 1 px strokes, rounded
   rectangles and text. No gradients, blur or shadows.
 - Exact colours, sizes and spacing are in `.superdesign/design-system.md`.
+- The logo, app icons (`.ico`, `.icns`, PNGs), the font files with their
+  licences, colour tokens and usage rules are in `assets/brand/` (see
+  `assets/brand/BRAND.md`). The logo shows the two machines joined by one
+  link: a white node for the game PC and an orange node for the timer, with a
+  split mark on the link.
 
 ## 7. Configuration and settings storage
 

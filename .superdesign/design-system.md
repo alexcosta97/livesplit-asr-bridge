@@ -37,6 +37,14 @@ Jobs to be done:
   status words get bigger. Nothing else changes: same cards, same order. A small
   "Show details" button (or widening the window) brings the tabs back.
 
+## Brand
+
+Logo, icons, fonts, tokens and usage rules live in `assets/brand/` (read `assets/brand/BRAND.md`).
+The logo is the "bridge" mark: a white node (game PC) and an orange node (timer) joined by a
+link carrying an orange split mark. They are uploaded to the Superdesign project as Brand
+Assets (keys `assets-brand-logo-*.svg`, `assets-brand-fonts-*.ttf`). Wherever a design shows
+the app's logo or icon (website headers, store art, the About section), use those exact files.
+
 ## Visual style — "speedrun / stream deck", adapted from Kinetic Orange
 
 Energetic, high-contrast, readable from across the room. Adapted for a dark desktop app and
