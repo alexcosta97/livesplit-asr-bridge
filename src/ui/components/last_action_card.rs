@@ -75,9 +75,13 @@ pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: I
         );
         // Only when the timer gave it: the app never makes one up.
         if let Some(segment) = &latest.segment {
-            ui.add_space(2.0);
+            ui.add_space(4.0);
+            let size = match width {
+                Width::Wide => 14.0,
+                Width::Compact => 16.0,
+            };
             let name = RichText::new(segment)
-                .font(theme::body(14.0))
+                .font(theme::body_semibold(size))
                 .color(theme::TEXT);
             ui.add(Label::new(name).truncate());
         }

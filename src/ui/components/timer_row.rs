@@ -23,40 +23,39 @@ pub fn timer_row(ui: &mut Ui, address: SocketAddr, state: Option<Summary>, prima
             // The frame's 1 px border is outside the inner height.
             ui.set_height(HEIGHT - 2.0);
             ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 12.0;
                 ui.label(
                     RichText::new(address.to_string())
                         .font(theme::mono(13.0))
                         .color(theme::TEXT),
                 );
-                if primary {
-                    ui.add_space(4.0);
-                    primary_tag(ui);
+                if let Some(state) = state {
+                    ui.label(RichText::new("·").color(theme::TEXT_MUTED));
+                    ui.label(
+                        RichText::new(state.to_string())
+                            .font(theme::body(13.0))
+                            .color(theme::TEXT_SECONDARY),
+                    );
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if let Some(state) = state {
-                        ui.label(
-                            RichText::new(state.to_string())
-                                .font(theme::body(13.0))
-                                .color(theme::TEXT_SECONDARY),
-                        );
-                    }
-                });
+                if primary {
+                    ui.with_layout(Layout::right_to_left(Align::Center), primary_tag);
+                }
             });
         });
 }
 
-/// The PRIMARY tag: an orange mono label in a thin orange outline.
+/// The PRIMARY tag: a small uppercase mono label in a thin outline.
 fn primary_tag(ui: &mut Ui) {
     Frame::NONE
-        .stroke(Stroke::new(1.0, theme::ACCENT))
-        .corner_radius(theme::RADIUS)
+        .stroke(Stroke::new(1.0, theme::BORDER_STRONG))
+        .corner_radius(3)
         .inner_margin(Margin::symmetric(6, 2))
         .show(ui, |ui| {
             ui.label(
                 RichText::new("PRIMARY")
-                    .font(theme::mono(11.0))
-                    .color(theme::ACCENT)
-                    .extra_letter_spacing(0.08 * 11.0),
+                    .font(theme::mono(10.0))
+                    .color(theme::TEXT_SECONDARY)
+                    .extra_letter_spacing(0.08 * 10.0),
             );
         });
 }
