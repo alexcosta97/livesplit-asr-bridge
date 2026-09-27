@@ -11,3 +11,11 @@ publish = false
 
 [dependencies]
 eframe = "0.36.2"
+# The upstream runtime, from the livesplit-core repository by git rev: its only
+# crates.io release (0.1.0) is from 2022. Renovate keeps the rev up to date.
+livesplit-auto-splitting = { git = "https://github.com/LiveSplit/livesplit-core", rev = "a065a8d66c2c5151769cc7625f760724b5ea2413" }
+rfd = "0.17"
+
+[dev-dependencies]
+tempfile = "3"
+wat = "1"

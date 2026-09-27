@@ -1,3 +1,4 @@
+mod runner;
 mod ui;
 mod version;
 
@@ -13,6 +14,9 @@ fn main() -> eframe::Result {
     eframe::run_native(
         ui::APP_NAME,
         options,
-        Box::new(|_cc| Ok(Box::new(ui::BridgeApp))),
+        Box::new(|cc| {
+            ui::install_theme(&cc.egui_ctx);
+            Ok(Box::new(ui::BridgeApp::new(&cc.egui_ctx)))
+        }),
     )
 }
