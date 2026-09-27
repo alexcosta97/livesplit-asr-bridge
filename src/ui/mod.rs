@@ -4,6 +4,7 @@
 mod components;
 mod connection_tab;
 mod folder;
+mod preferences_tab;
 mod server_status;
 mod settings;
 mod settings_tab;
@@ -23,7 +24,7 @@ use livesplit_auto_splitting::{settings::WidgetKind, wasi_path};
 use toml::Value;
 
 use crate::{
-    config::{self, AppSettings, Config, Game, GameSummary, Splitters},
+    config::{self, AppSettings, Config, Game, GameSummary, Splitters, WindowGeometry},
     logging::{self, Category, Filters, Logger},
     runner::{NoTimer, Runner, RunnerEvent, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
@@ -34,6 +35,7 @@ use components::{
     LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
+use preferences_tab::PreferencesAction;
 use server_status::ServerStatus;
 use settings::{Setting, SettingsEditor};
 use settings_tab::SettingsAction;
@@ -65,12 +67,34 @@ pub fn window_title() -> String {
     format!("{DISPLAY_NAME} {VERSION}")
 }
 
-/// The tabs of the tab area. Preferences comes with #13.
+/// The window's size when it is remembered but nothing is saved yet.
+const DEFAULT_WINDOW_SIZE: [f32; 2] = [800.0, 600.0];
+
+/// The window as it opens (spec §6.7): with the preference on, at its saved
+/// size and position, or the default size when none is saved. With it off,
+/// the app sets neither and leaves them to the window manager.
+pub fn window_viewport(
+    viewport: egui::ViewportBuilder,
+    settings: &AppSettings,
+) -> egui::ViewportBuilder {
+    if !settings.remember_window() {
+        return viewport;
+    }
+    let geometry = settings.window_geometry();
+    let viewport = viewport.with_inner_size(geometry.size.unwrap_or(DEFAULT_WINDOW_SIZE));
+    match geometry.position {
+        Some(position) => viewport.with_position(position),
+        None => viewport,
+    }
+}
+
+/// The tabs of the tab area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Settings,
     Connection,
     Log,
+    Preferences,
 }
 
 /// What waits for an answer in the Unsaved dialog.
@@ -122,6 +146,12 @@ pub struct BridgeApp {
     /// The app's own settings, read from `app.toml` at start-up. The
     /// server listens on its port, and Restart server saves it.
     app_settings: AppSettings,
+    /// Whether the window's size and position are remembered, as shown in
+    /// the Preferences tab.
+    remember_window: bool,
+    /// The window's size and position as last seen, saved when the app
+    /// closes.
+    window: WindowGeometry,
     /// The game of each auto splitter being loaded, until it is loaded.
     loading: HashMap<PathBuf, Game>,
     /// The loaded auto splitter's game.
@@ -137,19 +167,19 @@ pub struct BridgeApp {
 }
 
 impl BridgeApp {
-    pub fn new(ctx: &egui::Context) -> Self {
-        Self::with_config(ctx, Config::standard())
-    }
-
-    /// The application, with its files in `config`.
-    fn with_config(ctx: &egui::Context, config: Option<Config>) -> Self {
+    /// The application, with its files in `config` and `app.toml` as read
+    /// from there, if there is a configuration folder.
+    pub fn new(
+        ctx: &egui::Context,
+        config: Option<Config>,
+        loaded: Option<Result<AppSettings, String>>,
+    ) -> Self {
         let wake = {
             let ctx = ctx.clone();
             move || ctx.request_repaint()
         };
         // The Server replaces NoTimer (#10, #11).
         let (runner, events) = Runner::new(Arc::new(NoTimer), wake.clone());
-        let loaded = config.as_ref().map(AppSettings::load);
         let app_settings = match &loaded {
             Some(Ok(settings)) => settings.clone(),
             _ => AppSettings::default(),
@@ -172,6 +202,8 @@ impl BridgeApp {
             log_filters: app_settings.log_filters(),
             highlighted: None,
             config,
+            remember_window: app_settings.remember_window(),
+            window: app_settings.window_geometry(),
             app_settings,
             loading: HashMap::new(),
             game: None,
@@ -465,6 +497,7 @@ impl BridgeApp {
                 (Tab::Settings, "Settings", self.settings.is_unsaved()),
                 (Tab::Connection, "Connection", false),
                 (Tab::Log, "Log", false),
+                (Tab::Preferences, "Preferences", false),
             ],
             &mut self.tab,
         );
@@ -480,6 +513,7 @@ impl BridgeApp {
                     }
                 }
                 Tab::Log => self.log_tab(ui),
+                Tab::Preferences => self.preferences_tab(ui),
             });
     }
 
@@ -493,6 +527,81 @@ impl BridgeApp {
             Some(SettingsAction::Open) => self.open(),
             Some(SettingsAction::Browse(key)) => self.browse(&key),
             None => {}
+        }
+    }
+
+    /// The Preferences tab, and what it asks for.
+    fn preferences_tab(&mut self, ui: &mut egui::Ui) {
+        let config_dir = self.config.as_ref().map(|config| config.dir().to_owned());
+        let log_dir = self.logger.dir().map(ToOwned::to_owned);
+        match preferences_tab::preferences_tab(
+            ui,
+            &mut self.remember_window,
+            config_dir.as_deref(),
+            log_dir.as_deref(),
+        ) {
+            Some(PreferencesAction::RememberWindowChanged) => self.save_remember_window(),
+            Some(PreferencesAction::OpenConfigFolder) => {
+                if let Some(dir) = config_dir
+                    && let Err(error) = folder::open_folder(&dir)
+                {
+                    self.log(Category::Error, error);
+                }
+            }
+            Some(PreferencesAction::OpenLogFolder) => self.open_log_folder(),
+            None => {}
+        }
+    }
+
+    /// Saves in `app.toml` whether the window's size and position are
+    /// remembered. It applies the next time the app starts.
+    fn save_remember_window(&mut self) {
+        self.app_settings.set_remember_window(self.remember_window);
+        let Some(config) = self.config() else {
+            return;
+        };
+        if let Err(error) = self.app_settings.save(&config) {
+            self.log(
+                Category::Error,
+                format!("Couldn't save the window preference: {error}"),
+            );
+        }
+    }
+
+    /// Notes the window's size and position, as far as the OS tells them.
+    /// A minimized window's are left out: Windows, for example, puts it far
+    /// off screen.
+    fn track_window(&mut self, ctx: &egui::Context) {
+        let (inner, outer, minimized) = ctx.input(|input| {
+            let viewport = input.viewport();
+            (viewport.inner_rect, viewport.outer_rect, viewport.minimized)
+        });
+        if minimized == Some(true) {
+            return;
+        }
+        if let Some(inner) = inner {
+            self.window.size = Some(inner.size().into());
+        }
+        if let Some(outer) = outer {
+            self.window.position = Some(outer.min.into());
+        }
+    }
+
+    /// Saves the window's size and position in `app.toml` when they are
+    /// remembered, so the next start opens the window as it was.
+    fn save_window(&mut self) {
+        if !self.remember_window || self.window == self.app_settings.window_geometry() {
+            return;
+        }
+        self.app_settings.set_window_geometry(self.window);
+        let Some(config) = self.config.clone() else {
+            return;
+        };
+        if let Err(error) = self.app_settings.save(&config) {
+            self.log(
+                Category::Error,
+                format!("Couldn't remember the window's size and position: {error}"),
+            );
         }
     }
 
@@ -743,6 +852,7 @@ fn category(event: &RunnerEvent) -> Category {
 
 impl eframe::App for BridgeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.track_window(ui.ctx());
         self.handle_events();
         self.check_close();
         self.game_dialog(&ui.ctx().clone());
@@ -766,6 +876,10 @@ impl eframe::App for BridgeApp {
             .frame(Frame::NONE.fill(theme::WINDOW))
             .show(ui, |ui| self.tab_area(ui));
     }
+
+    fn on_exit(&mut self) {
+        self.save_window();
+    }
 }
 
 #[cfg(test)]
@@ -774,12 +888,18 @@ mod tests {
 
     use super::*;
 
+    /// The app with its files in `config`.
+    fn test_app(config: Config) -> BridgeApp {
+        let loaded = Some(AppSettings::load(&config));
+        BridgeApp::new(&egui::Context::default(), Some(config), loaded)
+    }
+
     /// The app with its files in a temporary folder, the auto splitter of
     /// `game` loaded and its setting "gym" changed but not saved.
     fn app_with_unsaved_edit() -> (tempfile::TempDir, BridgeApp) {
         let dir = tempfile::tempdir().unwrap();
         let config = Config::at(dir.path().join("config"));
-        let mut app = BridgeApp::with_config(&egui::Context::default(), Some(config.clone()));
+        let mut app = test_app(config.clone());
         let game = Game::create(&config, "GTA").unwrap();
         app.settings.reset(game.settings.clone());
         app.game = Some(game);
@@ -952,6 +1072,68 @@ mod tests {
         for (event, expected) in cases {
             assert_eq!(server_category(&event), expected, "{event:?}");
         }
+    }
+
+    #[test]
+    fn a_remembered_window_opens_where_it_was() {
+        let mut settings = AppSettings::default();
+        let viewport = window_viewport(egui::ViewportBuilder::default(), &settings);
+        assert_eq!(viewport.inner_size, Some(egui::vec2(800.0, 600.0)));
+        assert_eq!(viewport.position, None);
+
+        settings.set_window_geometry(WindowGeometry {
+            size: Some([1000.0, 700.0]),
+            position: Some([50.0, 60.0]),
+        });
+        let viewport = window_viewport(egui::ViewportBuilder::default(), &settings);
+        assert_eq!(viewport.inner_size, Some(egui::vec2(1000.0, 700.0)));
+        assert_eq!(viewport.position, Some(egui::pos2(50.0, 60.0)));
+    }
+
+    #[test]
+    fn with_the_preference_off_the_window_manager_places_the_window() {
+        let mut settings = AppSettings::default();
+        settings.set_window_geometry(WindowGeometry {
+            size: Some([1000.0, 700.0]),
+            position: Some([50.0, 60.0]),
+        });
+        settings.set_remember_window(false);
+        let viewport = window_viewport(egui::ViewportBuilder::default(), &settings);
+        assert_eq!(viewport.inner_size, None);
+        assert_eq!(viewport.position, None);
+    }
+
+    fn saved_settings(app: &BridgeApp) -> AppSettings {
+        AppSettings::load(app.config.as_ref().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn closing_saves_the_window_when_it_is_remembered() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = test_app(Config::at(dir.path().join("config")));
+        let geometry = WindowGeometry {
+            size: Some([900.0, 640.0]),
+            position: Some([10.0, 20.0]),
+        };
+        app.window = geometry;
+        app.save_window();
+        assert_eq!(saved_settings(&app).window_geometry(), geometry);
+    }
+
+    #[test]
+    fn closing_leaves_the_window_unsaved_when_the_preference_is_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = test_app(Config::at(dir.path().join("config")));
+        app.remember_window = false;
+        app.save_remember_window();
+        app.window = WindowGeometry {
+            size: Some([900.0, 640.0]),
+            position: Some([10.0, 20.0]),
+        };
+        app.save_window();
+        let saved = saved_settings(&app);
+        assert!(!saved.remember_window());
+        assert_eq!(saved.window_geometry(), WindowGeometry::default());
     }
 
     #[test]

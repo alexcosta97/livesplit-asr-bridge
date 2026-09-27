@@ -1,8 +1,9 @@
-//! Checkbox: a 16 px square, orange with a black check when ticked, and its
-//! label.
+//! Checkbox: a 16 px square, orange with a black check when ticked, its
+//! label and an optional note under the label.
 
 use eframe::egui::{
-    Color32, Response, Sense, Stroke, StrokeKind, Ui, Widget, WidgetInfo, WidgetType, pos2, vec2,
+    Color32, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget, WidgetInfo, WidgetType, pos2,
+    vec2,
 };
 
 use crate::ui::theme;
@@ -11,17 +12,30 @@ use crate::ui::theme;
 const BOX_SIZE: f32 = 16.0;
 /// The space between the square and the label.
 const GAP: f32 = 8.0;
+/// The space between the label and the note.
+const NOTE_GAP: f32 = 4.0;
 
 /// A checkbox that ticks and unticks `checked` when clicked.
 #[must_use = "add it with `ui.add`"]
 pub struct Checkbox<'a> {
     checked: &'a mut bool,
     label: &'a str,
+    note: Option<&'a str>,
 }
 
 impl<'a> Checkbox<'a> {
     pub fn new(checked: &'a mut bool, label: &'a str) -> Self {
-        Self { checked, label }
+        Self {
+            checked,
+            label,
+            note: None,
+        }
+    }
+
+    /// Adds a note under the label, in muted text that wraps.
+    pub fn note(mut self, note: &'a str) -> Self {
+        self.note = Some(note);
+        self
     }
 }
 
@@ -30,9 +44,22 @@ impl Widget for Checkbox<'_> {
         let galley =
             ui.painter()
                 .layout_no_wrap(self.label.to_owned(), theme::body(13.0), theme::TEXT);
+        let note = self.note.map(|note| {
+            let wrap_width = (ui.available_width() - BOX_SIZE - GAP).max(0.0);
+            ui.painter().layout(
+                note.to_owned(),
+                theme::body(12.0),
+                theme::TEXT_MUTED,
+                wrap_width,
+            )
+        });
+        let label_height = BOX_SIZE.max(galley.size().y);
+        let note_size = note
+            .as_ref()
+            .map_or(Vec2::ZERO, |note| note.size() + vec2(0.0, NOTE_GAP));
         let size = vec2(
-            BOX_SIZE + GAP + galley.size().x,
-            BOX_SIZE.max(galley.size().y),
+            BOX_SIZE + GAP + galley.size().x.max(note_size.x),
+            label_height + note_size.y,
         );
         let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
         if response.clicked() {
@@ -45,8 +72,9 @@ impl Widget for Checkbox<'_> {
 
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
+            let label_center = rect.top() + label_height / 2.0;
             let square = eframe::egui::Rect::from_min_size(
-                pos2(rect.left(), rect.center().y - BOX_SIZE / 2.0),
+                pos2(rect.left(), label_center - BOX_SIZE / 2.0),
                 vec2(BOX_SIZE, BOX_SIZE),
             );
             let (fill, border) = if checked {
@@ -78,11 +106,12 @@ impl Widget for Checkbox<'_> {
                     StrokeKind::Outside,
                 );
             }
-            let text_pos = pos2(
-                square.right() + GAP,
-                rect.center().y - galley.size().y / 2.0,
-            );
+            let text_pos = pos2(square.right() + GAP, label_center - galley.size().y / 2.0);
             painter.galley(text_pos, galley, theme::TEXT);
+            if let Some(note) = note {
+                let note_pos = pos2(text_pos.x, rect.top() + label_height + NOTE_GAP);
+                painter.galley(note_pos, note, theme::TEXT_MUTED);
+            }
         }
         response
     }
