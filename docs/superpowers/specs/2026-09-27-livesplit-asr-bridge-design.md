@@ -510,8 +510,9 @@ Later:
     and stand down (needs research: the protocol does not expose this).
 17. Run legacy ASL scripts (very bottom of the backlog).
 
-## 17. Decision needed
+## 17. License
 
-- **License.** The Rust ecosystem, including `livesplit-core`, commonly uses a
-  dual MIT / Apache-2.0 license. A license must be chosen before the
-  repository is published.
+Dual licensed under MIT or Apache-2.0, at the user's option, as is common in
+the Rust ecosystem (including `livesplit-core`). The repository contains
+`LICENSE-MIT` and `LICENSE-APACHE`, and `Cargo.toml` declares
+`license = "MIT OR Apache-2.0"`.
