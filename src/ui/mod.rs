@@ -3,6 +3,7 @@
 
 mod components;
 mod connection_tab;
+mod file_pick;
 mod folder;
 mod last_action;
 mod preferences_tab;
@@ -17,6 +18,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::mpsc::Receiver,
+    thread,
     time::{Duration, Instant},
 };
 
@@ -36,6 +38,7 @@ use components::{
     LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
+use file_pick::{FilePick, PickPoll};
 use last_action::LastActions;
 use preferences_tab::PreferencesAction;
 use server_status::ServerStatus;
@@ -168,10 +171,12 @@ pub struct BridgeApp {
     settings: SettingsEditor,
     /// What the open Unsaved dialog is asking about.
     pending: Option<Pending>,
-    /// Asks for the `.wasm` file to open. Tests replace the file dialog.
-    pick_splitter: fn() -> Option<PathBuf>,
     /// Closing was asked for and the unsaved settings dealt with.
     closing: bool,
+    /// Open was asked for, and the file picker opens at the end of the frame.
+    open_requested: bool,
+    /// The file picker for Open…, while it is open.
+    file_pick: FilePick,
 }
 
 impl BridgeApp {
@@ -220,8 +225,9 @@ impl BridgeApp {
             dialog: None,
             settings: SettingsEditor::default(),
             pending: None,
-            pick_splitter,
             closing: false,
+            open_requested: false,
+            file_pick: FilePick::default(),
         };
         // `app.toml` is read before the server starts, since the server
         // listens on its port; what went wrong is reported once the app can.
@@ -475,6 +481,7 @@ impl BridgeApp {
         let loaded = self.runner.loaded_path().map(|path| file_name(&path));
         let loaded = loaded.as_deref();
         let game = self.game.as_ref().map(|game| game.name.clone());
+        let picking = self.file_pick.is_open();
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = CARD_GAP;
             components::app_header(ui, width);
@@ -489,8 +496,8 @@ impl BridgeApp {
             }
 
             let action = match width {
-                Width::Wide => components::splitter_card(ui, loaded, game.as_deref()),
-                Width::Compact => components::splitter_strip(ui, loaded),
+                Width::Wide => components::splitter_card(ui, loaded, game.as_deref(), picking),
+                Width::Compact => components::splitter_strip(ui, loaded, picking),
             };
             match action {
                 Some(SplitterAction::Open) => self.open(),
@@ -645,11 +652,9 @@ impl BridgeApp {
     fn proceed(&mut self, pending: Pending) {
         match pending {
             Pending::Reload => self.reload(),
-            Pending::Open => {
-                if let Some(path) = (self.pick_splitter)() {
-                    self.load(path);
-                }
-            }
+            // The status column and the Unsaved dialog have no `Frame` to
+            // parent the picker to, so it opens at the end of the frame.
+            Pending::Open => self.open_requested = true,
             Pending::ChangeGame => self.change_game(),
             Pending::Close => {
                 self.closing = true;
@@ -772,6 +777,43 @@ impl BridgeApp {
         }
     }
 
+    /// Opens the file picker for a `.wasm` file, unless it is already open.
+    /// The picker waits on its own thread, so the window keeps answering the
+    /// compositor (#50); [`Self::poll_file_pick`] loads the file picked.
+    fn start_open(&mut self, frame: &eframe::Frame, ctx: &egui::Context) {
+        let Some(sender) = self.file_pick.begin() else {
+            return;
+        };
+        // Made here, on the UI thread: on macOS the picker is a sheet on the
+        // window, shown as soon as it is made.
+        let pick = rfd::AsyncFileDialog::new()
+            .add_filter("Auto splitter", &["wasm"])
+            .set_parent(frame)
+            .pick_file();
+        let ctx = ctx.clone();
+        let spawned = thread::Builder::new()
+            .name("file picker".to_owned())
+            .spawn(move || {
+                let path = pollster::block_on(pick).map(|file| file.path().to_owned());
+                let _ = sender.send(path);
+                ctx.request_repaint();
+            });
+        if let Err(error) = spawned {
+            self.file_pick.cancel();
+            self.log(
+                Category::Error,
+                format!("Couldn't open the file picker: {error}"),
+            );
+        }
+    }
+
+    /// Loads the file picked, once the file picker has closed.
+    fn poll_file_pick(&mut self) {
+        if let PickPoll::Picked(path) = self.file_pick.poll() {
+            self.load(path);
+        }
+    }
+
     /// Loads the same file again, with its game's saved settings.
     fn reload(&mut self) {
         if let Some(path) = self.runner.loaded_path() {
@@ -883,18 +925,12 @@ fn category(event: &RunnerEvent) -> Category {
     }
 }
 
-/// Asks for a `.wasm` file with the file dialog.
-fn pick_splitter() -> Option<PathBuf> {
-    rfd::FileDialog::new()
-        .add_filter("Auto splitter", &["wasm"])
-        .pick_file()
-}
-
 impl eframe::App for BridgeApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.track_window(ui.ctx());
         self.handle_events();
         self.check_close();
+        self.poll_file_pick();
         self.game_dialog(&ui.ctx().clone());
         self.unsaved_dialog();
         self.refresh_addresses(ui.ctx());
@@ -905,16 +941,21 @@ impl eframe::App for BridgeApp {
             egui::CentralPanel::default()
                 .frame(column)
                 .show(ui, |ui| self.status_column(ui, Width::Compact));
-            return;
+        } else {
+            egui::Panel::left("status")
+                .exact_size(COLUMN_WIDTH)
+                .resizable(false)
+                .frame(column)
+                .show(ui, |ui| self.status_column(ui, Width::Wide));
+            egui::CentralPanel::default()
+                .frame(Frame::NONE.fill(theme::WINDOW))
+                .show(ui, |ui| self.tab_area(ui));
         }
-        egui::Panel::left("status")
-            .exact_size(COLUMN_WIDTH)
-            .resizable(false)
-            .frame(column)
-            .show(ui, |ui| self.status_column(ui, Width::Wide));
-        egui::CentralPanel::default()
-            .frame(Frame::NONE.fill(theme::WINDOW))
-            .show(ui, |ui| self.tab_area(ui));
+        // Open is asked for mid-frame, where there is no `Frame` to parent
+        // the picker to.
+        if std::mem::take(&mut self.open_requested) {
+            self.start_open(frame, ui.ctx());
+        }
     }
 
     fn on_exit(&mut self) {
@@ -980,17 +1021,25 @@ mod tests {
     #[test]
     fn open_asks_before_the_file_dialog() {
         let (_dir, mut app) = app_with_unsaved_edit();
-        app.pick_splitter = || panic!("the file dialog opened before the answer");
         app.open();
         assert_eq!(app.pending, Some(Pending::Open));
+        assert!(!app.open_requested);
     }
 
     #[test]
-    fn answering_open_shows_the_file_dialog_then_loads_the_file() {
+    fn answering_open_shows_the_file_dialog() {
         let (_dir, mut app) = app_with_unsaved_edit();
-        app.pick_splitter = || Some(PathBuf::from("/other.wasm"));
         app.open();
         app.answer_unsaved(UnsavedAction::Discard);
+        assert!(app.open_requested);
+    }
+
+    #[test]
+    fn the_file_picked_is_loaded() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        let sender = app.file_pick.begin().unwrap();
+        sender.send(Some(PathBuf::from("/other.wasm"))).unwrap();
+        app.poll_file_pick();
         // The file has no game yet, so loading it asks which game it is for.
         let path = app.dialog.as_ref().map(|(_, path)| path.clone());
         assert_eq!(path, Some(PathBuf::from("/other.wasm")));
@@ -999,10 +1048,10 @@ mod tests {
     #[test]
     fn cancelling_open_shows_no_file_dialog() {
         let (_dir, mut app) = app_with_unsaved_edit();
-        app.pick_splitter = || panic!("the file dialog opened after Cancel");
         app.open();
         app.answer_unsaved(UnsavedAction::Cancel);
         assert_eq!(app.pending, None);
+        assert!(!app.open_requested);
     }
 
     #[test]
