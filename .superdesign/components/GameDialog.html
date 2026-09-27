@@ -1,0 +1,17 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
+<div class="w-[480px] rounded-[4px] border border-[#3A3A40] bg-[#151517] p-[24px] flex flex-col gap-[16px]">
+  <div class="font-['Archivo_Black'] uppercase tracking-[-0.02em] text-[16px] text-[#F5F5F4]">{{ mode === 'change' ? 'Change game' : 'Which game is this auto splitter for?' }}</div>
+  <div class="font-['Space_Mono'] text-[12px] text-[#A1A1AA] -mt-[8px]">{{ fileName }}</div>
+  <div class="flex flex-col gap-[6px]">
+    <span class="font-['Inter'] font-semibold text-[13px] text-[#F5F5F4]">Game</span>
+    <div class="h-[36px] rounded-[4px] border border-[#FF4D00] bg-[#0B0B0C] px-[12px] flex items-center font-['Inter'] text-[14px] text-[#F5F5F4]">{{ typed }}</div>
+  </div>
+  <div class="flex flex-col gap-[4px]">
+    <div class="font-['Space_Mono'] text-[11px] uppercase tracking-[0.08em] text-[#6B6B73] mb-[4px]">Or pick a game you already set up</div>
+    <div class="flex items-center justify-between h-[40px] px-[12px] rounded-[4px] border" :class="selected === 'gtasa' ? 'border-[#FF4D00] bg-[#1E1E21]' : 'border-transparent'"><span class="font-['Inter'] text-[14px] text-[#F5F5F4]">GTA San Andreas — Definitive Edition</span><span class="font-['Space_Mono'] text-[11px] text-[#A1A1AA]">2 auto splitters</span></div>
+    <div class="flex items-center justify-between h-[40px] px-[12px] rounded-[4px] border" :class="selected === 'gtavc' ? 'border-[#FF4D00] bg-[#1E1E21]' : 'border-transparent'"><span class="font-['Inter'] text-[14px] text-[#F5F5F4]">GTA Vice City — Definitive Edition</span><span class="font-['Space_Mono'] text-[11px] text-[#A1A1AA]">1 auto splitter</span></div>
+    <div class="flex items-center justify-between h-[40px] px-[12px] rounded-[4px] border" :class="selected === 'hk' ? 'border-[#FF4D00] bg-[#1E1E21]' : 'border-transparent'"><span class="font-['Inter'] text-[14px] text-[#F5F5F4]">Hollow Knight</span><span class="font-['Space_Mono'] text-[11px] text-[#A1A1AA]">1 auto splitter</span></div>
+  </div>
+  <div class="font-['Inter'] text-[12px] text-[#6B6B73]">Settings are saved per game, so auto splitters for the same game share them.</div>
+  <div class="flex justify-end gap-[8px] pt-[4px]"><sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="cancel" :props="JSON.stringify({label: 'Cancel'})"></sd-component><sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="use" :props="JSON.stringify({label: 'Use this game', variant: 'primary'})"></sd-component></div>
+</div>

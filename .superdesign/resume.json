@@ -10,7 +10,7 @@
         ".superdesign/design-system.md"
       ],
       "fingerprints": {
-        ".superdesign/design-system.md": "681a7ab75cbd042a6e3188fa06adc769dd83618c42c3c34b4fe4c34db5eaa807"
+        ".superdesign/design-system.md": "1499cc4a4f1c82bb956b99ef8c9125970205a6bd59c9f1183d36c50ea5401fe8"
       },
       "drafts": {
         "ebfbea53-a813-409d-b074-06a7bba99e50": {
@@ -101,9 +101,14 @@
           "visualDirection": "LiveSplit One dark default, values from one.livesplit.org CSS :root; see design-system-livesplit-one.md",
           "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
           "currentVersion": 2
+        },
+        "42c19180-e357-40d6-a1f2-787d02ea379d": {
+          "title": "C4 Compact — tab view (Show details on a tiling WM, or first launch)",
+          "visualDirection": "built from components",
+          "currentVersion": 1
         }
       },
-      "updatedAt": "2026-09-27T12:39:59Z",
+      "updatedAt": "2026-09-27T13:04:56Z",
       "referenceIds": [
         "581f4e0b-b7d5-443d-9bed-3cf5ce8ac7fe"
       ],
@@ -113,7 +118,122 @@
           "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/bca2406a-5118-4388-9e38-b0e37fab0d9f/brand-assets/assets-brand-logo-icon.svg/icon.svg",
           "sourcePath": "assets/brand/logo/icon.svg"
         }
-      }
+      },
+      "componentsFile": ".superdesign/components/components.json",
+      "componentsSource": ".superdesign/components/library.py",
+      "screensFile": ".superdesign/screens/screens.json",
+      "screensSource": ".superdesign/screens/screens.py",
+      "note": "Every screen is built only from the components; change a component in library.py and re-run it. Screen drafts and ids: screens.json. The 'drafts' map below is history.",
+      "components": [
+        {
+          "name": "Btn",
+          "id": "5794552b-71ba-4a29-a620-eaa6e886b681"
+        },
+        {
+          "name": "SectionLabel",
+          "id": "d55b5404-6f47-4fa0-805f-1e1c2a45186b"
+        },
+        {
+          "name": "InfoMarker",
+          "id": "9da26067-d084-418d-931a-5acfb9781d19"
+        },
+        {
+          "name": "Tooltip",
+          "id": "6261772f-47d8-43ba-8f3b-02010fbda175"
+        },
+        {
+          "name": "AddressRow",
+          "id": "f5d47feb-9c19-4ebc-bbd3-8ecabbe16d65"
+        },
+        {
+          "name": "Checkbox",
+          "id": "efbc3080-cb48-4798-8c97-28ef779116c4"
+        },
+        {
+          "name": "AppHeader",
+          "id": "a1bc1fab-a3c3-4903-95fa-f631f12bd725"
+        },
+        {
+          "name": "ErrorCard",
+          "id": "9af2c407-6e00-4d33-abb5-340b4d4849d0"
+        },
+        {
+          "name": "SplitterCard",
+          "id": "43f8fd59-ffbc-4559-86f7-1f20f0059ecc"
+        },
+        {
+          "name": "SplitterStrip",
+          "id": "b53606dc-d50d-4488-b43f-7f73dd0e9d1f"
+        },
+        {
+          "name": "GameCard",
+          "id": "227f34f7-6178-4fb4-b595-386e5b777bef"
+        },
+        {
+          "name": "TimerCard",
+          "id": "854b3a24-6ee6-412e-90a0-68a312ebe8e8"
+        },
+        {
+          "name": "LastActionCard",
+          "id": "5d3a79c7-0c3c-44af-bbce-79bde1a129d2"
+        },
+        {
+          "name": "TabStrip",
+          "id": "36c5934f-97b6-4d4c-b8c3-50e608ee3532"
+        },
+        {
+          "name": "SettingsToolbar",
+          "id": "007ab86c-3263-4110-b21b-430c05eac7e1"
+        },
+        {
+          "name": "SettingHeading",
+          "id": "7111797f-4959-4899-9296-8b44cc7ef5f9"
+        },
+        {
+          "name": "SettingChoice",
+          "id": "b651e1aa-e707-4525-8f66-8beaec303f07"
+        },
+        {
+          "name": "SettingFile",
+          "id": "5b9f3dbe-9a8c-44c5-b720-7d78e4643821"
+        },
+        {
+          "name": "EmptyState",
+          "id": "282879dc-4709-4034-ab76-6d7f066a8d1e"
+        },
+        {
+          "name": "ServerSection",
+          "id": "494ec673-dbcd-4d06-b9d5-d28464ccfebb"
+        },
+        {
+          "name": "TimerRow",
+          "id": "e0dd9f6d-4aa7-44db-aae6-2ed8e092d7e3"
+        },
+        {
+          "name": "HowToConnect",
+          "id": "3faf58eb-e49b-4d98-81b3-a488f04c27ab"
+        },
+        {
+          "name": "LogToolbar",
+          "id": "81491172-8409-4018-afaa-ce125b12aeba"
+        },
+        {
+          "name": "LogLine",
+          "id": "d4b20ddc-62d0-44cd-9131-3e8390de9fca"
+        },
+        {
+          "name": "AboutRow",
+          "id": "796f3219-862a-45df-9792-df24af6c7c94"
+        },
+        {
+          "name": "GameDialog",
+          "id": "4f5ae936-edb3-4768-bcb3-d33762a0036b"
+        },
+        {
+          "name": "UnsavedDialog",
+          "id": "dd4c0478-c43e-4aa8-8dd3-3800248b4d21"
+        }
+      ]
     },
     "brand-logo": {
       "targetKind": "graphic-options",

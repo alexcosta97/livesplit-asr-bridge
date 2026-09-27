@@ -1,0 +1,10 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
+<label class="flex items-center gap-[12px] cursor-pointer" :class="{ 'pl-[16px]': indent }">
+  <span class="inline-flex items-center justify-center w-[16px] h-[16px] rounded-[3px] border"
+    :class="{ 'bg-[#FF4D00] border-[#FF4D00]': checked, 'bg-transparent border-[#3A3A40]': !checked }">
+    <svg v-if="checked" viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="#0B0B0C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </span>
+  <span class="font-['Inter'] text-[14px] text-[#F5F5F4]">{{ label }}</span>
+  <sd-component v-if="tooltip" componentId="9da26067-d084-418d-931a-5acfb9781d19" name="InfoMarker" instance="infomarker" :props="JSON.stringify({})"></sd-component>
+</label>
+<div v-if="note" class="font-['Inter'] text-[13px] text-[#6B6B73] mt-[6px]" :class="{ 'pl-[44px]': indent, 'pl-[28px]': !indent }">{{ note }}</div>

@@ -274,7 +274,8 @@ notifications.
 
 **Timer card:**
 
-- **CONNECTED · N TIMERS**, or **NOT CONNECTED** with "How do I connect?",
+- **CONNECTED**, with the number of timers below it (for example "2 timers ·
+  LiveSplit One"), or **NOT CONNECTED** with "How do I connect?",
   which opens the Connection tab at its setup steps.
 - **SERVER STOPPED** while the server is not listening, for example when the
   port is in use. There are no addresses to connect to, so none are shown; the
@@ -318,7 +319,8 @@ notifications.
 ││ SanAndreas.exe · 20 Hz           ││
 │└──────────────────────────────────┘│
 │┌ TIMER ───────────────────────────┐│
-││ ● CONNECTED · 1 TIMER            ││
+││ ● CONNECTED                      ││
+││ 1 timer · LiveSplit One          ││
 ││ Addresses: Connection tab [?]    ││
 │└──────────────────────────────────┘│
 │┌ LAST ACTION ─────────────────────┐│
@@ -454,6 +456,40 @@ setup steps, with **← Status** to go back.
   `assets/brand/BRAND.md`). The logo shows the two machines joined by one
   link: a white node for the game PC and an orange node for the timer, with a
   split mark on the link.
+
+### 6.11 UI components
+
+The screens are built from a fixed set of components. Each is implemented once
+in the app (as an egui widget) and in the mockups (as a Superdesign component),
+and every screen is made only of these, so a change to a component changes
+every screen that uses it. Their exact styling is in
+`.superdesign/components/library.py`, which follows the design system.
+
+| Component | Variants and states | Used in |
+|---|---|---|
+| **Button** | primary, secondary; sizes 32, 28 and 24 px; disabled | everywhere |
+| **Section label** | uppercase mono label | cards, tab sections |
+| **Info marker** and **Tooltip** | the `i` marker and the tooltip it opens | settings |
+| **Address row** | network label (LAN, VPN), URL, **Copy**; wide or compact | Timer card, How to connect |
+| **Checkbox** | checked or not, indented under a level-2 heading, tooltip marker, optional note | settings, log filters, preferences |
+| **App header** | wordmark and version; compact with **Show details** or **← Status** | status column |
+| **Error card** | crashed, load failed, port in use; wide or compact | status column |
+| **Auto splitter card** | loaded or nothing loaded | status column (wide) |
+| **Splitter strip** | loaded (**Reload**) or nothing loaded (**Open…**) | status column (compact) |
+| **Game card** | attached, waiting for game, stopped, nothing loaded; wide or compact | status column |
+| **Timer card** | connected, not connected (with addresses), server stopped; wide or compact | status column |
+| **Last action card** | an action with its two previous ones, not sent, empty; wide or compact | status column |
+| **Tab strip** | active tab, unsaved `•` | tab area |
+| **Settings toolbar** | unsaved, saved, nothing to save | Settings tab |
+| **Setting heading** | level 1 or 2 | Settings tab |
+| **Setting choice** and **Setting file** | a dropdown; a path with **Browse…** | Settings tab |
+| **Empty state** | no auto splitter loaded | Settings tab |
+| **Server section** | port, edited, port in use | Connection tab |
+| **Timer row** | address, tracked state, **PRIMARY** | Connection tab |
+| **How to connect** | expanded or collapsed | Connection tab |
+| **Log toolbar** and **Log line** | filter states; line categories, highlighted entry | Log tab |
+| **About row** | a folder with **Open** | Preferences tab |
+| **Game dialog** and **Unsaved dialog** | new file or change; reload, open or close | dialogs |
 
 ## 7. Configuration and settings storage
 

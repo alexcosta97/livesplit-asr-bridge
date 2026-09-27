@@ -1,0 +1,7 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
+<div class="flex items-center gap-[12px] pb-[24px] border-b border-[#2A2A2E]">
+  <sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="save" :props="JSON.stringify({label: 'Save', variant: 'primary', disabled: status !== 'unsaved'})"></sd-component>
+  <sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="revert" :props="JSON.stringify({label: 'Revert to defaults'})"></sd-component>
+  <span v-if="status === 'unsaved'" class="font-['Inter'] text-[13px] text-[#FFC233]">● Unsaved changes</span>
+  <span v-if="status === 'saved'" class="font-['Inter'] text-[13px] text-[#22E07A]">✓ Saved</span>
+</div>

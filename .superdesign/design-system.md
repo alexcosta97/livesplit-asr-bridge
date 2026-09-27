@@ -24,7 +24,7 @@ Jobs to be done:
      and **Reload**.
   4. **Game** status card: ATTACHED (green) / WAITING FOR GAME… (neutral, this is normal, not
      an error). Detail line: process name and tick rate, e.g. `SanAndreas.exe · 20 Hz`.
-  5. **Timer** status card: CONNECTED · 1 TIMER (green) / NOT CONNECTED (neutral) with a
+  5. **Timer** status card: CONNECTED (green, the timer count on the line below) / NOT CONNECTED (neutral) with a
      "How do I connect?" link; the connection URLs appear only while NOT CONNECTED (see
      "Flows and states").
   6. **Last action** card: the most recent timer action, big and readable, e.g.
@@ -36,6 +36,21 @@ Jobs to be done:
   and the status column fills the window. The status cards grow to use the width and the
   status words get bigger. Nothing else changes: same cards, same order. A small
   "Show details" button (or widening the window) brings the tabs back.
+
+## Components
+
+Every screen is built only from the reusable components in `.superdesign/components/`
+(`library.py` defines and syncs them; ids in `components.json`). Screens are in
+`.superdesign/screens/` (`screens.py` builds and imports them; draft ids in `screens.json`).
+To change how something looks, change its component and re-run `library.py`: every screen
+that uses it updates. Never restyle inside a screen. The list of components, variants and
+states is in the spec (§6.11).
+
+Superdesign notes learned the hard way: the component preview ignores `--css-imports` and has
+a white page, so each template loads the fonts itself and sets the page to ink; `<template
+v-if>` blocks don't render there, so conditional blocks use `<div v-if>`; slots don't work from
+hand-written drafts, so everything is driven by props; nested components take dynamic props
+with `:props="JSON.stringify({...})"`.
 
 ## Brand
 
@@ -123,7 +138,7 @@ Every mockup must stay consistent with these rules.
 - **Game:** ATTACHED (green) · WAITING FOR GAME… (neutral grey, outlined dot; normal, not an
   error) · STOPPED (neutral, "The auto splitter isn't running") after the auto splitter crashed,
   until Reload · "—" muted with "Load an auto splitter first" when no splitter is loaded.
-- **Timer:** CONNECTED · N TIMERS (green) · NOT CONNECTED (neutral) with an orange
+- **Timer:** CONNECTED (green; "N timers · LiveSplit One" below) · NOT CONNECTED (neutral) with an orange
   "How do I connect?" link · SERVER STOPPED (neutral, no addresses) while the server isn't
   listening, e.g. port in use (the error card explains why). The connection URL rows are always in the Timer card in the wide
   state, one row per non-loopback IPv4 address (e.g. `ws://192.168.1.20:16834` LAN and

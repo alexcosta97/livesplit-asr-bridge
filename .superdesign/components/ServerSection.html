@@ -1,0 +1,12 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
+<div class="flex flex-col gap-[16px]">
+  <sd-component componentId="d55b5404-6f47-4fa0-805f-1e1c2a45186b" name="SectionLabel" instance="sectionlabel" :props="JSON.stringify({text: 'Server'})"></sd-component>
+  <div class="flex items-center gap-[12px]">
+    <span class="font-['Inter'] text-[14px] text-[#F5F5F4]">Port</span>
+    <div class="w-[120px] h-[32px] rounded-[4px] border bg-[#151517] px-[12px] flex items-center font-['Space_Mono'] text-[13px] text-[#F5F5F4]"
+      :class="{ 'border-[#FF4D00]': edited, 'border-[#FF3B3B]': portError, 'border-[#3A3A40]': !edited && !portError }">{{ port }}</div>
+    <sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="restart" :props="JSON.stringify({label: 'Restart server', variant: portError ? 'primary' : 'secondary'})"></sd-component>
+    <span v-if="edited" class="font-['Inter'] text-[13px] text-[#FFC233]">● Restart the server to apply</span>
+  </div>
+  <div v-if="portError" class="rounded-[4px] border border-[#FF3B3B] bg-[#1A0E0F] px-[14px] py-[10px] font-['Inter'] text-[13px] text-[#F5F5F4]">Couldn't start the server: port {{ port }} is already in use by another program. Try {{ suggestion }}.</div>
+</div>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>W6</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>sd-component{display:block} .col>sd-component{flex-shrink:0}</style>
+</head><body>
+<div class="w-[1280px] h-[800px] flex bg-[#0B0B0C] overflow-hidden relative">
+<aside class="col w-[300px] shrink-0 h-full bg-[#151517] border-r border-[#2A2A2E] p-[16px] flex flex-col gap-[12px] overflow-y-auto">
+  <sd-component componentId="a1bc1fab-a3c3-4903-95fa-f631f12bd725" name="AppHeader" instance="appheader-101" props='{}'></sd-component>
+  <sd-component componentId="43f8fd59-ffbc-4559-86f7-1f20f0059ecc" name="SplitterCard" instance="splittercard-102" props='{"loaded": true}'></sd-component>
+  <sd-component componentId="227f34f7-6178-4fb4-b595-386e5b777bef" name="GameCard" instance="gamecard-103" props='{"state": "attached"}'></sd-component>
+  <sd-component componentId="854b3a24-6ee6-412e-90a0-68a312ebe8e8" name="TimerCard" instance="timercard-104" props='{"state": "connected", "timers": 1}'></sd-component>
+  <sd-component componentId="5d3a79c7-0c3c-44af-bbce-79bde1a129d2" name="LastActionCard" instance="lastactioncard-105" props='{"state": "action", "action": "SPLIT", "segment": "Los Santos — Gym Moves", "time": "19:31:01", "previous1": "19:28:44  SPLIT  Big Smoke", "previous2": "19:25:03  START"}'></sd-component>
+</aside>
+<main class="flex-1 min-w-0 flex flex-col">
+  <sd-component componentId="36c5934f-97b6-4d4c-b8c3-50e608ee3532" name="TabStrip" instance="tabstrip-122" props='{"active": "settings", "unsaved": true}'></sd-component>
+  <div class="flex-1 overflow-y-auto p-[24px]">
+<sd-component componentId="007ab86c-3263-4110-b21b-430c05eac7e1" name="SettingsToolbar" instance="settingstoolbar-106" props='{"status": "unsaved"}'></sd-component>
+<sd-component componentId="7111797f-4959-4899-9296-8b44cc7ef5f9" name="SettingHeading" instance="settingheading-107" props='{"text": "Start & reset"}'></sd-component>
+<div class="flex flex-col gap-[12px]"><sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-108" props='{"label": "Start on new game", "checked": true}'></sd-component><sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-109" props='{"label": "Reset on main menu", "checked": false}'></sd-component></div>
+<sd-component componentId="7111797f-4959-4899-9296-8b44cc7ef5f9" name="SettingHeading" instance="settingheading-110" props='{"text": "Splits"}'></sd-component>
+<div class="flex flex-col gap-[12px]"><sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-111" props='{"label": "Split on mission passed", "checked": true}'></sd-component><sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-112" props='{"label": "Split on 100% stat increase", "checked": false}'></sd-component><sd-component componentId="b651e1aa-e707-4525-8f66-8beaec303f07" name="SettingChoice" instance="settingchoice-113" props='{}'></sd-component></div>
+<sd-component componentId="7111797f-4959-4899-9296-8b44cc7ef5f9" name="SettingHeading" instance="settingheading-114" props='{"text": "Collectibles"}'></sd-component>
+<div class="flex flex-col gap-[12px]"><sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-115" props='{"label": "Tags", "checked": true, "tooltip": true}'></sd-component><sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-116" props='{"label": "Snapshots", "checked": false, "tooltip": false}'></sd-component><sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-117" props='{"label": "Horseshoes", "checked": false, "tooltip": false}'></sd-component><sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-118" props='{"label": "Oysters", "checked": false, "tooltip": false}'></sd-component></div>
+<sd-component componentId="7111797f-4959-4899-9296-8b44cc7ef5f9" name="SettingHeading" instance="settingheading-119" props='{"text": "Timing"}'></sd-component>
+<sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="checkbox-120" props='{"label": "Remove loads (game time)", "checked": true, "tooltip": true}'></sd-component>
+  </div>
+</main>
+<div class="absolute inset-0 bg-black/60 flex items-center justify-center z-50"><sd-component componentId="dd4c0478-c43e-4aa8-8dd3-3800248b4d21" name="UnsavedDialog" instance="unsaveddialog-121" props='{}'></sd-component></div>
+</div>
+</body></html>

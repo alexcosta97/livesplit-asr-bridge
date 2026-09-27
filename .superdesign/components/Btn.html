@@ -1,0 +1,10 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
+<button type="button" class="w-fit inline-flex items-center justify-center rounded-[4px] border font-['Inter'] font-semibold whitespace-nowrap"
+  :class="{
+    'bg-[#FF4D00] border-[#FF4D00] text-[#0B0B0C] hover:bg-[#FF6A26]': variant === 'primary',
+    'bg-transparent border-[#3A3A40] text-[#F5F5F4] hover:bg-[#1E1E21]': variant === 'secondary',
+    'h-[32px] px-[14px] text-[13px]': size === 'md',
+    'h-[28px] px-[10px] text-[12px]': size === 'sm',
+    'h-[24px] px-[8px] text-[11px]': size === 'xs',
+    'opacity-40 pointer-events-none': disabled
+  }">{{ label }}</button>

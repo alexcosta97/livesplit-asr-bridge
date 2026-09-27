@@ -1,0 +1,13 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
+<div class="flex flex-col gap-[12px] pb-[16px] border-b border-[#2A2A2E]">
+  <div class="flex items-center gap-[20px]">
+    <sd-component componentId="d55b5404-6f47-4fa0-805f-1e1c2a45186b" name="SectionLabel" instance="sectionlabel" :props="JSON.stringify({text: 'Show'})"></sd-component>
+    <sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="c1" :props="JSON.stringify({label: 'Auto splitter', checked: autoSplitter})"></sd-component>
+    <sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="c2" :props="JSON.stringify({label: 'Connection', checked: connection})"></sd-component>
+    <sd-component componentId="efbc3080-cb48-4798-8c97-28ef779116c4" name="Checkbox" instance="c3" :props="JSON.stringify({label: 'App & runtime', checked: app})"></sd-component>
+    <span class="font-['Inter'] text-[13px] text-[#6B6B73]">Errors are always shown.</span>
+  </div>
+  <div class="flex gap-[8px]">
+    <sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="copy" :props="JSON.stringify({label: 'Copy'})"></sd-component><sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="save" :props="JSON.stringify({label: 'Save log…'})"></sd-component><sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="clear" :props="JSON.stringify({label: 'Clear'})"></sd-component><sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="folder" :props="JSON.stringify({label: 'Open log folder'})"></sd-component>
+  </div>
+</div>

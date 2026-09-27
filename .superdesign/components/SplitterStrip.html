@@ -1,0 +1,7 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
+<div class="flex items-center justify-between gap-[8px]">
+  <span v-if="loaded" class="font-['Space_Mono'] text-[12px] text-[#A1A1AA] truncate">{{ fileName }}</span>
+  <span v-if="!loaded" class="font-['Space_Mono'] text-[12px] text-[#6B6B73]">No auto splitter loaded</span>
+  <sd-component v-if="loaded" componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="reload" :props="JSON.stringify({label: 'Reload', size: 'xs'})"></sd-component>
+  <sd-component v-if="!loaded" componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="open" :props="JSON.stringify({label: 'Open…', variant: 'primary', size: 'xs'})"></sd-component>
+</div>

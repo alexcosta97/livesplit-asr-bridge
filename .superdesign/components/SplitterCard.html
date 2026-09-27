@@ -1,0 +1,17 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;600&family=Space+Mono:wght@400;700&display=swap"><style>body{background:#0B0B0C}</style>
+<div class="rounded-[4px] border border-[#2A2A2E] bg-[#0B0B0C] p-[16px] flex flex-col gap-[12px]">
+  <sd-component componentId="d55b5404-6f47-4fa0-805f-1e1c2a45186b" name="SectionLabel" instance="sectionlabel" :props="JSON.stringify({text: 'Auto splitter'})"></sd-component>
+  <div v-if="loaded">
+    <div class="font-['Space_Mono'] text-[13px] text-[#F5F5F4] truncate">{{ fileName }}</div>
+    <div class="font-['Inter'] text-[13px] text-[#A1A1AA] leading-snug mt-[4px]">{{ gameName }}</div>
+    <a href="#change-game" id="change-game-link" class="font-['Inter'] text-[12px] text-[#FF4D00] hover:underline">Change</a>
+  </div>
+  <div v-if="!loaded">
+    <div class="font-['Space_Mono'] text-[13px] text-[#6B6B73]">NO AUTO SPLITTER</div>
+    <div class="font-['Inter'] text-[13px] text-[#A1A1AA] mt-[4px]">Open a .wasm auto splitter to start.</div>
+  </div>
+  <div class="flex gap-[8px]">
+    <sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="open" :props="JSON.stringify({label: 'Open…', variant: 'primary'})"></sd-component>
+    <sd-component componentId="5794552b-71ba-4a29-a620-eaa6e886b681" name="Btn" instance="reload" :props="JSON.stringify({label: 'Reload', disabled: !loaded})"></sd-component>
+  </div>
+</div>
