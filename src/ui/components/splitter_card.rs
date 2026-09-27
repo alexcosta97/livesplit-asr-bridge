@@ -22,11 +22,13 @@ pub enum SplitterAction {
 
 /// The Auto splitter card: the loaded file and its game with Change, or "NO
 /// AUTO SPLITTER" with help, then Open… and Reload. `game` is the loaded auto
-/// splitter's game, if it has one.
+/// splitter's game, if it has one. Open… is disabled while `picking`, when
+/// the file picker is already open.
 pub fn splitter_card(
     ui: &mut Ui,
     loaded: Option<&str>,
     game: Option<&str>,
+    picking: bool,
 ) -> Option<SplitterAction> {
     card(ui, None, |ui| {
         section_label(ui, "Auto splitter");
@@ -71,7 +73,7 @@ pub fn splitter_card(
         ui.add_space(12.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            let open = ui.add(Button::primary("Open…"));
+            let open = ui.add(Button::primary("Open…").enabled(!picking));
             let reload = reload_hint(ui.add(Button::secondary("Reload").enabled(loaded.is_some())));
             if change {
                 Some(SplitterAction::Change)

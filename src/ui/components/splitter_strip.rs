@@ -13,8 +13,9 @@ use crate::ui::theme;
 const HEIGHT: f32 = 24.0;
 
 /// The Splitter strip: the loaded file with Reload, or "No auto splitter
-/// loaded" with Open….
-pub fn splitter_strip(ui: &mut Ui, loaded: Option<&str>) -> Option<SplitterAction> {
+/// loaded" with Open…. Open… is disabled while `picking`, when the file picker
+/// is already open.
+pub fn splitter_strip(ui: &mut Ui, loaded: Option<&str>, picking: bool) -> Option<SplitterAction> {
     let size = vec2(ui.available_width(), HEIGHT);
     ui.allocate_ui_with_layout(size, Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -23,7 +24,11 @@ pub fn splitter_strip(ui: &mut Ui, loaded: Option<&str>) -> Option<SplitterActio
                 .clicked()
                 .then_some(SplitterAction::Reload),
             None => ui
-                .add(Button::primary("Open…").size(ButtonSize::Xs))
+                .add(
+                    Button::primary("Open…")
+                        .size(ButtonSize::Xs)
+                        .enabled(!picking),
+                )
                 .clicked()
                 .then_some(SplitterAction::Open),
         };

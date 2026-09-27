@@ -3,6 +3,7 @@
 
 mod components;
 mod connection_tab;
+mod file_pick;
 mod folder;
 mod last_action;
 mod preferences_tab;
@@ -15,8 +16,11 @@ mod theme;
 use std::{
     collections::HashMap,
     fs,
-    path::PathBuf,
+    future::Future,
+    path::{Path, PathBuf},
+    pin::Pin,
     sync::mpsc::Receiver,
+    thread,
     time::{Duration, Instant},
 };
 
@@ -36,6 +40,7 @@ use components::{
     LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
+use file_pick::{FilePick, PickFor, PickPoll};
 use last_action::LastActions;
 use preferences_tab::PreferencesAction;
 use server_status::ServerStatus;
@@ -168,10 +173,12 @@ pub struct BridgeApp {
     settings: SettingsEditor,
     /// What the open Unsaved dialog is asking about.
     pending: Option<Pending>,
-    /// Asks for the `.wasm` file to open. Tests replace the file dialog.
-    pick_splitter: fn() -> Option<PathBuf>,
     /// Closing was asked for and the unsaved settings dealt with.
     closing: bool,
+    /// The file picker asked for this frame, which opens at the end of it.
+    requested: Option<PickFor>,
+    /// The file picker for Open…, Save log… or Browse, while it is open.
+    file_pick: FilePick,
 }
 
 impl BridgeApp {
@@ -220,8 +227,9 @@ impl BridgeApp {
             dialog: None,
             settings: SettingsEditor::default(),
             pending: None,
-            pick_splitter,
             closing: false,
+            requested: None,
+            file_pick: FilePick::default(),
         };
         // `app.toml` is read before the server starts, since the server
         // listens on its port; what went wrong is reported once the app can.
@@ -475,6 +483,7 @@ impl BridgeApp {
         let loaded = self.runner.loaded_path().map(|path| file_name(&path));
         let loaded = loaded.as_deref();
         let game = self.game.as_ref().map(|game| game.name.clone());
+        let picking = self.file_pick.is_open();
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = CARD_GAP;
             components::app_header(ui, width);
@@ -489,8 +498,8 @@ impl BridgeApp {
             }
 
             let action = match width {
-                Width::Wide => components::splitter_card(ui, loaded, game.as_deref()),
-                Width::Compact => components::splitter_strip(ui, loaded),
+                Width::Wide => components::splitter_card(ui, loaded, game.as_deref(), picking),
+                Width::Compact => components::splitter_strip(ui, loaded, picking),
             };
             match action {
                 Some(SplitterAction::Open) => self.open(),
@@ -546,7 +555,7 @@ impl BridgeApp {
                 self.save_settings();
             }
             Some(SettingsAction::Open) => self.open(),
-            Some(SettingsAction::Browse(key)) => self.browse(&key),
+            Some(SettingsAction::Browse(key)) => self.request_pick(PickFor::Setting(key)),
             None => {}
         }
     }
@@ -645,11 +654,7 @@ impl BridgeApp {
     fn proceed(&mut self, pending: Pending) {
         match pending {
             Pending::Reload => self.reload(),
-            Pending::Open => {
-                if let Some(path) = (self.pick_splitter)() {
-                    self.load(path);
-                }
-            }
+            Pending::Open => self.request_pick(PickFor::Open),
             Pending::ChangeGame => self.change_game(),
             Pending::Close => {
                 self.closing = true;
@@ -735,30 +740,109 @@ impl BridgeApp {
         true
     }
 
-    /// Asks for a file for the file selection `key`, and puts it in the
-    /// draft.
-    fn browse(&mut self, key: &str) {
-        let Some(widget) = self
-            .settings
+    /// Asks for the file picker for `for_`. The status column, the tabs and
+    /// the Unsaved dialog have no `Frame` to parent the picker to, so it
+    /// opens at the end of the frame. The first request of a frame wins.
+    fn request_pick(&mut self, for_: PickFor) {
+        self.requested.get_or_insert(for_);
+    }
+
+    /// The file picker for `for_`, not shown yet, or `None` if what it is
+    /// for has gone.
+    fn pick_dialog(&self, for_: &PickFor) -> Option<rfd::AsyncFileDialog> {
+        let dialog = rfd::AsyncFileDialog::new();
+        match for_ {
+            PickFor::Open => Some(dialog.add_filter("Auto splitter", &["wasm"])),
+            PickFor::SaveLog => Some(
+                dialog
+                    .add_filter("Log", &["log", "txt"])
+                    .set_file_name(format!("{APP_NAME}.log")),
+            ),
+            PickFor::Setting(key) => {
+                let widget = self.file_setting(key)?;
+                let WidgetKind::FileSelect { filters } = &widget.kind else {
+                    return None;
+                };
+                let mut dialog = dialog.set_title(&*widget.description);
+                for (name, extensions) in settings::file_filters(filters) {
+                    dialog = dialog.add_filter(name, &extensions);
+                }
+                Some(dialog)
+            }
+        }
+    }
+
+    /// Opens the file picker for `for_`, unless one is already open. The
+    /// picker waits on its own thread, so the window keeps answering the
+    /// compositor (#50, #59); [`Self::poll_file_pick`] acts on the file
+    /// picked.
+    fn start_pick(&mut self, frame: &eframe::Frame, ctx: &egui::Context, for_: PickFor) {
+        if self.file_pick.is_open() {
+            return;
+        }
+        let Some(dialog) = self.pick_dialog(&for_) else {
+            return;
+        };
+        let saving = for_ == PickFor::SaveLog;
+        let Some(sender) = self.file_pick.begin(for_) else {
+            return;
+        };
+        // Made here, on the UI thread: on macOS the picker is a sheet on the
+        // window, shown as soon as it is made.
+        let dialog = dialog.set_parent(frame);
+        let pick: Pin<Box<dyn Future<Output = Option<rfd::FileHandle>> + Send>> = if saving {
+            Box::pin(dialog.save_file())
+        } else {
+            Box::pin(dialog.pick_file())
+        };
+        let ctx = ctx.clone();
+        let spawned = thread::Builder::new()
+            .name("file picker".to_owned())
+            .spawn(move || {
+                let path = pollster::block_on(pick).map(|file| file.path().to_owned());
+                let _ = sender.send(path);
+                ctx.request_repaint();
+            });
+        if let Err(error) = spawned {
+            self.file_pick.cancel();
+            self.log(
+                Category::Error,
+                format!("Couldn't open the file picker: {error}"),
+            );
+        }
+    }
+
+    /// Acts on the file picked, once the file picker has closed.
+    fn poll_file_pick(&mut self) {
+        let PickPoll::Picked(for_, path) = self.file_pick.poll() else {
+            return;
+        };
+        match for_ {
+            PickFor::Open => self.load(path),
+            PickFor::SaveLog => self.write_log(&path),
+            PickFor::Setting(key) => self.set_file_setting(&key, &path),
+        }
+    }
+
+    /// The file selection setting `key`, if the auto splitter still has it.
+    fn file_setting(&self, key: &str) -> Option<Setting> {
+        self.settings
             .widgets()
             .iter()
             .find(|widget| &*widget.key == key)
+            .filter(|widget| matches!(widget.kind, WidgetKind::FileSelect { .. }))
             .cloned()
-        else {
-            return;
-        };
-        let WidgetKind::FileSelect { filters } = &widget.kind else {
-            return;
-        };
-        let mut dialog = rfd::FileDialog::new().set_title(&*widget.description);
-        for (name, extensions) in settings::file_filters(filters) {
-            dialog = dialog.add_filter(name, &extensions);
-        }
-        let Some(path) = dialog.pick_file() else {
+    }
+
+    /// Puts the file at `path` in the draft, for the file selection `key`.
+    /// If the setting has gone while the picker was open, the file is
+    /// dropped.
+    fn set_file_setting(&mut self, key: &str, path: &Path) {
+        let Some(widget) = self.file_setting(key) else {
             return;
         };
         // The auto splitter sees files through its own file system.
-        match wasi_path::from_native(&path) {
+        match wasi_path::from_native(path) {
             Some(value) => self
                 .settings
                 .set(&widget, Some(Value::String(value.into()))),
@@ -787,7 +871,7 @@ impl BridgeApp {
             Some(LogAction::Copy) => ui
                 .ctx()
                 .copy_text(self.logger.view().export(self.log_filters)),
-            Some(LogAction::Save) => self.save_log(),
+            Some(LogAction::Save) => self.request_pick(PickFor::SaveLog),
             Some(LogAction::Clear) => self.logger.clear(),
             Some(LogAction::OpenFolder) => self.open_log_folder(),
             None => {}
@@ -819,16 +903,9 @@ impl BridgeApp {
         }
     }
 
-    /// Asks where to save the lines shown, and saves them there.
-    fn save_log(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("Log", &["log", "txt"])
-            .set_file_name(format!("{APP_NAME}.log"))
-            .save_file()
-        else {
-            return;
-        };
-        if let Err(error) = fs::write(&path, self.logger.view().export(self.log_filters)) {
+    /// Saves the lines the filters show at `path`, as they are now.
+    fn write_log(&mut self, path: &Path) {
+        if let Err(error) = fs::write(path, self.logger.view().export(self.log_filters)) {
             self.log(
                 Category::Error,
                 format!("Couldn't save the log to {}: {error}", path.display()),
@@ -883,18 +960,12 @@ fn category(event: &RunnerEvent) -> Category {
     }
 }
 
-/// Asks for a `.wasm` file with the file dialog.
-fn pick_splitter() -> Option<PathBuf> {
-    rfd::FileDialog::new()
-        .add_filter("Auto splitter", &["wasm"])
-        .pick_file()
-}
-
 impl eframe::App for BridgeApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.track_window(ui.ctx());
         self.handle_events();
         self.check_close();
+        self.poll_file_pick();
         self.game_dialog(&ui.ctx().clone());
         self.unsaved_dialog();
         self.refresh_addresses(ui.ctx());
@@ -905,16 +976,21 @@ impl eframe::App for BridgeApp {
             egui::CentralPanel::default()
                 .frame(column)
                 .show(ui, |ui| self.status_column(ui, Width::Compact));
-            return;
+        } else {
+            egui::Panel::left("status")
+                .exact_size(COLUMN_WIDTH)
+                .resizable(false)
+                .frame(column)
+                .show(ui, |ui| self.status_column(ui, Width::Wide));
+            egui::CentralPanel::default()
+                .frame(Frame::NONE.fill(theme::WINDOW))
+                .show(ui, |ui| self.tab_area(ui));
         }
-        egui::Panel::left("status")
-            .exact_size(COLUMN_WIDTH)
-            .resizable(false)
-            .frame(column)
-            .show(ui, |ui| self.status_column(ui, Width::Wide));
-        egui::CentralPanel::default()
-            .frame(Frame::NONE.fill(theme::WINDOW))
-            .show(ui, |ui| self.tab_area(ui));
+        // The file picker is asked for mid-frame, where there is no `Frame`
+        // to parent it to.
+        if let Some(for_) = self.requested.take() {
+            self.start_pick(frame, ui.ctx(), for_);
+        }
     }
 
     fn on_exit(&mut self) {
@@ -924,6 +1000,8 @@ impl eframe::App for BridgeApp {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use eframe::egui::{RawInput, ViewportEvent, ViewportId};
     use livesplit_auto_splitting::time;
 
@@ -980,17 +1058,25 @@ mod tests {
     #[test]
     fn open_asks_before_the_file_dialog() {
         let (_dir, mut app) = app_with_unsaved_edit();
-        app.pick_splitter = || panic!("the file dialog opened before the answer");
         app.open();
         assert_eq!(app.pending, Some(Pending::Open));
+        assert_eq!(app.requested, None);
     }
 
     #[test]
-    fn answering_open_shows_the_file_dialog_then_loads_the_file() {
+    fn answering_open_shows_the_file_dialog() {
         let (_dir, mut app) = app_with_unsaved_edit();
-        app.pick_splitter = || Some(PathBuf::from("/other.wasm"));
         app.open();
         app.answer_unsaved(UnsavedAction::Discard);
+        assert_eq!(app.requested, Some(PickFor::Open));
+    }
+
+    #[test]
+    fn the_file_picked_is_loaded() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        let sender = app.file_pick.begin(PickFor::Open).unwrap();
+        sender.send(Some(PathBuf::from("/other.wasm"))).unwrap();
+        app.poll_file_pick();
         // The file has no game yet, so loading it asks which game it is for.
         let path = app.dialog.as_ref().map(|(_, path)| path.clone());
         assert_eq!(path, Some(PathBuf::from("/other.wasm")));
@@ -999,10 +1085,77 @@ mod tests {
     #[test]
     fn cancelling_open_shows_no_file_dialog() {
         let (_dir, mut app) = app_with_unsaved_edit();
-        app.pick_splitter = || panic!("the file dialog opened after Cancel");
         app.open();
         app.answer_unsaved(UnsavedAction::Cancel);
         assert_eq!(app.pending, None);
+        assert_eq!(app.requested, None);
+    }
+
+    #[test]
+    fn the_log_is_saved_where_picked() {
+        let (dir, mut app) = app_with_unsaved_edit();
+        // By default the log shows only errors.
+        app.log(Category::Error, "Hello from the test".to_owned());
+        let path = dir.path().join("saved.log");
+        let sender = app.file_pick.begin(PickFor::SaveLog).unwrap();
+        sender.send(Some(path.clone())).unwrap();
+        app.poll_file_pick();
+        let saved = fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("Hello from the test"), "{saved}");
+    }
+
+    /// A file selection setting, "route".
+    fn route() -> Setting {
+        Setting {
+            key: "route".into(),
+            description: "Route".into(),
+            tooltip: None,
+            kind: WidgetKind::FileSelect {
+                filters: Arc::new(Vec::new()),
+            },
+        }
+    }
+
+    #[test]
+    fn the_file_picked_for_a_setting_goes_in_the_draft() {
+        let (dir, mut app) = app_with_unsaved_edit();
+        let mut widgets = app.settings.widgets().to_vec();
+        widgets.push(route());
+        app.settings.set_widgets(widgets);
+        let path = dir.path().join("route.txt");
+        let sender = app
+            .file_pick
+            .begin(PickFor::Setting("route".to_owned()))
+            .unwrap();
+        sender.send(Some(path.clone())).unwrap();
+        app.poll_file_pick();
+        let expected = wasi_path::from_native(&path).unwrap();
+        assert_eq!(
+            app.settings.draft().get("route").and_then(Value::as_str),
+            Some(&*expected)
+        );
+    }
+
+    #[test]
+    fn the_file_picked_for_a_setting_that_has_gone_is_dropped() {
+        let (dir, mut app) = app_with_unsaved_edit();
+        let sender = app
+            .file_pick
+            .begin(PickFor::Setting("route".to_owned()))
+            .unwrap();
+        sender.send(Some(dir.path().join("route.txt"))).unwrap();
+        app.poll_file_pick();
+        assert_eq!(app.settings.draft().get("route"), None);
+    }
+
+    #[test]
+    fn the_first_file_picker_asked_for_in_a_frame_wins() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.request_pick(PickFor::SaveLog);
+        assert_eq!(app.requested, Some(PickFor::SaveLog));
+        // Only one picker opens at a time.
+        app.request_pick(PickFor::Setting("route".to_owned()));
+        assert_eq!(app.requested, Some(PickFor::SaveLog));
     }
 
     #[test]
