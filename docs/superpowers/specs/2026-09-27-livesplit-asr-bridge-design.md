@@ -415,6 +415,15 @@ Manual, before each public release:
   Blank issues are disabled. Every pull request links an issue.
 - Tests run on pull requests only. They are not repeated on merge, because a
   pull request cannot merge without passing them.
+- **Dependency updates:** Renovate opens weekly pull requests for Cargo
+  dependencies (including the LiveSplit crates, taken from the
+  `LiveSplit/livesplit-core` repository by git `rev`), GitHub Actions and the
+  tools pinned in `mise.toml`. Updates to what ships in the app are titled
+  `fix(deps)` and produce a release; Actions and tools are `ci(deps)` and
+  `chore(deps)`. Renovate never merges; these pull requests are exempt from
+  the linked-issue rule.
+- **Tool versions** (git-cliff, shellcheck, actionlint) are defined only in
+  `mise.toml`, used both locally and by the workflows.
 - These conventions, the development setup and how releases work are
   documented for contributors in `CONTRIBUTING.md`.
 
@@ -501,37 +510,38 @@ Foundations:
 2. CI checks on pull requests (section 13), added as required status checks in
    the `main` ruleset.
 3. Release pipeline (section 14).
+4. Dependency updates with Renovate (section 13).
 
 First version:
 
-4. Runner: load a local `.wasm` into the upstream runtime, tick loop, Reload,
+5. Runner: load a local `.wasm` into the upstream runtime, tick loop, Reload,
    interrupt on unload.
-5. Game association (`splitters.toml`) and per-game settings storage with the
+6. Game association (`splitters.toml`) and per-game settings storage with the
    merge rules (section 7).
-6. Settings tab: drafts, Save, Revert to defaults, unsaved-changes prompts.
-7. WebSocket server: connection URLs, port setting, Restart server.
-8. Timer bridging: forward every timer action; drop and log commands when no
+7. Settings tab: drafts, Save, Revert to defaults, unsaved-changes prompts.
+8. WebSocket server: connection URLs, port setting, Restart server.
+9. Timer bridging: forward every timer action; drop and log commands when no
    timer is connected.
-9. Tracked timer state: on-connect query, events, 2-second re-sync, multiple
+10. Tracked timer state: on-connect query, events, 2-second re-sync, multiple
    timers.
-10. Log tab with categories, on-disk logs with daily rotation, 7-day retention
+11. Log tab with categories, on-disk logs with daily rotation, 7-day retention
     and size cap.
-11. Preferences tab: remember window size and position.
-12. Error surfacing with Show in log.
-13. First-launch experience and the "How do I connect?" link.
+12. Preferences tab: remember window size and position.
+13. Error surfacing with Show in log.
+14. First-launch experience and the "How do I connect?" link.
 
 Later:
 
-14. User documentation wiki.
-15. Browse and download auto splitters from LiveSplit's official list.
-16. Encrypted `wss://` connections (Safari support, and future Chrome
+15. User documentation wiki.
+16. Browse and download auto splitters from LiveSplit's official list.
+17. Encrypted `wss://` connections (Safari support, and future Chrome
     requirements).
-17. Code signing and notarisation for macOS and Windows.
-18. Support the original Windows LiveSplit by connecting to its Server
+18. Code signing and notarisation for macOS and Windows.
+19. Support the original Windows LiveSplit by connecting to its Server
     component.
-19. Detect when the connected timer is already running its own auto splitter,
+20. Detect when the connected timer is already running its own auto splitter,
     and stand down (needs research: the protocol does not expose this).
-20. Run legacy ASL scripts (very bottom of the backlog).
+21. Run legacy ASL scripts (very bottom of the backlog).
 
 ## 17. License
 
