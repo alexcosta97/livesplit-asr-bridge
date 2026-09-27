@@ -1,20 +1,21 @@
 //! End to end (spec §12): the test auto splitter that starts, splits and
 //! logs on a schedule runs in the Runner while a fake LiveSplit One client
-//! is connected to the Server.
+//! is connected to the Server. The client answers and sends events as
+//! LiveSplit One does, and its events update the tracked state.
 
 use std::{
     sync::mpsc::Receiver,
     time::{Duration, Instant},
 };
 
-use futures_util::{SinkExt, StreamExt};
-use livesplit_auto_splitting::settings::Map;
-use tokio::{net::TcpStream, time::timeout};
-use tokio_tungstenite::{client_async, tungstenite::Message};
+use livesplit_auto_splitting::{TimerState, settings::Map};
 
 use crate::{
-    runner::{Runner, RunnerEvent, TimerAction},
-    server::{Server, ServerEvent},
+    runner::{Runner, RunnerEvent, TimerAction, TimerLink},
+    server::{
+        Server, ServerEvent,
+        fake_timer::{FakeTimer, Model, eventually},
+    },
 };
 
 /// Long enough for a slow CI machine to compile the auto splitter.
@@ -35,27 +36,18 @@ fn wait_for<T: std::fmt::Debug>(events: &Receiver<T>, matches: impl Fn(&T) -> bo
 }
 
 #[test]
-fn a_connected_timer_receives_the_auto_splitters_commands_in_order() {
+fn a_connected_timer_receives_the_commands_in_order_and_its_events_update_the_state() {
     let (server, server_events) = Server::new(0, || {});
     let ServerEvent::Listening { port } = wait_for(&server_events, |event| {
         matches!(event, ServerEvent::Listening { .. })
     }) else {
         unreachable!()
     };
-    let (runner, events) = Runner::new(server.link(), || {});
+    let link = server.link();
+    let (runner, events) = Runner::new(link.clone(), || {});
 
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
-        .build()
-        .unwrap();
-    let mut client = runtime.block_on(async {
-        let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-        let (client, _) = client_async(format!("ws://127.0.0.1:{port}/"), stream)
-            .await
-            .unwrap();
-        client
-    });
+    let names = ["Gym Moves", "Ryder", "Sweet", "Big Smoke"];
+    let timer = FakeTimer::connect(port, Model::new(&names));
     wait_for(&server_events, |event| {
         matches!(event, ServerEvent::TimerConnected { .. })
     });
@@ -64,34 +56,6 @@ fn a_connected_timer_receives_the_auto_splitters_commands_in_order() {
     let path = dir.path().join("schedule.wasm");
     std::fs::write(&path, wat::parse_str(SCHEDULE).unwrap()).unwrap();
     runner.load(path, Map::new());
-
-    // The fake LiveSplit One answers every command, as the real one does.
-    let received = runtime.block_on(async {
-        let mut received = Vec::new();
-        while received.last().map(String::as_str) != Some(r#"{"command":"reset"}"#) {
-            let message = timeout(TIMEOUT, client.next())
-                .await
-                .expect("no command arrived")
-                .expect("the connection closed")
-                .unwrap();
-            if let Message::Text(text) = message {
-                received.push(text.to_string());
-                let answer = Message::text(r#"{"success":null}"#);
-                client.send(answer).await.unwrap();
-            }
-        }
-        received
-    });
-    assert_eq!(
-        received,
-        [
-            r#"{"command":"start"}"#,
-            r#"{"command":"split"}"#,
-            r#"{"command":"setGameTime","time":"1.500000000"}"#,
-            r#"{"command":"split"}"#,
-            r#"{"command":"reset"}"#,
-        ]
-    );
 
     // Each action is reported as sent to the one timer.
     let reset = wait_for(&events, |event| {
@@ -108,12 +72,46 @@ fn a_connected_timer_receives_the_auto_splitters_commands_in_order() {
         RunnerEvent::TimerAction {
             action: TimerAction::Reset,
             sent_to: 1,
+            segment: None,
         }
     );
-    // Answers aren't rejections.
-    assert!(
-        server_events
-            .try_iter()
-            .all(|event| !matches!(event, ServerEvent::CommandRejected { .. }))
+
+    // The fake LiveSplit One received the commands in order.
+    eventually("the reset", || timer.actions().len() == 5);
+    assert_eq!(
+        timer.actions(),
+        [
+            r#"{"command":"start"}"#,
+            r#"{"command":"split"}"#,
+            r#"{"command":"setGameTime","time":"1.500000000"}"#,
+            r#"{"command":"split"}"#,
+            r#"{"command":"reset"}"#,
+        ]
     );
+
+    // Its events updated the tracked state, step by step.
+    let mut states = Vec::new();
+    while states.last().map(String::as_str) != Some("Not running") || states.len() < 2 {
+        if let ServerEvent::TimerState { summary, .. } = wait_for(&server_events, |event| {
+            matches!(
+                event,
+                ServerEvent::TimerState { .. } | ServerEvent::CommandRejected { .. }
+            )
+        }) {
+            states.push(summary.to_string());
+        } else {
+            panic!("a command was rejected; states so far: {states:?}");
+        }
+    }
+    assert_eq!(
+        states,
+        [
+            "Not running",
+            "Running · split 1",
+            "Running · split 2",
+            "Running · split 3",
+            "Not running",
+        ]
+    );
+    assert_eq!(link.state(), TimerState::NotRunning);
 }

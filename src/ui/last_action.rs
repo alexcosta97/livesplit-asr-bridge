@@ -16,6 +16,8 @@ const KEPT: usize = 3;
 pub struct ShownAction {
     /// What the auto splitter did, like "Split" or "Game time 1:23:45.600".
     pub word: String,
+    /// The segment a split split, when the timer gave its name.
+    pub segment: Option<String>,
     /// The time of day it happened.
     pub time: NaiveTime,
     /// Whether it was sent to a timer: it wasn't when none was connected.
@@ -40,7 +42,12 @@ impl LastActions {
     /// rather than push the other actions off the card; the card flashes
     /// only for the first.
     pub fn apply(&mut self, event: &RunnerEvent, time: NaiveTime, now: Instant) {
-        let RunnerEvent::TimerAction { action, sent_to } = event else {
+        let RunnerEvent::TimerAction {
+            action,
+            sent_to,
+            segment,
+        } = event
+        else {
             return;
         };
         let Some(word) = word(action) else {
@@ -59,6 +66,7 @@ impl LastActions {
         }
         self.shown.push_front(ShownAction {
             word,
+            segment: segment.clone(),
             time,
             sent,
             arrived: now,
@@ -79,7 +87,8 @@ impl LastActions {
 }
 
 /// What the card says for an action, or `None` for one it doesn't show.
-/// Splits carry no segment name: the app never makes one up (spec §6.2).
+/// A split's segment name is shown apart, and only when the timer gave it:
+/// the app never makes one up (spec §6.2).
 fn word(action: &TimerAction) -> Option<String> {
     Some(match action {
         TimerAction::Start => "Start".to_owned(),
@@ -117,7 +126,11 @@ mod tests {
     }
 
     fn action(action: TimerAction, sent_to: usize) -> RunnerEvent {
-        RunnerEvent::TimerAction { action, sent_to }
+        RunnerEvent::TimerAction {
+            action,
+            sent_to,
+            segment: None,
+        }
     }
 
     #[test]
@@ -183,6 +196,22 @@ mod tests {
             .map(|a| a.word.as_str())
             .collect();
         assert_eq!(words, ["Game time 0:03.000", "Split", "Game time 0:02.000"]);
+    }
+
+    #[test]
+    fn a_split_keeps_its_segment_name() {
+        let mut actions = LastActions::default();
+        let split = RunnerEvent::TimerAction {
+            action: TimerAction::Split,
+            sent_to: 1,
+            segment: Some("Los Santos — Gym Moves".to_owned()),
+        };
+        actions.apply(&split, at(0), Instant::now());
+        actions.apply(&action(TimerAction::Split, 1), at(1), Instant::now());
+        let latest = actions.latest().unwrap();
+        assert_eq!(latest.segment, None);
+        let previous = actions.previous().next().unwrap();
+        assert_eq!(previous.segment.as_deref(), Some("Los Santos — Gym Moves"));
     }
 
     #[test]

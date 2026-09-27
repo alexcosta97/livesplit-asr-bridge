@@ -8,6 +8,8 @@ use std::{
     },
 };
 
+use super::Summary;
+
 /// Events are dropped when this many are waiting, so a flood of connections
 /// can't use unbounded memory while the window isn't reading them.
 const CAPACITY: usize = 10_000;
@@ -45,6 +47,13 @@ pub enum ServerEvent {
     /// example a port scanner or a web browser asking for a page. Not an
     /// error: the server keeps running.
     HandshakeFailed { address: SocketAddr, error: String },
+    /// A timer's tracked phase or split index changed, including when it
+    /// was first learned after connecting.
+    TimerState {
+        id: ConnectionId,
+        address: SocketAddr,
+        summary: Summary,
+    },
     /// A timer rejected a command, for example a split with no run in
     /// progress. Not an error (spec §9). `command` is the command's name,
     /// if the server knows which command it was.
@@ -71,6 +80,11 @@ impl ServerEvent {
             Self::TimerConnected { address, .. } => format!("Timer connected from {address}"),
             Self::TimerDisconnected { address, .. } => {
                 format!("Timer disconnected ({address})")
+            }
+            Self::TimerState {
+                address, summary, ..
+            } => {
+                format!("Timer at {address}: {summary}")
             }
             Self::HandshakeFailed { address, error } => {
                 format!("Ignored a connection from {address} that isn't a timer: {error}")

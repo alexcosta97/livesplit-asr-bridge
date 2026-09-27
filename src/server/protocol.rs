@@ -6,10 +6,15 @@
 //! LiveSplit One answers every command, in order, with `{"success": ...}` or
 //! `{"error": {"code": ..., "message": ...}}`, and also sends events such as
 //! `{"event": "Splitted"}`, which aren't answers.
+//!
+//! The Server also asks questions of its own to track the timer's state
+//! (spec §5.2): `getCurrentState`, `getCurrentRunSplitTime` and
+//! `getSegmentName`.
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::tracked::{Phase, Query};
 use crate::runner::TimerAction;
 
 /// The name of the command sent for `action`.
@@ -45,6 +50,39 @@ pub fn encode(action: &TimerAction) -> String {
     value.to_string()
 }
 
+/// The question asked for `query`, as JSON text.
+pub fn encode_query(query: &Query) -> String {
+    let value = match query {
+        Query::State => json!({ "command": "getCurrentState" }),
+        Query::SplitTime { index, .. } => json!({
+            "command": "getCurrentRunSplitTime",
+            "index": index,
+            "timingMethod": "RealTime",
+        }),
+        Query::SegmentName { index, .. } => {
+            json!({ "command": "getSegmentName", "index": index })
+        }
+    };
+    value.to_string()
+}
+
+/// Reads the answer to `getCurrentState`, like `{"state": "Running",
+/// "index": 12}`.
+pub fn parse_state(value: &Value) -> Option<(Phase, Option<usize>)> {
+    let phase = match value.get("state")?.as_str()? {
+        "NotRunning" => Phase::NotRunning,
+        "Running" => Phase::Running,
+        "Paused" => Phase::Paused,
+        "Ended" => Phase::Ended,
+        _ => return None,
+    };
+    let index = value
+        .get("index")
+        .and_then(Value::as_u64)
+        .and_then(|index| usize::try_from(index).ok());
+    Some((phase, index))
+}
+
 /// A time as LiveSplit One parses it: seconds, with nine decimal places.
 fn time_text(time: livesplit_auto_splitting::time::Duration) -> String {
     let sign = if time.is_negative() { "-" } else { "" };
@@ -58,15 +96,18 @@ fn time_text(time: livesplit_auto_splitting::time::Duration) -> String {
 /// A message from LiveSplit One, as far as sending commands is concerned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Received {
-    /// A command succeeded.
-    Success,
+    /// A command succeeded. Questions carry their answer; other commands
+    /// carry `null`.
+    Success(Value),
     /// A command was rejected, for example a split with no run in progress.
     Error {
         code: String,
         message: Option<String>,
     },
-    /// Anything else, such as an event. Events are sent alongside the
-    /// answer to a command, not instead of it.
+    /// An event, like `Splitted`. Events are sent alongside the answer to a
+    /// command, not instead of it.
+    Event(String),
+    /// Anything else.
     Other,
 }
 
@@ -81,8 +122,11 @@ pub fn parse(text: &str) -> Received {
     let Ok(Value::Object(mut object)) = serde_json::from_str::<Value>(text) else {
         return Received::Other;
     };
-    if object.contains_key("success") {
-        return Received::Success;
+    if let Some(value) = object.remove("success") {
+        return Received::Success(value);
+    }
+    if let Some(Value::String(event)) = object.remove("event") {
+        return Received::Event(event);
     }
     match object
         .remove("error")
@@ -148,9 +192,12 @@ mod tests {
     }
 
     #[test]
-    fn reads_answers_and_ignores_events() {
-        assert_eq!(parse(r#"{"success":null}"#), Received::Success);
-        assert_eq!(parse(r#"{"success":"1:23.45"}"#), Received::Success);
+    fn reads_answers_and_events() {
+        assert_eq!(parse(r#"{"success":null}"#), Received::Success(Value::Null));
+        assert_eq!(
+            parse(r#"{"success":"1:23.45"}"#),
+            Received::Success(json!("1:23.45"))
+        );
         assert_eq!(
             parse(r#"{"error":{"code":"NoRunInProgress"}}"#),
             Received::Error {
@@ -165,8 +212,59 @@ mod tests {
                 message: Some("unknown variant".to_owned()),
             }
         );
-        assert_eq!(parse(r#"{"event":"Splitted"}"#), Received::Other);
+        assert_eq!(
+            parse(r#"{"event":"Splitted"}"#),
+            Received::Event("Splitted".to_owned())
+        );
         assert_eq!(parse("not json"), Received::Other);
         assert_eq!(parse("[1, 2]"), Received::Other);
+    }
+
+    #[test]
+    fn each_query_produces_its_command() {
+        let cases = [
+            (Query::State, r#"{"command":"getCurrentState"}"#),
+            (
+                Query::SplitTime {
+                    index: 3,
+                    attempt: 1,
+                },
+                r#"{"command":"getCurrentRunSplitTime","index":3,"timingMethod":"RealTime"}"#,
+            ),
+            (
+                Query::SegmentName {
+                    index: 3,
+                    attempt: 1,
+                },
+                r#"{"command":"getSegmentName","index":3}"#,
+            ),
+        ];
+        for (query, expected) in cases {
+            assert_eq!(
+                serde_json::from_str::<Value>(&encode_query(&query)).unwrap(),
+                serde_json::from_str::<Value>(expected).unwrap(),
+                "{query:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reads_the_current_state() {
+        let state = |text: &str| parse_state(&serde_json::from_str(text).unwrap());
+        assert_eq!(
+            state(r#"{"state":"NotRunning"}"#),
+            Some((Phase::NotRunning, None))
+        );
+        assert_eq!(
+            state(r#"{"state":"Running","index":12}"#),
+            Some((Phase::Running, Some(12)))
+        );
+        assert_eq!(
+            state(r#"{"state":"Paused","index":0}"#),
+            Some((Phase::Paused, Some(0)))
+        );
+        assert_eq!(state(r#"{"state":"Ended"}"#), Some((Phase::Ended, None)));
+        assert_eq!(state(r#"{"state":"Sleeping"}"#), None);
+        assert_eq!(state("null"), None);
     }
 }

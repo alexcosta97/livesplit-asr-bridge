@@ -20,9 +20,10 @@ use crate::ui::{
 const FLASH: Duration = Duration::from_millis(300);
 
 /// The Last action card: the label with the latest action's time, the action
-/// in large type, a note when it wasn't sent, and the 2 previous actions as
-/// faint lines; or the empty state. While it shows an action it has an
-/// orange edge, and its background flashes orange as an action arrives.
+/// in large type, a split's segment name when the timer gave it, a note when
+/// it wasn't sent, and the 2 previous actions as faint lines; or the empty
+/// state. While it shows an action it has an orange edge, and its background
+/// flashes orange as an action arrives.
 pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: Instant) {
     let latest = actions.latest();
     let flashing = latest
@@ -72,6 +73,18 @@ pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: I
             )
             .wrap(),
         );
+        // Only when the timer gave it: the app never makes one up.
+        if let Some(segment) = &latest.segment {
+            ui.add_space(4.0);
+            let size = match width {
+                Width::Wide => 14.0,
+                Width::Compact => 16.0,
+            };
+            let name = RichText::new(segment)
+                .font(theme::body_semibold(size))
+                .color(theme::TEXT);
+            ui.add(Label::new(name).truncate());
+        }
         if !latest.sent {
             ui.add_space(4.0);
             ui.label(
@@ -82,11 +95,14 @@ pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: I
         }
         for (index, action) in actions.previous().enumerate() {
             ui.add_space(if index == 0 { 12.0 } else { 4.0 });
-            let line = format!(
+            let mut line = format!(
                 "{}  {}",
                 action.time.format("%H:%M:%S"),
                 action.word.to_uppercase()
             );
+            if let Some(segment) = &action.segment {
+                line.push_str(&format!(" · {segment}"));
+            }
             ui.add(
                 Label::new(
                     RichText::new(line)
@@ -142,7 +158,12 @@ mod tests {
             .enumerate()
         {
             let time = NaiveTime::from_hms_opt(19, 31, index as u32).unwrap();
-            actions.apply(&RunnerEvent::TimerAction { action, sent_to }, time, now);
+            let event = RunnerEvent::TimerAction {
+                action,
+                sent_to,
+                segment: None,
+            };
+            actions.apply(&event, time, now);
         }
         (actions, now)
     }
@@ -181,6 +202,26 @@ mod tests {
         for expected in ["SPLIT", "19:31:02", "19:31:01  START", "19:31:00  RESET"] {
             assert!(text.contains(expected), "{expected}: {text}");
         }
+    }
+
+    #[test]
+    fn a_split_shows_its_segment_name() {
+        let mut actions = LastActions::default();
+        let now = Instant::now();
+        let time = NaiveTime::from_hms_opt(19, 31, 1).unwrap();
+        for segment in ["Los Santos — Ryder", "Los Santos — Gym Moves"] {
+            let event = RunnerEvent::TimerAction {
+                action: TimerAction::Split,
+                sent_to: 1,
+                segment: Some(segment.to_owned()),
+            };
+            actions.apply(&event, time, now);
+        }
+        let text = shown(&actions, Width::Wide, now);
+        assert!(text.contains("Los Santos — Gym Moves"), "{text}");
+        assert!(text.contains("SPLIT · Los Santos — Ryder"), "{text}");
+        let text = shown(&actions, Width::Compact, now);
+        assert!(text.contains("Los Santos — Gym Moves"), "{text}");
     }
 
     #[test]

@@ -128,7 +128,11 @@ fn write_wasm(path: &Path, wat: &str) {
 
 /// An action the recording link sent to its one timer.
 fn sent(action: TimerAction) -> RunnerEvent {
-    RunnerEvent::TimerAction { action, sent_to: 1 }
+    RunnerEvent::TimerAction {
+        action,
+        sent_to: 1,
+        segment: None,
+    }
 }
 
 fn log(message: &str) -> RunnerEvent {
@@ -440,6 +444,13 @@ impl TimerLink for StateTrackingLink {
         None
     }
 
+    fn segment_name(&self) -> Option<String> {
+        self.split_index
+            .lock()
+            .unwrap()
+            .map(|index| format!("Segment {index}"))
+    }
+
     fn send(&self, action: TimerAction) -> usize {
         let mut split_index = self.split_index.lock().unwrap();
         match action {
@@ -495,6 +506,39 @@ fn state_queries_go_through_the_timer_link() {
 }
 
 #[test]
+fn a_split_carries_the_name_the_timer_gave_its_segment() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state-aware.wasm");
+    write_wasm(&path, include_str!("test_auto_splitters/state_aware.wat"));
+    let (runner, events) = Runner::new(Arc::new(StateTrackingLink::default()), || {});
+    runner.load(path, Map::new());
+
+    let deadline = Instant::now() + TIMEOUT;
+    let mut named = Vec::new();
+    while named.len() < 4 {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(remaining) {
+            Ok(RunnerEvent::TimerAction {
+                action, segment, ..
+            }) => named.push((action, segment)),
+            Ok(_) => {}
+            Err(_) => panic!("timed out: {named:?}"),
+        }
+    }
+    // Named before the split moves past the segment; other actions have no
+    // segment.
+    assert_eq!(
+        named,
+        [
+            (TimerAction::Start, None),
+            (TimerAction::Split, Some("Segment 0".to_owned())),
+            (TimerAction::Split, Some("Segment 1".to_owned())),
+            (TimerAction::Split, Some("Segment 2".to_owned())),
+        ]
+    );
+}
+
+#[test]
 fn with_no_timer_an_auto_splitter_that_checks_the_state_only_tries_to_start() {
     // Spec §5.2: with no timer connected, the state is "not running", so a
     // state-checking auto splitter keeps trying to start and never splits.
@@ -507,7 +551,10 @@ fn with_no_timer_an_auto_splitter_that_checks_the_state_only_tries_to_start() {
     let deadline = Instant::now() + Duration::from_millis(500);
     let mut actions = Vec::new();
     while let Ok(event) = events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        if let RunnerEvent::TimerAction { action, sent_to } = event {
+        if let RunnerEvent::TimerAction {
+            action, sent_to, ..
+        } = event
+        {
             assert_eq!(sent_to, 0, "{action:?}");
             actions.push(action);
         }
