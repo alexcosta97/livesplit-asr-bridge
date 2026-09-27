@@ -60,11 +60,14 @@ community.
 
 - Name: **livesplit-asr-bridge** (repository, executable, config and log folder
   names).
-- Window title and descriptions always name LiveSplit One, for example:
-  "livesplit-asr-bridge: run auto splitters here, control LiveSplit One
-  anywhere". The first line of the README and the GitHub repository
-  description say it is for LiveSplit One, because "LiveSplit" alone usually
-  means the original Windows LiveSplit, which this version does not support.
+- Display name: **LiveSplit One ASR Bridge**. The window title is the display
+  name and the version, for example "LiveSplit One ASR Bridge 0.1.0". It is
+  kept short so window lists and taskbars show the version.
+- Window title and descriptions always name LiveSplit One. Descriptions use
+  the tagline "run auto splitters here, control LiveSplit One anywhere". The
+  first line of the README and the GitHub repository description say it is for
+  LiveSplit One, because "LiveSplit" alone usually means the original Windows
+  LiveSplit, which this version does not support.
 
 ## 4. Architecture
 
