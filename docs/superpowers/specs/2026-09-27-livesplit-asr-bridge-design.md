@@ -406,6 +406,13 @@ Manual, before each public release:
   - signed commits required;
   - squash merging only, so each pull request becomes one conventional commit
     on `main`.
+- **Merge restriction:** a second ruleset lets only maintainers (the repository
+  Admin role; the Maintain role if the repository moves to an organisation)
+  update `main`, with the bypass limited to pull request merges. It is
+  separate so that maintainers still follow every rule above.
+- **Templates:** a pull request template (linked issue, what and why, testing,
+  checklist) and issue forms for tasks, feature requests and bug reports.
+  Blank issues are disabled. Every pull request links an issue.
 - Tests run on pull requests only. They are not repeated on merge, because a
   pull request cannot merge without passing them.
 - These conventions, the development setup and how releases work are

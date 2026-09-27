@@ -5,10 +5,14 @@ development environment and the conventions every change follows.
 
 ## Before you start
 
-- Planned work is tracked in the
-  [issues](https://github.com/alexcosta97/livesplit-asr-bridge/issues). For
-  anything beyond a small fix, comment on the relevant issue, or open one,
-  before starting, so the approach can be agreed first.
+- All work is tracked in the
+  [issues](https://github.com/alexcosta97/livesplit-asr-bridge/issues), and
+  every pull request must link one. If there's no issue for what you want to
+  do, open one first with the matching template: **Task** for a well-defined
+  piece of work, **Feature request** for a new idea, or **Bug report** for
+  something that doesn't work.
+- For anything beyond a small fix, comment on the issue before starting, so
+  the approach can be agreed first.
 - The design is described in
   [the design spec](docs/superpowers/specs/2026-09-27-livesplit-asr-bridge-design.md).
   Changes that alter the design update the spec in the same pull request.
@@ -93,8 +97,9 @@ example `feat/port-setting` or `fix/reconnect-state`.
 - **Title:** a Conventional Commit, like a commit message. Pull requests are
   squash-merged, and the title becomes the commit on `main`, so it determines
   the next version.
-- **Description:** what changed and why, how it was tested, and the issue it
-  resolves (`Closes #123`).
+- **Description:** fill in the pull request template. It asks for the issue
+  the pull request resolves (`Closes #123`), what changed and why, how it was
+  tested, and a short checklist.
 - **Scope:** one logical change per pull request.
 - **Requirements to merge:**
   - all CI checks pass: formatting, clippy, build and tests on Linux, macOS
@@ -102,7 +107,8 @@ example `feat/port-setting` or `fix/reconnect-state`.
     commit;
   - all review conversations are resolved;
   - all commits are signed.
-- **Merging:** squash merge only. The branch is deleted after merging.
+- **Merging:** only maintainers can merge into `main`, using squash merge.
+  The branch is deleted after merging.
 
 ## Releases
 
