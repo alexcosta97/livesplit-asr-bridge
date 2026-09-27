@@ -2438,6 +2438,7 @@ dependencies = [
  "livesplit-auto-splitting",
  "rfd",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tokio-tungstenite",

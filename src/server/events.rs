@@ -45,6 +45,16 @@ pub enum ServerEvent {
     /// example a port scanner or a web browser asking for a page. Not an
     /// error: the server keeps running.
     HandshakeFailed { address: SocketAddr, error: String },
+    /// A timer rejected a command, for example a split with no run in
+    /// progress. Not an error (spec §9). `command` is the command's name,
+    /// if the server knows which command it was.
+    CommandRejected {
+        id: ConnectionId,
+        address: SocketAddr,
+        command: Option<String>,
+        code: String,
+        message: Option<String>,
+    },
 }
 
 impl ServerEvent {
@@ -64,6 +74,20 @@ impl ServerEvent {
             }
             Self::HandshakeFailed { address, error } => {
                 format!("Ignored a connection from {address} that isn't a timer: {error}")
+            }
+            Self::CommandRejected {
+                address,
+                command,
+                code,
+                message,
+                ..
+            } => {
+                let command = command.as_deref().unwrap_or("a command");
+                let mut text = format!("The timer at {address} rejected {command}: {code}");
+                if let Some(message) = message {
+                    text.push_str(&format!(" ({message})"));
+                }
+                text
             }
         }
     }
@@ -129,6 +153,13 @@ mod tests {
                 address: address(),
                 error: "timed out".to_owned(),
             },
+            ServerEvent::CommandRejected {
+                id: 1,
+                address: address(),
+                command: Some("split".to_owned()),
+                code: "NoRunInProgress".to_owned(),
+                message: None,
+            },
         ];
         for event in others {
             assert!(!event.is_error(), "{event:?}");
@@ -157,6 +188,28 @@ mod tests {
             }
             .describe(),
             "Timer connected from 192.168.1.42:53122"
+        );
+        assert_eq!(
+            ServerEvent::CommandRejected {
+                id: 1,
+                address: address(),
+                command: Some("split".to_owned()),
+                code: "NoRunInProgress".to_owned(),
+                message: None,
+            }
+            .describe(),
+            "The timer at 192.168.1.42:53122 rejected split: NoRunInProgress"
+        );
+        assert_eq!(
+            ServerEvent::CommandRejected {
+                id: 1,
+                address: address(),
+                command: None,
+                code: "InvalidCommand".to_owned(),
+                message: Some("missing field `time`".to_owned()),
+            }
+            .describe(),
+            "The timer at 192.168.1.42:53122 rejected a command: InvalidCommand (missing field `time`)"
         );
     }
 }

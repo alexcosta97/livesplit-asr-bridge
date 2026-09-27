@@ -1,4 +1,6 @@
 mod config;
+#[cfg(test)]
+mod end_to_end;
 mod logging;
 mod runner;
 mod server;

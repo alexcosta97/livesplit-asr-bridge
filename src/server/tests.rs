@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use tokio::{net::TcpStream, runtime::Runtime, time::timeout};
 use tokio_tungstenite::{WebSocketStream, client_async, tungstenite::Message};
 
@@ -124,6 +124,13 @@ impl Harness {
         })
     }
 
+    /// Sends a text message from the client, as LiveSplit One would.
+    fn reply(&self, client: &mut Client, text: &str) {
+        self.runtime
+            .block_on(client.send(Message::text(text.to_owned())))
+            .unwrap();
+    }
+
     /// Reads the next message the client receives.
     fn receive(&self, client: &mut Client) -> Message {
         self.runtime.block_on(async {
@@ -179,14 +186,63 @@ fn a_dropped_connection_is_reported() {
 }
 
 #[test]
-fn sends_messages_to_every_timer_from_any_thread() {
+fn sends_commands_to_every_timer_from_any_thread() {
     let (harness, port) = Harness::listening();
     let (mut first, _, _) = harness.connect(port);
     let (mut second, _, _) = harness.connect(port);
 
-    assert_eq!(harness.server().send_to_all("hello"), 2);
-    assert_eq!(harness.receive(&mut first), Message::text("hello"));
-    assert_eq!(harness.receive(&mut second), Message::text("hello"));
+    let link = harness.server().link();
+    let sent = std::thread::spawn(move || link.send(TimerAction::Split))
+        .join()
+        .unwrap();
+    assert_eq!(sent, 2);
+    let split = Message::text(r#"{"command":"split"}"#);
+    assert_eq!(harness.receive(&mut first), split);
+    assert_eq!(harness.receive(&mut second), split);
+}
+
+#[test]
+fn with_no_timer_commands_are_dropped_not_queued() {
+    let (harness, port) = Harness::listening();
+    let link = harness.server().link();
+    assert_eq!(link.send(TimerAction::Start), 0);
+
+    // A timer connecting afterwards gets only what is sent from then on.
+    let (mut client, _, _) = harness.connect(port);
+    assert_eq!(link.send(TimerAction::Split), 1);
+    assert_eq!(
+        harness.receive(&mut client),
+        Message::text(r#"{"command":"split"}"#)
+    );
+}
+
+#[test]
+fn a_rejected_command_is_reported_with_its_name() {
+    let (harness, port) = Harness::listening();
+    let (mut client, id, address) = harness.connect(port);
+    let link = harness.server().link();
+
+    // Answered as LiveSplit One does: an event, then the answer.
+    link.send(TimerAction::Start);
+    harness.receive(&mut client);
+    harness.reply(&mut client, r#"{"event":"Started"}"#);
+    harness.reply(&mut client, r#"{"success":null}"#);
+    link.send(TimerAction::Split);
+    harness.receive(&mut client);
+    harness.reply(&mut client, r#"{"error":{"code":"NoRunInProgress"}}"#);
+
+    let seen = harness.wait_for(|event| matches!(event, ServerEvent::CommandRejected { .. }));
+    assert_eq!(
+        seen.last(),
+        Some(&ServerEvent::CommandRejected {
+            id,
+            address,
+            command: Some("split".to_owned()),
+            code: "NoRunInProgress".to_owned(),
+            message: None,
+        })
+    );
+    assert!(!seen.last().unwrap().is_error());
 }
 
 #[test]
