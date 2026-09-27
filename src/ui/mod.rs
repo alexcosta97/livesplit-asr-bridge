@@ -79,7 +79,8 @@ enum Tab {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Pending {
     Reload,
-    Open(PathBuf),
+    /// Ask for a `.wasm` file and load it.
+    Open,
     /// Change the loaded auto splitter's game: the game's settings replace
     /// the draft.
     ChangeGame,
@@ -90,7 +91,7 @@ impl Pending {
     fn trigger(&self) -> UnsavedTrigger {
         match self {
             Self::Reload => UnsavedTrigger::Reload,
-            Self::Open(_) => UnsavedTrigger::Open,
+            Self::Open => UnsavedTrigger::Open,
             Self::ChangeGame => UnsavedTrigger::ChangeGame,
             Self::Close => UnsavedTrigger::Close,
         }
@@ -137,6 +138,8 @@ pub struct BridgeApp {
     settings: SettingsEditor,
     /// What the open Unsaved dialog is asking about.
     pending: Option<Pending>,
+    /// Asks for the `.wasm` file to open. Tests replace the file dialog.
+    pick_splitter: fn() -> Option<PathBuf>,
     /// Closing was asked for and the unsaved settings dealt with.
     closing: bool,
 }
@@ -185,6 +188,7 @@ impl BridgeApp {
             dialog: None,
             settings: SettingsEditor::default(),
             pending: None,
+            pick_splitter,
             closing: false,
         };
         // `app.toml` is read before the server starts, since the server
@@ -514,14 +518,9 @@ impl BridgeApp {
     }
 
     /// Asks for a `.wasm` file and loads it, once the unsaved settings are
-    /// dealt with.
+    /// dealt with, so the file dialog comes after the Unsaved dialog.
     fn open(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Auto splitter", &["wasm"])
-            .pick_file()
-        {
-            self.ask(Pending::Open(path));
-        }
+        self.ask(Pending::Open);
     }
 
     /// Does `pending` now, or first asks what to do with the unsaved
@@ -537,7 +536,11 @@ impl BridgeApp {
     fn proceed(&mut self, pending: Pending) {
         match pending {
             Pending::Reload => self.reload(),
-            Pending::Open(path) => self.load(path),
+            Pending::Open => {
+                if let Some(path) = (self.pick_splitter)() {
+                    self.load(path);
+                }
+            }
             Pending::ChangeGame => self.change_game(),
             Pending::Close => {
                 self.closing = true;
@@ -560,8 +563,9 @@ impl BridgeApp {
         let Some(pending) = &self.pending else {
             return;
         };
+        let game = self.game.as_ref().map(|game| game.name.as_str());
         if let Some(action) =
-            components::unsaved_dialog(&self.ctx, pending.trigger(), self.settings.changes())
+            components::unsaved_dialog(&self.ctx, pending.trigger(), self.settings.changes(), game)
         {
             self.answer_unsaved(action);
         }
@@ -770,6 +774,13 @@ fn category(event: &RunnerEvent) -> Category {
     }
 }
 
+/// Asks for a `.wasm` file with the file dialog.
+fn pick_splitter() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Auto splitter", &["wasm"])
+        .pick_file()
+}
+
 impl eframe::App for BridgeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.handle_events();
@@ -840,11 +851,38 @@ mod tests {
         let (_dir, mut app) = app_with_unsaved_edit();
         app.ask(Pending::Reload);
         assert_eq!(app.pending, Some(Pending::Reload));
-        let path = PathBuf::from("/other.wasm");
-        app.ask(Pending::Open(path.clone()));
-        assert_eq!(app.pending, Some(Pending::Open(path)));
+        app.ask(Pending::Open);
+        assert_eq!(app.pending, Some(Pending::Open));
         app.ask(Pending::ChangeGame);
         assert_eq!(app.pending, Some(Pending::ChangeGame));
+    }
+
+    #[test]
+    fn open_asks_before_the_file_dialog() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pick_splitter = || panic!("the file dialog opened before the answer");
+        app.open();
+        assert_eq!(app.pending, Some(Pending::Open));
+    }
+
+    #[test]
+    fn answering_open_shows_the_file_dialog_then_loads_the_file() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pick_splitter = || Some(PathBuf::from("/other.wasm"));
+        app.open();
+        app.answer_unsaved(UnsavedAction::Discard);
+        // The file has no game yet, so loading it asks which game it is for.
+        let path = app.dialog.as_ref().map(|(_, path)| path.clone());
+        assert_eq!(path, Some(PathBuf::from("/other.wasm")));
+    }
+
+    #[test]
+    fn cancelling_open_shows_no_file_dialog() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pick_splitter = || panic!("the file dialog opened after Cancel");
+        app.open();
+        app.answer_unsaved(UnsavedAction::Cancel);
+        assert_eq!(app.pending, None);
     }
 
     #[test]

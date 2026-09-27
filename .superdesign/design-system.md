@@ -200,9 +200,13 @@ Every mockup must stay consistent with these rules.
   many splitters use it), buttons **Use this game** (primary) and **Cancel**. When changing,
   the title is "Change game" and the current game is selected.
 - **Unsaved settings** (Reload / Open another file / Change game / closing the app with unsaved
-  settings): "Save your settings changes?", text naming the change count, buttons **Save and
-  reload** (primary; **Save** when opening another file, changing the game or closing the
-  app), **Discard**, **Cancel**.
+  settings): "Save your settings changes?", body text in primary text colour naming the change
+  count, the game and what discards them ("You changed 3 settings for GTA San Andreas.
+  Reloading the auto splitter without saving discards them."; "Opening another auto
+  splitter", "Changing the game", "Closing the app" for the other triggers), buttons aligned
+  right: **Cancel**, **Discard**, **Save and reload** (primary; **Save** when opening another
+  file, changing the game or closing the app). Opening another file asks before the file
+  picker.
 
 ### Tabs
 - **Settings:** fixed toolbar (Save, Revert to defaults, status text: "● Unsaved changes"
