@@ -9,37 +9,49 @@ use super::{
     Width,
     card::{Edge, card},
     section_label::section_label,
-    status_word::status_word,
+    status_word::{display_text, status_word},
 };
 use crate::ui::{
     last_action::{LastActions, ShownAction},
     theme,
 };
 
-/// How long the card's orange edge flashes when a new action arrives.
+/// How long the card's background flashes when a new action arrives.
 const FLASH: Duration = Duration::from_millis(300);
 
-/// The Last action card: the latest action in large type with its time, a
-/// note when it wasn't sent, and, when wide, the 2 previous actions as faint
-/// lines; or the empty state. The orange edge flashes as an action arrives.
+/// The Last action card: the label with the latest action's time, the action
+/// in large type, a note when it wasn't sent, and the 2 previous actions as
+/// faint lines; or the empty state. While it shows an action it has an
+/// orange edge, and its background flashes orange as an action arrives.
 pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: Instant) {
-    let flashing = actions
-        .latest()
+    let latest = actions.latest();
+    let flashing = latest
         .map(|latest| FLASH.saturating_sub(now.saturating_duration_since(latest.arrived)))
         .filter(|left| !left.is_zero());
     if let Some(left) = flashing {
         ui.ctx().request_repaint_after(left);
     }
-    let edge = flashing.map(|_| Edge {
+    let edge = latest.map(|_| Edge {
         color: theme::ACCENT,
-        tint: theme::WINDOW,
+        tint: if flashing.is_some() {
+            theme::TINT_ACCENT
+        } else {
+            theme::WINDOW
+        },
     });
     card(ui, edge, |ui| {
-        section_label(ui, "Last action");
+        ui.horizontal(|ui| {
+            section_label(ui, "Last action");
+            if let Some(latest) = latest {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(time(latest));
+                });
+            }
+        });
         ui.add_space(8.0);
-        let Some(latest) = actions.latest() else {
+        let Some(latest) = latest else {
             status_word(ui, None, "No actions yet", theme::TEXT_MUTED, width);
-            ui.add_space(4.0);
+            ui.add_space(8.0);
             ui.label(
                 RichText::new(
                     "Actions appear here when the auto splitter starts, splits or resets.",
@@ -49,42 +61,49 @@ pub fn last_action_card(ui: &mut Ui, actions: &LastActions, width: Width, now: I
             );
             return;
         };
-        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            ui.label(time(latest, theme::TEXT_SECONDARY));
-            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                status_word(ui, None, &latest.word, theme::ACCENT, width);
-            });
-        });
+        let size = match width {
+            Width::Wide => 24.0,
+            Width::Compact => 30.0,
+        };
+        ui.add(
+            Label::new(
+                display_text(&latest.word, size, theme::ACCENT)
+                    .line_height(Some((size * 1.05).round())),
+            )
+            .wrap(),
+        );
         if !latest.sent {
             ui.add_space(4.0);
             ui.label(
                 RichText::new("Not sent: no timer connected")
                     .font(theme::mono(12.0))
-                    .color(theme::TEXT_MUTED),
+                    .color(theme::STATUS_WARNING),
             );
         }
-        if width == Width::Wide {
-            for (index, action) in actions.previous().enumerate() {
-                ui.add_space(if index == 0 { 12.0 } else { 4.0 });
-                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                    ui.label(time(action, theme::TEXT_MUTED));
-                    let word = RichText::new(action.word.to_uppercase())
+        for (index, action) in actions.previous().enumerate() {
+            ui.add_space(if index == 0 { 12.0 } else { 4.0 });
+            let line = format!(
+                "{}  {}",
+                action.time.format("%H:%M:%S"),
+                action.word.to_uppercase()
+            );
+            ui.add(
+                Label::new(
+                    RichText::new(line)
                         .font(theme::mono(12.0))
-                        .color(theme::TEXT_MUTED);
-                    ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
-                        ui.add(Label::new(word).truncate());
-                    });
-                });
-            }
+                        .color(theme::TEXT_MUTED),
+                )
+                .truncate(),
+            );
         }
     });
 }
 
 /// An action's time of day, like `19:31:01`.
-fn time(action: &ShownAction, color: eframe::egui::Color32) -> RichText {
+fn time(action: &ShownAction) -> RichText {
     RichText::new(action.time.format("%H:%M:%S").to_string())
         .font(theme::mono(12.0))
-        .color(color)
+        .color(theme::TEXT_MUTED)
 }
 
 #[cfg(test)]
@@ -148,11 +167,20 @@ mod tests {
     }
 
     #[test]
-    fn compact_shows_only_the_latest_action() {
+    fn previous_actions_read_time_first() {
+        let (actions, now) = actions(1);
+        let text = shown(&actions, Width::Wide, now);
+        assert!(text.contains("19:31:01  START"), "{text}");
+        assert!(text.contains("19:31:00  RESET"), "{text}");
+    }
+
+    #[test]
+    fn compact_also_shows_the_two_before_it() {
         let (actions, now) = actions(1);
         let text = shown(&actions, Width::Compact, now);
-        assert!(text.contains("SPLIT"), "{text}");
-        assert!(!text.contains("START"), "{text}");
+        for expected in ["SPLIT", "19:31:02", "19:31:01  START", "19:31:00  RESET"] {
+            assert!(text.contains(expected), "{expected}: {text}");
+        }
     }
 
     #[test]
