@@ -14,7 +14,15 @@ mkdir -p "$out"
 case "$target" in
   x86_64-unknown-linux-gnu)
     mkdir -p "$stage/$name"
-    cp "$bin_dir/$name" README.md LICENSE-MIT LICENSE-APACHE "$stage/$name/"
+    cp "$bin_dir/$name" README.md LICENSE-MIT LICENSE-APACHE \
+      "assets/linux/$name.desktop" "$stage/$name/"
+    # The icons in the hicolor theme layout, ready to copy into
+    # ~/.local/share/icons (see the README).
+    for size in 16 24 32 48 64 128 256 512; do
+      dir="$stage/$name/icons/hicolor/${size}x${size}/apps"
+      mkdir -p "$dir"
+      cp "assets/brand/icons/icon-$size.png" "$dir/$name.png"
+    done
     tar -C "$stage" -czf "$out/$name-$version-x86_64-linux.tar.gz" "$name"
     ;;
   aarch64-apple-darwin | x86_64-apple-darwin)
