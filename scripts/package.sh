@@ -44,6 +44,14 @@ case "$target" in
 </dict>
 </plist>
 EOF
+    # Sign the bundle ad hoc. Without a bundle signature, macOS reports a
+    # downloaded app as damaged instead of offering Open Anyway. codesign
+    # refuses files with extended attributes, so clear them first. The verify
+    # step fails the build if the bundle isn't signed properly. Developer ID
+    # signing and notarisation are in the backlog (spec §16).
+    xattr -cr "$app"
+    codesign --force --sign - "$app"
+    codesign --verify --deep --strict --verbose=2 "$app"
     ditto -c -k --sequesterRsrc --keepParent "$app" "$out/$name-$version-$arch-macos.zip"
     ;;
   x86_64-pc-windows-msvc)

@@ -38,6 +38,18 @@ Once released, the latest version will be available from
 [the latest release](https://github.com/alexcosta97/livesplit-asr-bridge/releases/latest).
 Releases marked **Pre-release** are release candidates for testing.
 
+### Opening the app
+
+Releases are not code-signed yet, so the first launch shows a warning.
+
+- **macOS:** unzip the download and open `livesplit-asr-bridge.app`. macOS
+  says it can't verify the developer. Click **Done**, then go to **System
+  Settings → Privacy & Security**, scroll down and click **Open Anyway** next
+  to the message about livesplit-asr-bridge. After that, the app opens
+  normally.
+- **Windows:** if SmartScreen says "Windows protected your PC", click **More
+  info**, then **Run anyway**.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development
