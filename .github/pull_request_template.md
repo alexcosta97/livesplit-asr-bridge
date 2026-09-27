@@ -20,7 +20,7 @@ Closes #
 - [ ] The pull request links the issue it resolves.
 - [ ] The title follows Conventional Commits.
 - [ ] Every commit is signed and follows Conventional Commits.
-- [ ] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and
-      `cargo test` pass locally.
+- [ ] `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`,
+      `cargo build --locked` and `cargo test --locked` pass locally.
 - [ ] Changes to the design are reflected in the design spec.
 - [ ] User-facing changes are reflected in the README or documentation.
