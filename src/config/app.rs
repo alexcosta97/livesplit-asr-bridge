@@ -7,6 +7,13 @@
 //! auto_splitter = true
 //! connection = false
 //! app = false
+//!
+//! [window]
+//! remember = true
+//! width = 800.0
+//! height = 600.0
+//! x = 120.0
+//! y = 80.0
 //! ```
 //!
 //! Keys this version doesn't know, for example ones written by a newer
@@ -26,6 +33,23 @@ const LOG_FILTERS: &str = "log_filters";
 const AUTO_SPLITTER: &str = "auto_splitter";
 const CONNECTION: &str = "connection";
 const APP: &str = "app";
+const WINDOW: &str = "window";
+const REMEMBER: &str = "remember";
+const WIDTH: &str = "width";
+const HEIGHT: &str = "height";
+const X: &str = "x";
+const Y: &str = "y";
+
+/// The window's size and position, in points, as last seen. Either can be
+/// unknown: on Wayland, for example, the app can't read or set the window's
+/// position.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct WindowGeometry {
+    /// The size of the window's contents: width, height.
+    pub size: Option<[f32; 2]>,
+    /// The position of the window's outer corner: x, y.
+    pub position: Option<[f32; 2]>,
+}
 
 /// The contents of `app.toml`.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -96,6 +120,80 @@ impl AppSettings {
         self.table
             .insert(LOG_FILTERS.to_owned(), Value::Table(table));
     }
+
+    /// Whether the window's size and position are remembered (spec §6.7):
+    /// on unless it is saved as off.
+    pub fn remember_window(&self) -> bool {
+        self.window()
+            .and_then(|window| window.get(REMEMBER))
+            .and_then(Value::as_bool)
+            != Some(false)
+    }
+
+    /// Sets whether the window's size and position are remembered.
+    pub fn set_remember_window(&mut self, remember: bool) {
+        self.window_mut()
+            .insert(REMEMBER.to_owned(), Value::Boolean(remember));
+    }
+
+    /// The window's saved size and position. A size or position that isn't
+    /// saved, or isn't numbers, is unknown, and so is a size that isn't
+    /// positive.
+    pub fn window_geometry(&self) -> WindowGeometry {
+        let Some(window) = self.window() else {
+            return WindowGeometry::default();
+        };
+        let pair = |a: &str, b: &str| Some([number(window.get(a)?)?, number(window.get(b)?)?]);
+        WindowGeometry {
+            size: pair(WIDTH, HEIGHT).filter(|[width, height]| *width > 0.0 && *height > 0.0),
+            position: pair(X, Y),
+        }
+    }
+
+    /// Sets the window's size and position to save. What is unknown keeps
+    /// its saved value.
+    pub fn set_window_geometry(&mut self, geometry: WindowGeometry) {
+        let window = self.window_mut();
+        let mut insert = |key: &str, value: f32| {
+            window.insert(key.to_owned(), Value::Float(f64::from(value).round()));
+        };
+        if let Some([width, height]) = geometry.size {
+            insert(WIDTH, width);
+            insert(HEIGHT, height);
+        }
+        if let Some([x, y]) = geometry.position {
+            insert(X, x);
+            insert(Y, y);
+        }
+    }
+
+    fn window(&self) -> Option<&Table> {
+        self.table.get(WINDOW).and_then(Value::as_table)
+    }
+
+    /// The `[window]` table, replacing a `window` key that isn't one.
+    fn window_mut(&mut self) -> &mut Table {
+        let window = self
+            .table
+            .entry(WINDOW)
+            .or_insert_with(|| Value::Table(Table::new()));
+        if !window.is_table() {
+            *window = Value::Table(Table::new());
+        }
+        window
+            .as_table_mut()
+            .expect("the window key was made a table")
+    }
+}
+
+/// A finite number, written as an integer or a float.
+fn number(value: &Value) -> Option<f32> {
+    let number = match value {
+        Value::Integer(number) => *number as f32,
+        Value::Float(number) => *number as f32,
+        _ => return None,
+    };
+    number.is_finite().then_some(number)
 }
 
 #[cfg(test)]
@@ -199,6 +297,86 @@ mod tests {
                 ..Filters::default()
             }
         );
+    }
+
+    #[test]
+    fn with_no_file_the_window_is_remembered_but_nothing_is_saved() {
+        let (_dir, config) = config();
+        let settings = AppSettings::load(&config).unwrap();
+        assert!(settings.remember_window());
+        assert_eq!(settings.window_geometry(), WindowGeometry::default());
+    }
+
+    #[test]
+    fn the_window_preference_and_geometry_are_used_on_the_next_start() {
+        let (_dir, config) = config();
+        let mut settings = AppSettings::load(&config).unwrap();
+        settings.set_remember_window(false);
+        let geometry = WindowGeometry {
+            size: Some([1024.0, 700.4]),
+            position: Some([-1280.0, 40.0]),
+        };
+        settings.set_window_geometry(geometry);
+        settings.save(&config).unwrap();
+        assert_eq!(
+            fs::read_to_string(config.dir().join("app.toml")).unwrap(),
+            "[window]\nremember = false\nwidth = 1024.0\nheight = 700.0\nx = -1280.0\ny = 40.0\n"
+        );
+        let saved = AppSettings::load(&config).unwrap();
+        assert!(!saved.remember_window());
+        assert_eq!(
+            saved.window_geometry(),
+            WindowGeometry {
+                size: Some([1024.0, 700.0]),
+                position: Some([-1280.0, 40.0]),
+            }
+        );
+    }
+
+    #[test]
+    fn an_unknown_position_keeps_the_saved_one() {
+        let (_dir, config) = config();
+        let mut settings = AppSettings::load(&config).unwrap();
+        settings.set_window_geometry(WindowGeometry {
+            size: Some([800.0, 600.0]),
+            position: Some([10.0, 20.0]),
+        });
+        settings.set_window_geometry(WindowGeometry {
+            size: Some([900.0, 650.0]),
+            position: None,
+        });
+        assert_eq!(
+            settings.window_geometry(),
+            WindowGeometry {
+                size: Some([900.0, 650.0]),
+                position: Some([10.0, 20.0]),
+            }
+        );
+    }
+
+    #[test]
+    fn window_values_that_are_not_numbers_are_unknown() {
+        let (_dir, config) = config();
+        fs::create_dir_all(config.dir()).unwrap();
+        fs::write(
+            config.dir().join("app.toml"),
+            "[window]\nremember = \"no\"\nwidth = 0\nheight = 600\nx = 5\ny = nan\n",
+        )
+        .unwrap();
+        let settings = AppSettings::load(&config).unwrap();
+        assert!(settings.remember_window());
+        assert_eq!(settings.window_geometry(), WindowGeometry::default());
+    }
+
+    #[test]
+    fn a_window_key_that_is_not_a_table_is_replaced() {
+        let (_dir, config) = config();
+        fs::create_dir_all(config.dir()).unwrap();
+        fs::write(config.dir().join("app.toml"), "window = 3\n").unwrap();
+        let mut settings = AppSettings::load(&config).unwrap();
+        assert!(settings.remember_window());
+        settings.set_remember_window(false);
+        assert!(!settings.remember_window());
     }
 
     #[test]
