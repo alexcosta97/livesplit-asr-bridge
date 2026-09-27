@@ -9,6 +9,8 @@ use std::{
     time::Duration,
 };
 
+use livesplit_auto_splitting::settings::Widget;
+
 use super::TimerAction;
 
 /// Events are dropped when this many are waiting, so a chatty auto splitter
@@ -41,6 +43,28 @@ pub enum RunnerEvent {
     RuntimeLog { level: LogLevel, message: String },
     /// The auto splitter took an action on the timer.
     TimerAction(TimerAction),
+    /// The auto splitter published its settings widgets, or changed them.
+    SettingsWidgets(Widgets),
+}
+
+/// The settings widgets an auto splitter publishes, in order. Two are equal
+/// when they are the same list the runtime published, not merely equal
+/// widgets.
+#[derive(Clone, Default)]
+pub struct Widgets(pub Arc<Vec<Widget>>);
+
+impl PartialEq for Widgets {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::fmt::Debug for Widgets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(|widget| &*widget.key))
+            .finish()
+    }
 }
 
 impl RunnerEvent {
@@ -69,6 +93,10 @@ impl RunnerEvent {
             Self::AutoSplitterLog(message) => message.clone(),
             Self::RuntimeLog { level, message } => format!("{level:?}: {message}"),
             Self::TimerAction(action) => format!("Timer: {action}"),
+            Self::SettingsWidgets(widgets) => match widgets.0.len() {
+                1 => "The auto splitter published 1 setting".to_owned(),
+                n => format!("The auto splitter published {n} settings"),
+            },
         }
     }
 

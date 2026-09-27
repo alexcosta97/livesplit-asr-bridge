@@ -1,13 +1,16 @@
 //! The Runner thread, which ticks the auto splitter.
 
 use std::{
-    sync::mpsc::{Receiver, RecvTimeoutError},
+    sync::{
+        Arc,
+        mpsc::{Receiver, RecvTimeoutError},
+    },
     time::{Duration, Instant},
 };
 
 use livesplit_auto_splitting::{AutoSplitter, Process, settings};
 
-use super::{RunnerEvent, events::EventSink, timer::BridgeTimer};
+use super::{RunnerEvent, Widgets, events::EventSink, timer::BridgeTimer};
 
 /// Instructions for the Runner thread.
 pub(super) enum Command {
@@ -24,6 +27,8 @@ struct Active {
     auto_splitter: Box<AutoSplitter<BridgeTimer>>,
     attached: Attached,
     tick_rate: Duration,
+    /// The settings widgets last reported.
+    widgets: Arc<Vec<settings::Widget>>,
 }
 
 /// The first attached process's name, if a process is attached: `Some(None)`
@@ -33,10 +38,12 @@ type Attached = Option<Option<String>>;
 impl Active {
     fn new(auto_splitter: Box<AutoSplitter<BridgeTimer>>) -> Self {
         let tick_rate = auto_splitter.tick_rate();
+        let widgets = auto_splitter.settings_widgets();
         Self {
             auto_splitter,
             attached: None,
             tick_rate,
+            widgets,
         }
     }
 }
@@ -124,6 +131,12 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
             });
             current.attached = attached;
         }
+        // The runtime publishes a new list only when the widgets change.
+        let widgets = current.auto_splitter.settings_widgets();
+        if !Arc::ptr_eq(&widgets, &current.widgets) {
+            current.widgets = widgets.clone();
+            events.send(RunnerEvent::SettingsWidgets(Widgets(widgets)));
+        }
         let tick_rate = current.auto_splitter.tick_rate();
         if tick_rate != current.tick_rate {
             current.tick_rate = tick_rate;
@@ -140,7 +153,15 @@ fn apply(command: Command, active: &mut Option<Active>, events: &EventSink) -> F
         .is_some_and(|current| current.attached.is_some());
     let flow = match command {
         Command::Replace(auto_splitter) => {
-            *active = Some(Active::new(auto_splitter));
+            let replacement = Active::new(auto_splitter);
+            // Widgets published while starting up; most auto splitters
+            // publish theirs on the first tick instead.
+            if !replacement.widgets.is_empty() {
+                events.send(RunnerEvent::SettingsWidgets(Widgets(
+                    replacement.widgets.clone(),
+                )));
+            }
+            *active = Some(replacement);
             Flow::Continue
         }
         Command::SetSettings(settings) => {
