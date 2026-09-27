@@ -112,7 +112,8 @@ impl Status {
             RunnerEvent::TickRateChanged(tick_rate) => self.tick_rate = Some(*tick_rate),
             RunnerEvent::AutoSplitterLog(_)
             | RunnerEvent::RuntimeLog { .. }
-            | RunnerEvent::TimerAction { .. } => {}
+            | RunnerEvent::TimerAction { .. }
+            | RunnerEvent::SettingsWidgets(_) => {}
         }
     }
 

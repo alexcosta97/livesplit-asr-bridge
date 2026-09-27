@@ -24,6 +24,7 @@ const HANG: &str = include_str!("test_auto_splitters/hang.wat");
 const TRAP: &str = include_str!("test_auto_splitters/trap.wat");
 const ATTACH: &str = include_str!("test_auto_splitters/attach.wat");
 const SETTING: &str = include_str!("test_auto_splitters/setting.wat");
+const WIDGETS: &str = include_str!("test_auto_splitters/widgets.wat");
 
 /// Long enough for a slow CI machine to compile an auto splitter.
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -551,5 +552,71 @@ fn new_settings_reach_the_running_auto_splitter() {
             RunnerEvent::Loaded { .. } | RunnerEvent::GameDetached
         )),
         "{events:#?}"
+    );
+}
+
+#[test]
+fn reports_the_settings_widgets_the_auto_splitter_publishes() {
+    let harness = Harness::new();
+    let path = harness.write("setting.wasm", SETTING);
+    harness.load(&path);
+    let events = harness.wait_for(|event| matches!(event, RunnerEvent::SettingsWidgets(_)));
+    let Some(RunnerEvent::SettingsWidgets(widgets)) = events.last() else {
+        unreachable!()
+    };
+    let keys: Vec<_> = widgets.0.iter().map(|widget| &*widget.key).collect();
+    assert_eq!(keys, ["gym"]);
+
+    // Published once: the same widgets aren't reported on every tick.
+    harness.wait_for(|event| *event == log("unset"));
+    let later = harness.collect_for(Duration::from_millis(100));
+    assert!(
+        !later
+            .iter()
+            .any(|event| matches!(event, RunnerEvent::SettingsWidgets(_))),
+        "{later:#?}"
+    );
+}
+
+#[test]
+fn reports_every_kind_of_widget_in_order_with_its_tooltip() {
+    use livesplit_auto_splitting::settings::WidgetKind;
+
+    let harness = Harness::new();
+    let path = harness.write("widgets.wasm", WIDGETS);
+    harness.load(&path);
+    let events = harness.wait_for(|event| matches!(event, RunnerEvent::SettingsWidgets(_)));
+    let Some(RunnerEvent::SettingsWidgets(widgets)) = events.last() else {
+        unreachable!()
+    };
+    let kinds: Vec<_> = widgets
+        .0
+        .iter()
+        .map(|widget| match &widget.kind {
+            WidgetKind::Title { heading_level } => format!("{} title {heading_level}", widget.key),
+            WidgetKind::Bool { default_value } => format!("{} bool {default_value}", widget.key),
+            WidgetKind::Choice { options, .. } => {
+                format!("{} choice {}", widget.key, options.len())
+            }
+            WidgetKind::FileSelect { filters } => format!("{} file {}", widget.key, filters.len()),
+            WidgetKind::TextInput { default_value } => {
+                format!("{} text {default_value}", widget.key)
+            }
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "splits title 0",
+            "gym bool true",
+            "extras title 1",
+            "category choice 1",
+            "route file 1",
+            "runner text me",
+        ]
+    );
+    assert_eq!(
+        widgets.0[1].tooltip.as_deref(),
+        Some("Split when the mission is passed")
     );
 }

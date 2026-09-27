@@ -32,8 +32,12 @@ case "$target" in
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     cp "$bin_dir/$name" "$app/Contents/MacOS/$name"
     chmod +x "$app/Contents/MacOS/$name"
-    cp README.md LICENSE-MIT LICENSE-APACHE "$app/Contents/Resources/"
-    # Bundle versions must be numeric, so candidates use the X.Y.Z part.
+    cp README.md LICENSE-MIT LICENSE-APACHE assets/brand/icons/icon.icns \
+      "$app/Contents/Resources/"
+    # The executable, bundle folder and identifier keep the technical name.
+    # CFBundleName, which the menu bar shows, is limited to 15 characters, so
+    # it is a short form of the display name. Bundle versions must be numeric,
+    # so candidates use the X.Y.Z part.
     short=${version%%-*}
     cat >"$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -42,7 +46,9 @@ case "$target" in
 <dict>
   <key>CFBundleExecutable</key><string>$name</string>
   <key>CFBundleIdentifier</key><string>io.github.alexcosta97.livesplit-asr-bridge</string>
-  <key>CFBundleName</key><string>$name</string>
+  <key>CFBundleName</key><string>ASR Bridge</string>
+  <key>CFBundleDisplayName</key><string>LiveSplit One ASR Bridge</string>
+  <key>CFBundleIconFile</key><string>icon.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleSignature</key><string>????</string>
   <key>CFBundleShortVersionString</key><string>$short</string>

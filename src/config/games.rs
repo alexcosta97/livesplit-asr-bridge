@@ -89,7 +89,6 @@ impl Game {
     /// rules of spec §7.2: only the keys in `keys` are written, and other
     /// saved keys are kept. The file is read again first, so the saved
     /// settings are the latest.
-    #[cfg_attr(not(test), expect(dead_code, reason = "the Settings tab saves (#8)"))]
     pub fn save_settings(
         config: &Config,
         slug: &str,

@@ -6,6 +6,8 @@ mod connection_tab;
 mod folder;
 mod last_action;
 mod server_status;
+mod settings;
+mod settings_tab;
 mod status;
 mod theme;
 
@@ -17,7 +19,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use eframe::egui::{self, Frame, Margin, ScrollArea};
+use eframe::egui::{self, Frame, Margin, ScrollArea, ViewportCommand};
+use livesplit_auto_splitting::{settings::WidgetKind, wasi_path};
+use toml::Value;
 
 use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters},
@@ -28,11 +32,13 @@ use crate::{
 };
 use components::{
     ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, LOG_LINE_HEIGHT,
-    LogAction, SplitterAction, Width,
+    LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
 use last_action::LastActions;
 use server_status::ServerStatus;
+use settings::{Setting, SettingsEditor};
+use settings_tab::SettingsAction;
 use status::Status;
 
 pub use theme::install as install_theme;
@@ -61,15 +67,39 @@ pub fn window_title() -> String {
     format!("{DISPLAY_NAME} {VERSION}")
 }
 
-/// The tabs of the tab area. Settings and Preferences come with #8 and #13.
+/// The tabs of the tab area. Preferences comes with #13.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
+    Settings,
     Connection,
     Log,
 }
 
+/// What waits for an answer in the Unsaved dialog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Pending {
+    Reload,
+    Open(PathBuf),
+    /// Change the loaded auto splitter's game: the game's settings replace
+    /// the draft.
+    ChangeGame,
+    Close,
+}
+
+impl Pending {
+    fn trigger(&self) -> UnsavedTrigger {
+        match self {
+            Self::Reload => UnsavedTrigger::Reload,
+            Self::Open(_) => UnsavedTrigger::Open,
+            Self::ChangeGame => UnsavedTrigger::ChangeGame,
+            Self::Close => UnsavedTrigger::Close,
+        }
+    }
+}
+
 /// The application. Later issues add the other tabs.
 pub struct BridgeApp {
+    ctx: egui::Context,
     runner: Runner,
     events: Receiver<RunnerEvent>,
     server: Server,
@@ -100,15 +130,25 @@ pub struct BridgeApp {
     game: Option<Game>,
     /// The open Game dialog, and the file it is for.
     dialog: Option<(GameDialog, PathBuf)>,
+    /// The loaded auto splitter's settings, and the edits not saved yet.
+    settings: SettingsEditor,
+    /// What the open Unsaved dialog is asking about.
+    pending: Option<Pending>,
+    /// Closing was asked for and the unsaved settings dealt with.
+    closing: bool,
 }
 
 impl BridgeApp {
     pub fn new(ctx: &egui::Context) -> Self {
+        Self::with_config(ctx, Config::standard())
+    }
+
+    /// The application, with its files in `config`.
+    fn with_config(ctx: &egui::Context, config: Option<Config>) -> Self {
         let wake = {
             let ctx = ctx.clone();
             move || ctx.request_repaint()
         };
-        let config = Config::standard();
         let loaded = config.as_ref().map(AppSettings::load);
         let app_settings = match &loaded {
             Some(Ok(settings)) => settings.clone(),
@@ -119,6 +159,7 @@ impl BridgeApp {
         // The auto splitter controls the timers connected to the Server.
         let (runner, events) = Runner::new(server.link(), wake);
         let mut app = Self {
+            ctx: ctx.clone(),
             runner,
             events,
             server,
@@ -138,6 +179,9 @@ impl BridgeApp {
             loading: HashMap::new(),
             game: None,
             dialog: None,
+            settings: SettingsEditor::default(),
+            pending: None,
+            closing: false,
         };
         // `app.toml` is read before the server starts, since the server
         // listens on its port; what went wrong is reported once the app can.
@@ -173,11 +217,24 @@ impl BridgeApp {
             self.last_actions
                 .apply(&event, chrono::Local::now().time(), Instant::now());
             match &event {
-                RunnerEvent::Loaded { path, .. } => self.game = self.loading.remove(path),
+                RunnerEvent::Loaded { path, .. } => {
+                    self.game = self.loading.remove(path);
+                    let saved = self.game.as_ref().map(|game| game.settings.clone());
+                    self.settings.reset(saved.unwrap_or_default());
+                }
                 RunnerEvent::LoadFailed { path, .. } => {
                     self.loading.remove(path);
                 }
-                RunnerEvent::Unloaded => self.game = None,
+                RunnerEvent::Unloaded => {
+                    self.game = None;
+                    self.settings.reset(toml::Table::new());
+                }
+                RunnerEvent::SettingsWidgets(widgets) => {
+                    self.settings
+                        .set_widgets(widgets.0.iter().map(Setting::from).collect());
+                    // Shown in the Settings tab, not worth a message.
+                    continue;
+                }
                 _ => {}
             }
             self.log(category(&event), event.describe());
@@ -336,6 +393,7 @@ impl BridgeApp {
                     Category::App,
                     format!("{} is now for {}", file_name(&path), game.name),
                 );
+                self.settings.reset_keeping_widgets(game.settings.clone());
                 self.game = Some(game);
             }
         }
@@ -378,7 +436,7 @@ impl BridgeApp {
 
             if let Some(error) = self.status.error() {
                 match components::error_card(ui, error, width) {
-                    Some(ErrorAction::Reload) => self.reload(),
+                    Some(ErrorAction::Reload) => self.ask(Pending::Reload),
                     Some(ErrorAction::OpenConnection) => self.tab = Tab::Connection,
                     Some(ErrorAction::Dismiss) => self.status.dismiss_error(),
                     None => {}
@@ -391,8 +449,8 @@ impl BridgeApp {
             };
             match action {
                 Some(SplitterAction::Open) => self.open(),
-                Some(SplitterAction::Reload) => self.reload(),
-                Some(SplitterAction::Change) => self.change_game(),
+                Some(SplitterAction::Reload) => self.ask(Pending::Reload),
+                Some(SplitterAction::Change) => self.ask(Pending::ChangeGame),
                 None => {}
             }
 
@@ -411,12 +469,17 @@ impl BridgeApp {
         ui.spacing_mut().item_spacing.y = 0.0;
         components::tab_strip(
             ui,
-            &[(Tab::Connection, "Connection"), (Tab::Log, "Log")],
+            &[
+                (Tab::Settings, "Settings", self.settings.is_unsaved()),
+                (Tab::Connection, "Connection", false),
+                (Tab::Log, "Log", false),
+            ],
             &mut self.tab,
         );
         Frame::NONE
             .inner_margin(Margin::same(24))
             .show(ui, |ui| match self.tab {
+                Tab::Settings => self.settings_tab(ui),
                 Tab::Connection => {
                     let urls = self.server_status.urls(&self.addresses);
                     if let Some(port) = self.connection_tab.show(ui, &self.server_status, &urls) {
@@ -428,13 +491,162 @@ impl BridgeApp {
             });
     }
 
-    /// Asks for a `.wasm` file and loads it.
+    /// The Settings tab, and what it asks for.
+    fn settings_tab(&mut self, ui: &mut egui::Ui) {
+        let loaded = self.runner.loaded_path().is_some();
+        match settings_tab::settings_tab(ui, &mut self.settings, loaded, Instant::now()) {
+            Some(SettingsAction::Save) => {
+                self.save_settings();
+            }
+            Some(SettingsAction::Open) => self.open(),
+            Some(SettingsAction::Browse(key)) => self.browse(&key),
+            None => {}
+        }
+    }
+
+    /// Asks for a `.wasm` file and loads it, once the unsaved settings are
+    /// dealt with.
     fn open(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Auto splitter", &["wasm"])
             .pick_file()
         {
-            self.load(path);
+            self.ask(Pending::Open(path));
+        }
+    }
+
+    /// Does `pending` now, or first asks what to do with the unsaved
+    /// settings, if there are some.
+    fn ask(&mut self, pending: Pending) {
+        if self.settings.is_unsaved() {
+            self.pending = Some(pending);
+        } else {
+            self.proceed(pending);
+        }
+    }
+
+    fn proceed(&mut self, pending: Pending) {
+        match pending {
+            Pending::Reload => self.reload(),
+            Pending::Open(path) => self.load(path),
+            Pending::ChangeGame => self.change_game(),
+            Pending::Close => {
+                self.closing = true;
+                self.ctx.send_viewport_cmd(ViewportCommand::Close);
+            }
+        }
+    }
+
+    /// Asks what to do with unsaved settings when the window is closed.
+    fn check_close(&mut self) {
+        let requested = self.ctx.input(|input| input.viewport().close_requested());
+        if requested && !self.closing && self.settings.is_unsaved() {
+            self.ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+            self.pending = Some(Pending::Close);
+        }
+    }
+
+    /// Shows the Unsaved dialog while it is open, and acts on its answer.
+    fn unsaved_dialog(&mut self) {
+        let Some(pending) = &self.pending else {
+            return;
+        };
+        if let Some(action) =
+            components::unsaved_dialog(&self.ctx, pending.trigger(), self.settings.changes())
+        {
+            self.answer_unsaved(action);
+        }
+    }
+
+    /// Acts on the Unsaved dialog's answer: saves or discards the edits,
+    /// then does what was waiting, unless it was cancelled or saving failed.
+    fn answer_unsaved(&mut self, action: UnsavedAction) {
+        let Some(pending) = self.pending.take() else {
+            return;
+        };
+        match action {
+            UnsavedAction::Save => {
+                if self.save_settings() {
+                    self.proceed(pending);
+                }
+            }
+            UnsavedAction::Discard => {
+                self.settings.discard();
+                self.proceed(pending);
+            }
+            UnsavedAction::Cancel => {}
+        }
+    }
+
+    /// Saves the draft in the game's file (spec §7.2) and gives it to the
+    /// running auto splitter. Returns whether it was saved.
+    fn save_settings(&mut self) -> bool {
+        let saved = match (self.config.clone(), &self.game) {
+            (Some(config), Some(game)) => {
+                match Game::save_settings(
+                    &config,
+                    &game.slug,
+                    self.settings.draft(),
+                    self.settings.keys(),
+                ) {
+                    Ok(game) => {
+                        let saved = game.settings.clone();
+                        self.game = Some(game);
+                        saved
+                    }
+                    Err(error) => {
+                        self.log(
+                            Category::Error,
+                            format!("Couldn't save the settings: {error}"),
+                        );
+                        return false;
+                    }
+                }
+            }
+            // With no configuration folder there is no game file: the
+            // settings last until the app closes.
+            _ => self.settings.draft().clone(),
+        };
+        self.runner.set_settings(config::to_runtime(&saved));
+        self.settings.saved(saved, Instant::now());
+        self.log(Category::App, "Saved the settings".to_owned());
+        true
+    }
+
+    /// Asks for a file for the file selection `key`, and puts it in the
+    /// draft.
+    fn browse(&mut self, key: &str) {
+        let Some(widget) = self
+            .settings
+            .widgets()
+            .iter()
+            .find(|widget| &*widget.key == key)
+            .cloned()
+        else {
+            return;
+        };
+        let WidgetKind::FileSelect { filters } = &widget.kind else {
+            return;
+        };
+        let mut dialog = rfd::FileDialog::new().set_title(&*widget.description);
+        for (name, extensions) in settings::file_filters(filters) {
+            dialog = dialog.add_filter(name, &extensions);
+        }
+        let Some(path) = dialog.pick_file() else {
+            return;
+        };
+        // The auto splitter sees files through its own file system.
+        match wasi_path::from_native(&path) {
+            Some(value) => self
+                .settings
+                .set(&widget, Some(Value::String(value.into()))),
+            None => self.log(
+                Category::Error,
+                format!(
+                    "Couldn't give {} to the auto splitter: the path isn't supported",
+                    path.display()
+                ),
+            ),
         }
     }
 
@@ -542,7 +754,9 @@ fn category(event: &RunnerEvent) -> Category {
 impl eframe::App for BridgeApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.handle_events();
+        self.check_close();
         self.game_dialog(&ui.ctx().clone());
+        self.unsaved_dialog();
         self.refresh_addresses(ui.ctx());
         let column = Frame::NONE
             .fill(theme::PANEL)
@@ -566,7 +780,112 @@ impl eframe::App for BridgeApp {
 
 #[cfg(test)]
 mod tests {
+    use eframe::egui::{RawInput, ViewportEvent, ViewportId};
+
     use super::*;
+
+    /// The app with its files in a temporary folder, the auto splitter of
+    /// `game` loaded and its setting "gym" changed but not saved.
+    fn app_with_unsaved_edit() -> (tempfile::TempDir, BridgeApp) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::at(dir.path().join("config"));
+        let mut app = BridgeApp::with_config(&egui::Context::default(), Some(config.clone()));
+        let game = Game::create(&config, "GTA").unwrap();
+        app.settings.reset(game.settings.clone());
+        app.game = Some(game);
+        let gym = Setting {
+            key: "gym".into(),
+            description: "Gym Moves".into(),
+            tooltip: None,
+            kind: WidgetKind::Bool {
+                default_value: false,
+            },
+        };
+        app.settings.set_widgets(vec![gym.clone()]);
+        app.settings.set(&gym, Some(Value::Boolean(true)));
+        (dir, app)
+    }
+
+    fn saved_gym(app: &BridgeApp) -> Option<bool> {
+        let config = app.config.as_ref().unwrap();
+        Game::load(config, "gta")
+            .unwrap()
+            .settings
+            .get("gym")?
+            .as_bool()
+    }
+
+    #[test]
+    fn reload_open_and_change_game_ask_first_with_unsaved_settings() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.ask(Pending::Reload);
+        assert_eq!(app.pending, Some(Pending::Reload));
+        let path = PathBuf::from("/other.wasm");
+        app.ask(Pending::Open(path.clone()));
+        assert_eq!(app.pending, Some(Pending::Open(path)));
+        app.ask(Pending::ChangeGame);
+        assert_eq!(app.pending, Some(Pending::ChangeGame));
+    }
+
+    #[test]
+    fn nothing_asks_without_unsaved_settings() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.settings.discard();
+        app.ask(Pending::Reload);
+        assert_eq!(app.pending, None);
+    }
+
+    #[test]
+    fn closing_the_window_asks_first_with_unsaved_settings() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        let mut input = RawInput::default();
+        input
+            .viewports
+            .entry(ViewportId::ROOT)
+            .or_default()
+            .events
+            .push(ViewportEvent::Close);
+        let ctx = app.ctx.clone();
+        let mut output = ctx.run_ui(input, |_| app.check_close());
+        // Nothing draws the frame, so its textures are dropped.
+        output.textures_delta.clear();
+        assert_eq!(app.pending, Some(Pending::Close));
+        let commands = &output.viewport_output[&ViewportId::ROOT].commands;
+        assert!(
+            commands.contains(&ViewportCommand::CancelClose),
+            "{commands:?}"
+        );
+    }
+
+    #[test]
+    fn save_writes_the_settings_then_does_what_was_waiting() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pending = Some(Pending::Close);
+        app.answer_unsaved(UnsavedAction::Save);
+        assert_eq!(saved_gym(&app), Some(true));
+        assert!(!app.settings.is_unsaved());
+        assert!(app.closing);
+    }
+
+    #[test]
+    fn discard_drops_the_edits_then_does_what_was_waiting() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pending = Some(Pending::Close);
+        app.answer_unsaved(UnsavedAction::Discard);
+        assert_eq!(saved_gym(&app), None);
+        assert!(!app.settings.is_unsaved());
+        assert!(app.closing);
+    }
+
+    #[test]
+    fn cancel_keeps_the_edits_and_does_nothing() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.pending = Some(Pending::Close);
+        app.answer_unsaved(UnsavedAction::Cancel);
+        assert_eq!(app.pending, None);
+        assert!(app.settings.is_unsaved());
+        assert!(!app.closing);
+    }
 
     #[test]
     fn runner_events_are_logged_in_their_category() {
