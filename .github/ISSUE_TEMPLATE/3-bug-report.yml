@@ -1,0 +1,86 @@
+name: Bug report
+description: Report something that doesn't work as expected.
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Existing issues
+      options:
+        - label: I searched the existing issues and this hasn't been reported.
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What went wrong, including any error message shown in the app.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Load the auto splitter ...
+        2. Connect LiveSplit One ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: livesplit-asr-bridge version
+      description: Shown in the app, or the release you downloaded.
+      placeholder: e.g. 0.3.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system (machine running livesplit-asr-bridge)
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-details
+    attributes:
+      label: Operating system details
+      description: Version, and for Linux the distribution. Mention Wine or Proton if the game runs through it.
+      placeholder: e.g. Arch Linux, game running through Proton 11
+    validations:
+      required: false
+  - type: input
+    id: game
+    attributes:
+      label: Game and auto splitter
+      description: The game, and which auto splitter you loaded (name and where it came from).
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser running LiveSplit One
+      placeholder: e.g. Chrome 140 on macOS
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Attach or paste the relevant log. In the app, open the Log tab, tick the relevant categories and use **Save log…**, or attach the day's file from the log folder:
+        - Linux: `~/.local/state/livesplit-asr-bridge/logs/`
+        - macOS: `~/Library/Logs/livesplit-asr-bridge/`
+        - Windows: `%LOCALAPPDATA%\livesplit-asr-bridge\logs\`
+      render: text
+    validations:
+      required: false
