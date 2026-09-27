@@ -47,8 +47,9 @@ impl TimerLink for RecordingLink {
         None
     }
 
-    fn send(&self, action: TimerAction) {
+    fn send(&self, action: TimerAction) -> usize {
         self.actions.lock().unwrap().push(action);
+        1
     }
 }
 
@@ -124,6 +125,11 @@ fn write_wasm(path: &Path, wat: &str) {
     fs::write(path, wat::parse_str(wat).unwrap()).unwrap();
 }
 
+/// An action the recording link sent to its one timer.
+fn sent(action: TimerAction) -> RunnerEvent {
+    RunnerEvent::TimerAction { action, sent_to: 1 }
+}
+
 fn log(message: &str) -> RunnerEvent {
     RunnerEvent::AutoSplitterLog(message.to_owned())
 }
@@ -165,7 +171,7 @@ fn runs_the_schedule_and_reports_actions_and_logs_in_order() {
         .filter(|event| {
             matches!(
                 event,
-                RunnerEvent::AutoSplitterLog(_) | RunnerEvent::TimerAction(_)
+                RunnerEvent::AutoSplitterLog(_) | RunnerEvent::TimerAction { .. }
             )
         })
         .collect();
@@ -174,10 +180,10 @@ fn runs_the_schedule_and_reports_actions_and_logs_in_order() {
         observed,
         [
             log("started"),
-            RunnerEvent::TimerAction(TimerAction::Start),
-            RunnerEvent::TimerAction(TimerAction::Split),
-            RunnerEvent::TimerAction(TimerAction::SetGameTime(game_time)),
-            RunnerEvent::TimerAction(TimerAction::Split),
+            sent(TimerAction::Start),
+            sent(TimerAction::Split),
+            sent(TimerAction::SetGameTime(game_time)),
+            sent(TimerAction::Split),
             log("finished"),
         ]
     );
@@ -433,7 +439,7 @@ impl TimerLink for StateTrackingLink {
         None
     }
 
-    fn send(&self, action: TimerAction) {
+    fn send(&self, action: TimerAction) -> usize {
         let mut split_index = self.split_index.lock().unwrap();
         match action {
             TimerAction::Start => *split_index = split_index.or(Some(0)),
@@ -441,6 +447,7 @@ impl TimerLink for StateTrackingLink {
             TimerAction::Reset => *split_index = None,
             _ => {}
         }
+        1
     }
 }
 
@@ -451,7 +458,7 @@ fn actions_until_reset(events: &Receiver<RunnerEvent>) -> Vec<TimerAction> {
     while actions.last() != Some(&TimerAction::Reset) {
         let remaining = deadline.saturating_duration_since(Instant::now());
         match events.recv_timeout(remaining) {
-            Ok(RunnerEvent::TimerAction(action)) => actions.push(action),
+            Ok(RunnerEvent::TimerAction { action, .. }) => actions.push(action),
             Ok(_) => {}
             Err(_) => panic!(
                 "timed out after {} actions; the first ones: {:?}",
@@ -499,7 +506,8 @@ fn with_no_timer_an_auto_splitter_that_checks_the_state_only_tries_to_start() {
     let deadline = Instant::now() + Duration::from_millis(500);
     let mut actions = Vec::new();
     while let Ok(event) = events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        if let RunnerEvent::TimerAction(action) = event {
+        if let RunnerEvent::TimerAction { action, sent_to } = event {
+            assert_eq!(sent_to, 0, "{action:?}");
             actions.push(action);
         }
     }

@@ -112,7 +112,7 @@ impl Status {
             RunnerEvent::TickRateChanged(tick_rate) => self.tick_rate = Some(*tick_rate),
             RunnerEvent::AutoSplitterLog(_)
             | RunnerEvent::RuntimeLog { .. }
-            | RunnerEvent::TimerAction(_) => {}
+            | RunnerEvent::TimerAction { .. } => {}
         }
     }
 
@@ -135,7 +135,8 @@ impl Status {
             }
             ServerEvent::TimerConnected { .. }
             | ServerEvent::TimerDisconnected { .. }
-            | ServerEvent::HandshakeFailed { .. } => {}
+            | ServerEvent::HandshakeFailed { .. }
+            | ServerEvent::CommandRejected { .. } => {}
         }
     }
 

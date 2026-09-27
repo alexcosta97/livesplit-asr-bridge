@@ -4,6 +4,7 @@
 mod components;
 mod connection_tab;
 mod folder;
+mod last_action;
 mod server_status;
 mod status;
 mod theme;
@@ -12,7 +13,7 @@ use std::{
     collections::HashMap,
     fs,
     path::PathBuf,
-    sync::{Arc, mpsc::Receiver},
+    sync::mpsc::Receiver,
     time::{Duration, Instant},
 };
 
@@ -21,7 +22,7 @@ use eframe::egui::{self, Frame, Margin, ScrollArea};
 use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters},
     logging::{self, Category, Filters, Logger},
-    runner::{NoTimer, Runner, RunnerEvent, file_name},
+    runner::{Runner, RunnerEvent, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
     version::VERSION,
 };
@@ -30,6 +31,7 @@ use components::{
     LogAction, SplitterAction, Width,
 };
 use connection_tab::ConnectionTab;
+use last_action::LastActions;
 use server_status::ServerStatus;
 use status::Status;
 
@@ -66,8 +68,7 @@ enum Tab {
     Log,
 }
 
-/// The application. Later issues add the Last action card and the other
-/// tabs.
+/// The application. Later issues add the other tabs.
 pub struct BridgeApp {
     runner: Runner,
     events: Receiver<RunnerEvent>,
@@ -75,6 +76,7 @@ pub struct BridgeApp {
     server_events: Receiver<ServerEvent>,
     status: Status,
     server_status: ServerStatus,
+    last_actions: LastActions,
     /// The machine's addresses, and when they were read.
     addresses: Vec<NetworkAddress>,
     addresses_read: Instant,
@@ -106,8 +108,6 @@ impl BridgeApp {
             let ctx = ctx.clone();
             move || ctx.request_repaint()
         };
-        // The Server replaces NoTimer (#10, #11).
-        let (runner, events) = Runner::new(Arc::new(NoTimer), wake.clone());
         let config = Config::standard();
         let loaded = config.as_ref().map(AppSettings::load);
         let app_settings = match &loaded {
@@ -115,7 +115,9 @@ impl BridgeApp {
             _ => AppSettings::default(),
         };
         let port = app_settings.port();
-        let (server, server_events) = Server::new(port, wake);
+        let (server, server_events) = Server::new(port, wake.clone());
+        // The auto splitter controls the timers connected to the Server.
+        let (runner, events) = Runner::new(server.link(), wake);
         let mut app = Self {
             runner,
             events,
@@ -123,6 +125,7 @@ impl BridgeApp {
             server_events,
             status: Status::default(),
             server_status: ServerStatus::default(),
+            last_actions: LastActions::default(),
             addresses: server::network_addresses(),
             addresses_read: Instant::now(),
             tab: Tab::Connection,
@@ -167,6 +170,8 @@ impl BridgeApp {
     fn handle_events(&mut self) {
         while let Ok(event) = self.events.try_recv() {
             self.status.apply(&event);
+            self.last_actions
+                .apply(&event, chrono::Local::now().time(), Instant::now());
             match &event {
                 RunnerEvent::Loaded { path, .. } => self.game = self.loading.remove(path),
                 RunnerEvent::LoadFailed { path, .. } => {
@@ -361,7 +366,8 @@ impl BridgeApp {
     }
 
     /// The status column: the header, the error card while there is one, the
-    /// auto splitter and the game. It scrolls rather than clip a card.
+    /// auto splitter, the game, the timer and the last action. It scrolls
+    /// rather than clip a card.
     fn status_column(&mut self, ui: &mut egui::Ui, width: Width) {
         let loaded = self.runner.loaded_path().map(|path| file_name(&path));
         let loaded = loaded.as_deref();
@@ -395,6 +401,8 @@ impl BridgeApp {
 
             let urls = self.server_status.urls(&self.addresses);
             components::timer_card(ui, self.server_status.timer_state(), &urls, width);
+
+            components::last_action_card(ui, &self.last_actions, width, Instant::now());
         });
     }
 
@@ -524,7 +532,9 @@ fn category(event: &RunnerEvent) -> Category {
         return Category::Error;
     }
     match event {
-        RunnerEvent::AutoSplitterLog(_) | RunnerEvent::TimerAction(_) => Category::AutoSplitter,
+        RunnerEvent::AutoSplitterLog(_) => Category::AutoSplitter,
+        // Commands sent and dropped (spec §8.1).
+        RunnerEvent::TimerAction { .. } => Category::Connection,
         _ => Category::App,
     }
 }
@@ -587,8 +597,11 @@ mod tests {
                 Category::App,
             ),
             (
-                RunnerEvent::TimerAction(crate::runner::TimerAction::Split),
-                Category::AutoSplitter,
+                RunnerEvent::TimerAction {
+                    action: crate::runner::TimerAction::Split,
+                    sent_to: 0,
+                },
+                Category::Connection,
             ),
             (RunnerEvent::GameDetached, Category::App),
             (
@@ -626,6 +639,16 @@ mod tests {
                 ServerEvent::HandshakeFailed {
                     address,
                     error: "not a WebSocket".to_owned(),
+                },
+                Category::Connection,
+            ),
+            (
+                ServerEvent::CommandRejected {
+                    id: 0,
+                    address,
+                    command: Some("split".to_owned()),
+                    code: "NoRunInProgress".to_owned(),
+                    message: None,
                 },
                 Category::Connection,
             ),
