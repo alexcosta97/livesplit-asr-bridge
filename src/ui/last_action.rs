@@ -22,6 +22,8 @@ pub struct ShownAction {
     pub sent: bool,
     /// When it arrived, for the card's flash.
     pub arrived: Instant,
+    /// Whether it sets the game time, so the next game time replaces it.
+    game_time: bool,
 }
 
 /// The actions on the Last action card, newest first. Only this session's;
@@ -33,7 +35,10 @@ pub struct LastActions {
 
 impl LastActions {
     /// Adds the action an event reports, at `time` of day and `now`. Custom
-    /// variables are logged but not shown.
+    /// variables are logged but not shown. Auto splitters often set the game
+    /// time on every tick, so a game time right after another replaces it,
+    /// rather than push the other actions off the card; the card flashes
+    /// only for the first.
     pub fn apply(&mut self, event: &RunnerEvent, time: NaiveTime, now: Instant) {
         let RunnerEvent::TimerAction { action, sent_to } = event else {
             return;
@@ -41,11 +46,23 @@ impl LastActions {
         let Some(word) = word(action) else {
             return;
         };
+        let game_time = matches!(action, TimerAction::SetGameTime(_));
+        let sent = *sent_to > 0;
+        if let Some(latest) = self.shown.front_mut()
+            && game_time
+            && latest.game_time
+        {
+            latest.word = word;
+            latest.time = time;
+            latest.sent = sent;
+            return;
+        }
         self.shown.push_front(ShownAction {
             word,
             time,
-            sent: *sent_to > 0,
+            sent,
             arrived: now,
+            game_time,
         });
         self.shown.truncate(KEPT);
     }
@@ -129,6 +146,43 @@ mod tests {
         assert_eq!((latest.word.as_str(), latest.time), ("Skip split", at(3)));
         let previous: Vec<_> = actions.previous().map(|a| a.word.as_str()).collect();
         assert_eq!(previous, ["Split", "Start"]);
+    }
+
+    #[test]
+    fn game_times_in_a_row_replace_each_other() {
+        let mut actions = LastActions::default();
+        let first = Instant::now();
+        let game_time = |seconds| {
+            action(
+                TimerAction::SetGameTime(time::Duration::seconds(seconds)),
+                1,
+            )
+        };
+        actions.apply(&action(TimerAction::Start, 1), at(0), first);
+        actions.apply(&game_time(1), at(1), first);
+        actions.apply(
+            &game_time(2),
+            at(2),
+            first + std::time::Duration::from_secs(1),
+        );
+        let latest = actions.latest().unwrap();
+        assert_eq!(
+            (latest.word.as_str(), latest.time),
+            ("Game time 0:02.000", at(2))
+        );
+        // The flash is for the first game time only.
+        assert_eq!(latest.arrived, first);
+        let previous: Vec<_> = actions.previous().map(|a| a.word.as_str()).collect();
+        assert_eq!(previous, ["Start"]);
+
+        // Another action ends the run.
+        actions.apply(&action(TimerAction::Split, 1), at(3), first);
+        actions.apply(&game_time(3), at(4), first);
+        let words: Vec<_> = std::iter::once(actions.latest().unwrap())
+            .chain(actions.previous())
+            .map(|a| a.word.as_str())
+            .collect();
+        assert_eq!(words, ["Game time 0:03.000", "Split", "Game time 0:02.000"]);
     }
 
     #[test]

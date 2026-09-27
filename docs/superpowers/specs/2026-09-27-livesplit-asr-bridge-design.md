@@ -149,8 +149,9 @@ against `livesplit-core`'s `server_protocol` and LiveSplit One's handling of it
 during implementation planning, and covered by tests.
 
 **No connected timer:** commands are not queued. Each dropped command is logged
-(Connection category) and discarded. Replaying stale commands when a timer
-reconnects would be worse than missing them. The Last action card still shows
+(Connection category; section 8.1 covers repeated game times) and discarded.
+Replaying stale commands when a timer reconnects would be worse than missing
+them. The Last action card still shows
 the action, marked as not sent (section 6.2).
 
 ### 5.2 Tracked timer state
@@ -311,6 +312,9 @@ notifications.
   (for example "GAME TIME 1:23:45.600"), PAUSE GAME TIME or RESUME GAME TIME.
 - The 2 previous actions below it, as faint lines. This is only the recent
   history of this session; it is not stored.
+- Auto splitters often set the game time on every tick. A GAME TIME right
+  after another GAME TIME replaces it rather than adding a line, so the other
+  actions stay on the card. The card flashes only for the first one.
 - An action taken while no timer is connected is still shown, with a faint
   "Not sent: no timer connected" note, since it was dropped (section 5.1). It
   tells the user the auto splitter works and the problem is the connection.
@@ -563,6 +567,11 @@ every auto splitter associated with that game.
 | Auto splitter | Messages printed by the auto splitter | Optional filter |
 | Connection | Timers connecting and disconnecting, commands sent, events and responses received, dropped commands | Optional filter |
 | App & runtime | Process attach and detach, tick rate changes, settings saved, server restarts, reloads | Optional filter |
+
+A game time set right after another game time is still sent, but not logged,
+whether it was sent or dropped: only the first of such a run is, so an auto
+splitter setting the game time on every tick doesn't fill the log. Any other
+action ends the run.
 
 The in-app view keeps the most recent 10,000 lines.
 

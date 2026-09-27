@@ -26,7 +26,7 @@ use toml::Value;
 use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters},
     logging::{self, Category, Filters, Logger},
-    runner::{Runner, RunnerEvent, file_name},
+    runner::{Runner, RunnerEvent, TimerAction, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
     version::VERSION,
 };
@@ -107,6 +107,9 @@ pub struct BridgeApp {
     status: Status,
     server_status: ServerStatus,
     last_actions: LastActions,
+    /// Whether the latest timer action set the game time, so another game
+    /// time right after it isn't logged.
+    setting_game_time: bool,
     /// The machine's addresses, and when they were read.
     addresses: Vec<NetworkAddress>,
     addresses_read: Instant,
@@ -167,6 +170,7 @@ impl BridgeApp {
             status: Status::default(),
             server_status: ServerStatus::default(),
             last_actions: LastActions::default(),
+            setting_game_time: false,
             addresses: server::network_addresses(),
             addresses_read: Instant::now(),
             tab: Tab::Connection,
@@ -228,6 +232,11 @@ impl BridgeApp {
                 RunnerEvent::Unloaded => {
                     self.game = None;
                     self.settings.reset(toml::Table::new());
+                }
+                RunnerEvent::TimerAction { action, .. } => {
+                    if repeats_game_time(&mut self.setting_game_time, action) {
+                        continue;
+                    }
                 }
                 RunnerEvent::SettingsWidgets(widgets) => {
                     self.settings
@@ -738,6 +747,16 @@ fn server_category(event: &ServerEvent) -> Category {
     }
 }
 
+/// Whether `action` sets the game time right after another game time, so it
+/// isn't logged: auto splitters often set it on every tick, which would fill
+/// the log (spec §8.1). `setting_game_time` follows the latest action.
+fn repeats_game_time(setting_game_time: &mut bool, action: &TimerAction) -> bool {
+    let game_time = matches!(action, TimerAction::SetGameTime(_));
+    let repeat = game_time && *setting_game_time;
+    *setting_game_time = game_time;
+    repeat
+}
+
 /// The log category of a Runner event (spec §8.1).
 fn category(event: &RunnerEvent) -> Category {
     if event.is_error() {
@@ -781,6 +800,7 @@ impl eframe::App for BridgeApp {
 #[cfg(test)]
 mod tests {
     use eframe::egui::{RawInput, ViewportEvent, ViewportId};
+    use livesplit_auto_splitting::time;
 
     use super::*;
 
@@ -917,7 +937,7 @@ mod tests {
             ),
             (
                 RunnerEvent::TimerAction {
-                    action: crate::runner::TimerAction::Split,
+                    action: TimerAction::Split,
                     sent_to: 0,
                 },
                 Category::Connection,
@@ -975,6 +995,33 @@ mod tests {
         for (event, expected) in cases {
             assert_eq!(server_category(&event), expected, "{event:?}");
         }
+    }
+
+    #[test]
+    fn only_the_first_of_several_game_times_in_a_row_is_logged() {
+        let game_time = |seconds| TimerAction::SetGameTime(time::Duration::seconds(seconds));
+        let mut setting_game_time = false;
+        let logged: Vec<_> = [
+            TimerAction::Start,
+            game_time(1),
+            game_time(2),
+            game_time(3),
+            TimerAction::Split,
+            game_time(4),
+            game_time(5),
+        ]
+        .into_iter()
+        .filter(|action| !repeats_game_time(&mut setting_game_time, action))
+        .collect();
+        assert_eq!(
+            logged,
+            [
+                TimerAction::Start,
+                game_time(1),
+                TimerAction::Split,
+                game_time(4)
+            ]
+        );
     }
 
     #[test]

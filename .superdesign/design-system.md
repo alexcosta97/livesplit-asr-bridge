@@ -169,7 +169,8 @@ Every mockup must stay consistent with these rules.
   UNDO SPLIT, RESET, GAME TIME 1:23:45.600, PAUSE GAME TIME, RESUME GAME TIME. SPLIT shows
   the segment name only when the timer provides it; otherwise just "SPLIT" (never an
   invented name like "Split 12"). An action taken with no
-  timer connected is still shown, with a faint mono note "Not sent: no timer connected". Custom
+  timer connected is still shown, with a faint mono note "Not sent: no timer connected". A GAME
+  TIME right after another replaces it (auto splitters set it every tick). Custom
   variables are NOT shown here (log only). Empty state: "NO ACTIONS YET" muted, "Actions appear
   here when the auto splitter starts, splits or resets."
 - **Error card**: does NOT exist when there is no error (no placeholder, no empty space).
