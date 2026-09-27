@@ -1,40 +1,39 @@
-//! The application window: the status column and, when wide, the area the
-//! tabs will fill.
+//! The application window: the status column and, when wide, the tab area.
 
 mod components;
+mod folder;
 mod status;
 mod theme;
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
+    fs,
     path::PathBuf,
     sync::{Arc, mpsc::Receiver},
 };
 
-use eframe::egui::{self, Frame, Label, Margin, RichText, ScrollArea};
+use eframe::egui::{self, Frame, Margin, ScrollArea};
 
 use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters},
+    logging::{self, Category, Filters, Logger},
     runner::{NoTimer, Runner, RunnerEvent, file_name},
     version::VERSION,
 };
 use components::{
-    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, SplitterAction, Width,
+    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, LOG_LINE_HEIGHT,
+    LogAction, SplitterAction, Tab, Width,
 };
 use status::Status;
 
 pub use theme::install as install_theme;
 
-/// The application name, used for the window and, later, the config and log
+/// The application name, used for the window and the config and log
 /// folders.
 pub const APP_NAME: &str = "livesplit-asr-bridge";
 
 /// The name shown to people, in the window title.
 pub const DISPLAY_NAME: &str = "LiveSplit One ASR Bridge";
-
-/// How many recent Runner messages the window keeps, until the Log tab
-/// replaces this list.
-const RECENT_MESSAGES: usize = 500;
 
 /// Below this window width, the status column fills the window.
 const COMPACT_BELOW: f32 = 640.0;
@@ -55,8 +54,14 @@ pub struct BridgeApp {
     runner: Runner,
     events: Receiver<RunnerEvent>,
     status: Status,
-    /// Each message, and whether it is an error.
-    recent: VecDeque<(String, bool)>,
+    /// Everything the app records, in the Log tab and on disk.
+    logger: Logger,
+    /// The Log tab's filters, saved in `app.toml`.
+    log_filters: Filters,
+    /// The log entry reached through Show in log (#14), highlighted.
+    highlighted: Option<u64>,
+    /// The tab shown in the tab area.
+    tab: Tab,
     /// The configuration folder, if the OS has one for the user.
     config: Option<Config>,
     /// The app's own settings, read from `app.toml` at start-up. The
@@ -79,7 +84,10 @@ impl BridgeApp {
             runner,
             events,
             status: Status::default(),
-            recent: VecDeque::new(),
+            logger: Logger::new(logging::standard_dir()),
+            log_filters: Filters::default(),
+            highlighted: None,
+            tab: Tab::default(),
             config: Config::standard(),
             app_settings: AppSettings::default(),
             loading: HashMap::new(),
@@ -87,6 +95,7 @@ impl BridgeApp {
             dialog: None,
         };
         app.app_settings = app.read_app_settings();
+        app.log_filters = app.app_settings.log_filters();
         app
     }
 
@@ -97,7 +106,10 @@ impl BridgeApp {
             return AppSettings::default();
         };
         AppSettings::load(&config).unwrap_or_else(|error| {
-            self.note(format!("Couldn't read the app's settings: {error}"), true);
+            self.log(
+                Category::Error,
+                format!("Couldn't read the app's settings: {error}"),
+            );
             AppSettings::default()
         })
     }
@@ -113,26 +125,23 @@ impl BridgeApp {
                 RunnerEvent::Unloaded => self.game = None,
                 _ => {}
             }
-            self.note(event.describe(), event.is_error());
+            self.log(category(&event), event.describe());
         }
     }
 
-    /// Adds a message to the recent activity.
-    fn note(&mut self, message: String, is_error: bool) {
-        if self.recent.len() == RECENT_MESSAGES {
-            self.recent.pop_front();
-        }
-        self.recent.push_back((message, is_error));
+    /// Records a line in the log.
+    fn log(&mut self, category: Category, message: String) {
+        self.logger.record(category, message);
     }
 
     /// The configuration folder, or `None` after reporting that there is
     /// none.
     fn config(&mut self) -> Option<Config> {
         if self.config.is_none() {
-            self.note(
+            self.log(
+                Category::Error,
                 "Couldn't find the configuration folder, so games and settings aren't saved"
                     .to_owned(),
-                true,
             );
         }
         self.config.clone()
@@ -142,9 +151,9 @@ impl BridgeApp {
     /// and no auto splitter is known.
     fn splitters(&mut self, config: &Config) -> Splitters {
         Splitters::load(config).unwrap_or_else(|error| {
-            self.note(
+            self.log(
+                Category::Error,
                 format!("Couldn't read the games of auto splitters: {error}"),
-                true,
             );
             Splitters::default()
         })
@@ -154,7 +163,10 @@ impl BridgeApp {
     /// the game has no saved settings.
     fn game(&mut self, config: &Config, slug: &str) -> Game {
         Game::load(config, slug).unwrap_or_else(|error| {
-            self.note(format!("Couldn't read the game's settings: {error}"), true);
+            self.log(
+                Category::Error,
+                format!("Couldn't read the game's settings: {error}"),
+            );
             Game {
                 slug: slug.to_owned(),
                 name: slug.to_owned(),
@@ -167,7 +179,7 @@ impl BridgeApp {
     fn games(&mut self, config: &Config, splitters: &Splitters) -> Vec<GameSummary> {
         let (games, errors) = Game::list(config, splitters);
         for error in errors {
-            self.note(format!("Couldn't read a game: {error}"), true);
+            self.log(Category::Error, format!("Couldn't read a game: {error}"));
         }
         games
     }
@@ -248,7 +260,7 @@ impl BridgeApp {
             GameChoice::New(name) => match Game::create(&config, &name) {
                 Ok(game) => game,
                 Err(error) => {
-                    self.note(format!("Couldn't set up {name}: {error}"), true);
+                    self.log(Category::Error, format!("Couldn't set up {name}: {error}"));
                     return;
                 }
             },
@@ -260,9 +272,9 @@ impl BridgeApp {
                 // The running auto splitter carries on with the new game's
                 // settings.
                 self.runner.set_settings(config::to_runtime(&game.settings));
-                self.note(
+                self.log(
+                    Category::App,
                     format!("{} is now for {}", file_name(&path), game.name),
-                    false,
                 );
                 self.game = Some(game);
             }
@@ -277,9 +289,9 @@ impl BridgeApp {
             splitters.save(config)
         });
         if let Err(error) = saved {
-            self.note(
+            self.log(
+                Category::Error,
                 format!("Couldn't remember the game of {}: {error}", file_name(path)),
-                true,
             );
         }
     }
@@ -335,27 +347,92 @@ impl BridgeApp {
         }
     }
 
-    /// The Runner's recent messages, until the Log tab (#12) replaces them.
-    fn recent_activity(&self, ui: &mut egui::Ui) {
-        components::section_label(ui, "Recent activity");
+    /// The tab area: the tab strip and the active tab.
+    fn tab_area(&mut self, ui: &mut egui::Ui) {
+        components::tab_strip(ui, &mut self.tab);
+        ui.add_space(16.0);
+        match self.tab {
+            Tab::Log => self.log_tab(ui),
+        }
+    }
+
+    /// The Log tab (spec §6.6): the toolbar, then the lines the filters
+    /// show, following the newest.
+    fn log_tab(&mut self, ui: &mut egui::Ui) {
+        match components::log_toolbar(ui, &mut self.log_filters) {
+            Some(LogAction::FiltersChanged) => self.save_log_filters(),
+            Some(LogAction::Copy) => ui
+                .ctx()
+                .copy_text(self.logger.view().export(self.log_filters)),
+            Some(LogAction::Save) => self.save_log(),
+            Some(LogAction::Clear) => self.logger.clear(),
+            Some(LogAction::OpenFolder) => self.open_log_folder(),
+            None => {}
+        }
         ui.add_space(12.0);
-        ScrollArea::vertical()
+        let shown: Vec<_> = self.logger.view().shown(self.log_filters).collect();
+        ScrollArea::both()
             .auto_shrink(false)
             .stick_to_bottom(true)
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 6.0;
-                for (message, is_error) in &self.recent {
-                    let color = if *is_error {
-                        theme::STATUS_ERROR
-                    } else {
-                        theme::TEXT
-                    };
-                    ui.add(
-                        Label::new(RichText::new(message).font(theme::mono(12.0)).color(color))
-                            .wrap(),
-                    );
+            .show_rows(ui, LOG_LINE_HEIGHT, shown.len(), |ui, rows| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for entry in &shown[rows] {
+                    components::log_line(ui, entry, self.highlighted == Some(entry.id));
                 }
             });
+    }
+
+    /// Remembers the Log tab's filters in `app.toml`.
+    fn save_log_filters(&mut self) {
+        self.app_settings.set_log_filters(self.log_filters);
+        let Some(config) = self.config() else {
+            return;
+        };
+        if let Err(error) = self.app_settings.save(&config) {
+            self.log(
+                Category::Error,
+                format!("Couldn't remember the log filters: {error}"),
+            );
+        }
+    }
+
+    /// Asks where to save the lines shown, and saves them there.
+    fn save_log(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Log", &["log", "txt"])
+            .set_file_name(format!("{APP_NAME}.log"))
+            .save_file()
+        else {
+            return;
+        };
+        if let Err(error) = fs::write(&path, self.logger.view().export(self.log_filters)) {
+            self.log(
+                Category::Error,
+                format!("Couldn't save the log to {}: {error}", path.display()),
+            );
+        }
+    }
+
+    /// Opens the log folder in the file manager.
+    fn open_log_folder(&mut self) {
+        let result = match self.logger.dir() {
+            Some(dir) => folder::open_folder(dir),
+            None => Err("Couldn't find the log folder".to_owned()),
+        };
+        if let Err(error) = result {
+            self.log(Category::Error, error);
+        }
+    }
+}
+
+/// The log category of a Runner event (spec §8.1).
+fn category(event: &RunnerEvent) -> Category {
+    if event.is_error() {
+        return Category::Error;
+    }
+    match event {
+        RunnerEvent::AutoSplitterLog(_) | RunnerEvent::TimerAction(_) => Category::AutoSplitter,
+        _ => Category::App,
     }
 }
 
@@ -383,13 +460,56 @@ impl eframe::App for BridgeApp {
                     .fill(theme::WINDOW)
                     .inner_margin(Margin::same(24)),
             )
-            .show(ui, |ui| self.recent_activity(ui));
+            .show(ui, |ui| self.tab_area(ui));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runner_events_are_logged_in_their_category() {
+        let path = PathBuf::from("a.wasm");
+        let cases = [
+            (
+                RunnerEvent::LoadFailed {
+                    path: path.clone(),
+                    error: "bad".to_owned(),
+                },
+                Category::Error,
+            ),
+            (
+                RunnerEvent::Crashed {
+                    error: "trap".to_owned(),
+                },
+                Category::Error,
+            ),
+            (
+                RunnerEvent::AutoSplitterLog("hi".to_owned()),
+                Category::AutoSplitter,
+            ),
+            (
+                RunnerEvent::Loaded {
+                    path,
+                    tick_rate: std::time::Duration::from_millis(50),
+                },
+                Category::App,
+            ),
+            (
+                RunnerEvent::TimerAction(crate::runner::TimerAction::Split),
+                Category::AutoSplitter,
+            ),
+            (RunnerEvent::GameDetached, Category::App),
+            (
+                RunnerEvent::TickRateChanged(std::time::Duration::from_millis(50)),
+                Category::App,
+            ),
+        ];
+        for (event, expected) in cases {
+            assert_eq!(category(&event), expected, "{event:?}");
+        }
+    }
 
     #[test]
     fn title_names_livesplit_one() {

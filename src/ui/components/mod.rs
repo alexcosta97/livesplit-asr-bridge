@@ -5,21 +5,28 @@
 mod app_header;
 mod button;
 mod card;
+mod checkbox;
 mod error_card;
 mod game_card;
 mod game_dialog;
+mod log_line;
+mod log_toolbar;
 mod section_label;
 mod splitter_card;
 mod splitter_strip;
 mod status_word;
+mod tab_strip;
 
 pub use app_header::app_header;
 pub use error_card::{ErrorAction, error_card};
 pub use game_card::game_card;
 pub use game_dialog::{GameChoice, GameDialog, GameDialogAction, GameDialogKind, game_dialog};
+pub use log_line::{LOG_LINE_HEIGHT, log_line};
+pub use log_toolbar::{LogAction, log_toolbar};
 pub use section_label::section_label;
 pub use splitter_card::{SplitterAction, splitter_card};
 pub use splitter_strip::splitter_strip;
+pub use tab_strip::{Tab, tab_strip};
 
 use eframe::egui::Response;
 

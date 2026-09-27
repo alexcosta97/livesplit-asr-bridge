@@ -1,4 +1,5 @@
 mod config;
+mod logging;
 mod runner;
 mod ui;
 mod version;
