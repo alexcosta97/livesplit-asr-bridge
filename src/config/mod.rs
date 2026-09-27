@@ -3,17 +3,19 @@
 //!
 //! ```text
 //! <config folder>/
-//!   app.toml            the app's own settings (later issues)
+//!   app.toml            the app's own settings, such as the server port
 //!   splitters.toml      maps each known .wasm path to a game
 //!   games/
 //!     <game-slug>.toml  display name and saved auto splitter settings
 //! ```
 //!
-//! Only the files that are needed are read: `splitters.toml` when an auto
+//! Only the files that are needed are read: `app.toml` at start-up,
+//! `splitters.toml` when an auto
 //! splitter is loaded or its game changed, and a game's file when its
 //! settings are needed. Every write replaces the file whole, through a
 //! temporary file, so an interrupted write never leaves half a file.
 
+mod app;
 mod games;
 mod names;
 mod settings;
@@ -26,6 +28,7 @@ use std::{
 
 use crate::ui::APP_NAME;
 
+pub use app::AppSettings;
 pub use games::{Game, GameSummary};
 pub use names::{name_from_file, slug};
 pub use settings::{SettingKey, merge_saved, to_runtime};
@@ -62,6 +65,10 @@ impl Config {
     )]
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    fn app_file(&self) -> PathBuf {
+        self.dir.join("app.toml")
     }
 
     fn splitters_file(&self) -> PathBuf {

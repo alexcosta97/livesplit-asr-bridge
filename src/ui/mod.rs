@@ -14,7 +14,7 @@ use std::{
 use eframe::egui::{self, Frame, Label, Margin, RichText, ScrollArea};
 
 use crate::{
-    config::{self, Config, Game, GameSummary, Splitters},
+    config::{self, AppSettings, Config, Game, GameSummary, Splitters},
     runner::{NoTimer, Runner, RunnerEvent, file_name},
     version::VERSION,
 };
@@ -59,6 +59,9 @@ pub struct BridgeApp {
     recent: VecDeque<(String, bool)>,
     /// The configuration folder, if the OS has one for the user.
     config: Option<Config>,
+    /// The app's own settings, read from `app.toml` at start-up. The
+    /// server (#9) listens on its port.
+    app_settings: AppSettings,
     /// The game of each auto splitter being loaded, until it is loaded.
     loading: HashMap<PathBuf, Game>,
     /// The loaded auto splitter's game.
@@ -72,16 +75,31 @@ impl BridgeApp {
         let ctx = ctx.clone();
         // The Server replaces NoTimer (#10, #11).
         let (runner, events) = Runner::new(Arc::new(NoTimer), move || ctx.request_repaint());
-        Self {
+        let mut app = Self {
             runner,
             events,
             status: Status::default(),
             recent: VecDeque::new(),
             config: Config::standard(),
+            app_settings: AppSettings::default(),
             loading: HashMap::new(),
             game: None,
             dialog: None,
-        }
+        };
+        app.app_settings = app.read_app_settings();
+        app
+    }
+
+    /// Reads `app.toml`. If it can't be read, the error is reported and the
+    /// defaults are used.
+    fn read_app_settings(&mut self) -> AppSettings {
+        let Some(config) = self.config() else {
+            return AppSettings::default();
+        };
+        AppSettings::load(&config).unwrap_or_else(|error| {
+            self.note(format!("Couldn't read the app's settings: {error}"), true);
+            AppSettings::default()
+        })
     }
 
     fn handle_events(&mut self) {
