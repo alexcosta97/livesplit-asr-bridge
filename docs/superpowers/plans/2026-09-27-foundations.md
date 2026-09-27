@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Set up the project scaffold, the pull request checks and the automated release pipeline, so every later feature is built, checked and released the same way.
+**Goal:** Set up the project scaffold, the pull request checks, the automated release pipeline and automated dependency updates, so every later feature is built, checked, released and kept up to date the same way.
 
 **Architecture:** A single Rust binary crate using eframe/egui opens the app window and shows a version set at build time. GitHub Actions run the checks on every pull request, and on every merge to `main` a release workflow calculates the version with git-cliff, publishes a release candidate as a pre-release, and after a maintainer's approval publishes the full release from the same commit.
 
-**Tech Stack:** Rust (stable, edition 2024), eframe/egui 0.36.2, GitHub Actions, git-cliff 2.14.2, bash, `gh`.
+**Tech Stack:** Rust (stable, edition 2024), eframe/egui 0.36.2, GitHub Actions, git-cliff 2.14.2, mise, Renovate, bash, `gh`.
 
-**Spec:** `docs/superpowers/specs/2026-09-27-livesplit-asr-bridge-design.md` (sections 3, 4, 13, 14 and 17). Issues: #3, #4, #5.
+**Spec:** `docs/superpowers/specs/2026-09-27-livesplit-asr-bridge-design.md` (sections 3, 4, 13, 14 and 17). Issues: #3, #4, #5, #24.
 
 ## Global Constraints
 
@@ -21,7 +21,8 @@
 - Allowed commit and PR title types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `style`, `chore` (CONTRIBUTING.md).
 - Checks run on pull requests only, on `ubuntu-latest`, `macos-latest` and `windows-latest` (spec §13).
 - Release targets: `x86_64-unknown-linux-gnu` (`.tar.gz`), `aarch64-apple-darwin` and `x86_64-apple-darwin` (`.app` in a `.zip`, both built on `macos-latest`), `x86_64-pc-windows-msvc` (`.zip`) (spec §14.2).
-- Action versions: `actions/checkout@v7`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`, `amannn/action-semantic-pull-request@v6`, `wagoid/commitlint-github-action@v6`, `taiki-e/install-action@v2`, `actions/upload-artifact@v7`, `actions/download-artifact@v8`.
+- Action versions: `actions/checkout@v7`, `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`, `amannn/action-semantic-pull-request@v6`, `wagoid/commitlint-github-action@v6`, `jdx/mise-action@v4`, `actions/upload-artifact@v7`, `actions/download-artifact@v8`.
+- Tool versions (git-cliff, shellcheck, actionlint) are defined only in `mise.toml`. Workflows install them with `jdx/mise-action@v4`, which reads that file, so versions are never repeated in workflows.
 - Every commit is signed and follows Conventional Commits; each task is one pull request that links its issue. The implementer stops after opening the pull request: only the maintainer merges.
 - Pull request descriptions follow `.github/pull_request_template.md`: `Closes #N` for the task's issue, what changed and why, how it was tested (the commands run and their results), and the checklist ticked. Write it to a file outside the repository (`PR_BODY=$(mktemp)`) and pass it with `--body-file "$PR_BODY"`.
 
@@ -533,6 +534,7 @@ On Task 3's pull request, `gh pr checks` lists all five checks, including `pr-ti
   - `.github/workflows/build.yml` — `workflow_call` with inputs `version`, `ref` and `artifact-name`; uploads one artifact per target, named `<artifact-name>-<target>`.
   - Workflow `Release scripts`, run only on pull requests that change release files. Not a required check: GitHub keeps path-filtered required checks pending forever on other pull requests, so it is advisory.
   - GitHub environment `release`.
+  - `mise.toml` as the only source of tool versions, read by `jdx/mise-action@v4` in the workflows and by Renovate (Task 4).
 
 Key facts, verified against git-cliff 2.14.2:
 - Release candidate tags are hidden from version calculation with `tag_pattern`, not `ignore_tags`. With `ignore_tags`, `--unreleased` starts at the last candidate and misses earlier commits.
@@ -1001,9 +1003,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff@2.14.2
+      - uses: jdx/mise-action@v4
       - id: next
         run: scripts/release/next-version.sh
 
@@ -1027,9 +1027,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff@2.14.2
+      - uses: jdx/mise-action@v4
       - uses: actions/download-artifact@v8
         with:
           pattern: candidate-*
@@ -1076,9 +1074,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff@2.14.2
+      - uses: jdx/mise-action@v4
       - uses: actions/download-artifact@v8
         with:
           pattern: final-*
@@ -1125,9 +1121,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: git-cliff@2.14.2
+      - uses: jdx/mise-action@v4
       - run: shellcheck scripts/*.sh scripts/release/*.sh
       - run: scripts/release/test-release-scripts.sh
 ```
@@ -1180,3 +1174,139 @@ This merge is `ci:`, but `main` already contains Task 1's `feat:` commit and no 
 2. Download the Linux archive, run the app, and check the title shows `0.1.0-rc.1`.
 3. The first time another pull request is merged while a candidate is still waiting for approval, check the cancellation behaviour (Review Focus, sixth condition): the older run's `approve release` job is cancelled. If it is not, fix the workflow in a follow-up pull request and record the finding in the spec.
 4. When the maintainer approves: expected full release `v0.1.0` marked Latest on the same commit as `v0.1.0-rc.1`, and the app shows `0.1.0`.
+
+---
+
+### Task 4: Dependency updates with Renovate (issue #24)
+
+**Branch:** `ci/renovate` · **PR title:** `ci: add Renovate configuration` · **PR body:** `Closes #24`, using the pull request template.
+
+**Files:**
+- Create: `renovate.json` (Renovate configuration)
+- Modify: `CONTRIBUTING.md` (dependency update pull requests, and their exemption from the linked-issue rule)
+
+**Interfaces:**
+- Consumes: the required checks from Task 2, which run on Renovate's pull requests; `Cargo.toml` and `Cargo.lock` (Task 1); the workflows and `mise.toml` (Task 3).
+- Produces: weekly Renovate pull requests titled `fix(deps): …` (crates that ship in the app, and `Cargo.lock` maintenance), `ci(deps): …` (GitHub Actions) or `chore(deps): …` (mise tools, development-only crates); the Dependency Dashboard issue; labels `dependencies` and `livesplit`.
+
+Key facts, verified against the Renovate documentation and source:
+- The configuration is committed through a normal pull request **before** the app is installed. The app then skips onboarding. Otherwise its onboarding pull request, titled `Configure Renovate`, could fail the Conventional Commits checks.
+- `config:recommended` gives `fix` only to Cargo `dependencies`, not `workspace.dependencies`, so the rules below set types explicitly.
+- For git dependencies (the LiveSplit crates, by `rev`, from issue #6), Renovate's package name is the git URL, so the LiveSplit rule matches on `matchDepNames`. Each upstream commit is a new digest, so the weekly schedule prevents a pull request per commit.
+- `dtolnay/rust-toolchain@stable` is not a version, so Renovate leaves it alone, which is intended: it always uses the current stable Rust.
+- Automerge is off by default and stays off: only the maintainer merges.
+
+- [ ] **Step 1 (coordinator): Create the labels Renovate uses**
+
+```bash
+gh label create dependencies --color 0366D6 --description "Dependency updates, opened by Renovate"
+gh label create livesplit --color D4A72C --description "Updates to the LiveSplit crates"
+```
+
+- [ ] **Step 2: Write `renovate.json`**
+
+```json
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits", "schedule:weekly"],
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "platformCommit": "enabled",
+  "automerge": false,
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "lockFileMaintenance": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "Crates that ship in the app: fix, so the update is released",
+      "matchManagers": ["cargo"],
+      "matchDepTypes": ["dependencies", "workspace.dependencies"],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "Development-only crates: no release",
+      "matchManagers": ["cargo"],
+      "matchDepTypes": ["dev-dependencies", "build-dependencies"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "GitHub Actions: no release",
+      "matchManagers": ["github-actions"],
+      "semanticCommitType": "ci"
+    },
+    {
+      "description": "Tools pinned in mise.toml: no release",
+      "matchManagers": ["mise"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "Cargo.lock refreshes change what ships: fix, so the update is released",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "The LiveSplit crates, by git rev: grouped, labelled and prioritised",
+      "matchManagers": ["cargo"],
+      "matchDepNames": ["livesplit-*"],
+      "groupName": "LiveSplit crates",
+      "addLabels": ["livesplit"],
+      "prPriority": 10,
+      "semanticCommitType": "fix"
+    }
+  ]
+}
+```
+
+- [ ] **Step 3: Validate the configuration**
+
+Run: `mise x node@lts -- npx --yes --package renovate -- renovate-config-validator --strict renovate.json`
+Expected: `Config validated successfully` and exit code 0.
+
+- [ ] **Step 4: Document dependency updates**
+
+In `CONTRIBUTING.md`, under "Before you start", change the first bullet's sentence "every pull request must link one" to "every pull request must link one, except Renovate's dependency updates".
+
+Add this section after "Pull requests":
+
+```markdown
+## Dependency updates
+
+[Renovate](https://docs.renovatebot.com/) opens pull requests every week to
+update dependencies, configured in `renovate.json`. Their titles follow the
+conventions above, and the type decides whether the update is released:
+
+- `fix(deps)`: crates that ship in the app, including the LiveSplit crates and
+  `Cargo.lock` refreshes. These produce a release.
+- `ci(deps)`: GitHub Actions. No release.
+- `chore(deps)`: tools pinned in `mise.toml` and development-only crates. No
+  release.
+
+Renovate's pull requests are the one exception to the linked-issue rule. They
+go through the same checks and are merged by a maintainer like any other pull
+request. The Dependency Dashboard issue lists pending updates.
+```
+
+- [ ] **Step 5: Commit, push and open the pull request**
+
+```bash
+git add renovate.json CONTRIBUTING.md
+git commit -m "ci: add Renovate configuration"
+git push -u origin ci/renovate
+gh pr create --title "ci: add Renovate configuration" --body-file "$PR_BODY"
+gh pr checks --watch
+```
+
+Expected: all required checks pass.
+
+Stop here. The maintainer merges.
+
+- [ ] **Step 6 (maintainer, after the merge): Install the Renovate app**
+
+Install the Mend Renovate app from https://github.com/apps/renovate, selecting only `alexcosta97/livesplit-asr-bridge`.
+
+- [ ] **Step 7 (coordinator): Verify Renovate works**
+
+1. No `Configure Renovate` onboarding pull request is opened: `gh pr list --search "Configure Renovate"` returns nothing.
+2. The Dependency Dashboard issue appears: `gh issue list --search "Dependency Dashboard"`.
+3. When the first Renovate pull requests open, their titles use the types from Step 2, carry the `dependencies` label, and pass all required checks.
