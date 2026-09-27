@@ -29,25 +29,29 @@ fn main() -> eframe::Result {
     )
 }
 
-/// The app icon shown on the window on Linux.
-#[cfg(target_os = "linux")]
+/// The app icon shown on the window on Linux and Windows.
+#[cfg(not(target_os = "macos"))]
 const ICON_PNG: &[u8] = include_bytes!("../assets/brand/icons/icon-256.png");
 
-/// Sets the window icon on Linux, where X11 shows it on the window (Wayland
-/// finds it through the `.desktop` entry). It is not set elsewhere: on macOS
-/// the square icon would replace the Dock icon's macOS shape.
-#[cfg(target_os = "linux")]
+/// Sets the window icon. On Linux, X11 shows it on the window (Wayland finds
+/// it through the `.desktop` entry). On Windows, the title bar, the taskbar
+/// and Alt+Tab use it: the icon embedded in the `.exe` (see `build.rs`) only
+/// shows in Explorer, because winit registers its window class without one.
+#[cfg(not(target_os = "macos"))]
 fn window_icon(viewport: egui::ViewportBuilder) -> egui::ViewportBuilder {
     let icon = eframe::icon_data::from_png_bytes(ICON_PNG).expect("the app icon is a valid PNG");
     viewport.with_icon(icon)
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Leaves the Dock icon to `icon.icns` in the app bundle. An empty icon stops
+/// eframe from setting its own default icon at runtime, and a square PNG would
+/// replace the icon's macOS shape.
+#[cfg(target_os = "macos")]
 fn window_icon(viewport: egui::ViewportBuilder) -> egui::ViewportBuilder {
-    viewport
+    viewport.with_icon(egui::IconData::default())
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, not(target_os = "macos")))]
 mod tests {
     #[test]
     fn window_icon_is_a_valid_png() {

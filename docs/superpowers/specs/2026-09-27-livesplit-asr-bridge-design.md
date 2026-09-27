@@ -63,6 +63,20 @@ community.
 - Display name: **LiveSplit One ASR Bridge**. The window title is the display
   name and the version, for example "LiveSplit One ASR Bridge 0.1.0". It is
   kept short so window lists and taskbars show the version.
+- Each platform shows the app icon from `assets/brand/icons/` and the display
+  name; the executable, bundle and app IDs keep the technical name:
+  - **Linux:** the `livesplit-asr-bridge.desktop` entry names the app and its
+    icon from the `hicolor` theme; the app ID matches its `StartupWMClass`.
+    The window icon is also set at runtime, for X11.
+  - **macOS:** the `.app` bundle's `Info.plist` sets `CFBundleDisplayName` to
+    the display name, `CFBundleName` (the menu bar, 15 characters at most) to
+    the short form **ASR Bridge**, and `CFBundleIconFile` to `icon.icns` in
+    `Contents/Resources`. No icon is set at runtime, so the Dock keeps the
+    macOS-shaped icon.
+  - **Windows:** `build.rs` embeds `icon.ico` and version information
+    (`FileDescription` and `ProductName` set to the display name, and the
+    version) in the `.exe`, for Explorer and the file properties. The window
+    icon is also set at runtime, for the title bar, taskbar and Alt+Tab.
 - Window title and descriptions always name LiveSplit One. Descriptions use
   the tagline "run auto splitters here, control LiveSplit One anywhere". The
   first line of the README and the GitHub repository description say it is for
