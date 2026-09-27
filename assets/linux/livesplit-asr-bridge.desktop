@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LiveSplit One ASR Bridge
+Comment=Run auto splitters here, control LiveSplit One anywhere
+Exec=livesplit-asr-bridge
+Icon=livesplit-asr-bridge
+Terminal=false
+Categories=Utility;
+StartupWMClass=livesplit-asr-bridge

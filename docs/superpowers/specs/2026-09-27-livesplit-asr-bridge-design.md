@@ -706,6 +706,9 @@ Example, starting from the full release `0.3.0`:
    existing `vX.Y.Z-rc.*` tags for that version.
 2. Build for Linux (x86-64, `.tar.gz`), macOS (Apple Silicon and Intel `.app`)
    and Windows (x86-64 `.exe` in a `.zip`) with that version embedded.
+   The Linux `.tar.gz` also contains a `livesplit-asr-bridge.desktop` entry
+   and the app icons in the `hicolor` theme layout, so the app appears in
+   desktop launchers once installed (see the README).
 3. Tag the commit `vX.Y.Z-rc.N` and publish a public **pre-release** with the
    builds and release notes.
 4. A publish job waits for approval in a GitHub environment named `release`,

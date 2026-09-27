@@ -50,6 +50,34 @@ Releases are not code-signed yet, so the first launch shows a warning.
 - **Windows:** if SmartScreen says "Windows protected your PC", click **More
   info**, then **Run anyway**.
 
+### Installing on Linux
+
+The Linux download is a `.tar.gz` that can be unpacked anywhere. To run the
+app from your desktop's app launcher, copy the program, its launcher entry and
+its icons into your home folder:
+
+```sh
+tar -xzf livesplit-asr-bridge-*-x86_64-linux.tar.gz
+cd livesplit-asr-bridge
+install -Dm755 livesplit-asr-bridge ~/.local/bin/livesplit-asr-bridge
+install -Dm644 livesplit-asr-bridge.desktop ~/.local/share/applications/livesplit-asr-bridge.desktop
+mkdir -p ~/.local/share/icons
+cp -r icons/hicolor ~/.local/share/icons/
+```
+
+`~/.local/bin` must be on your `PATH`; most distributions add it when the
+folder exists, after you log out and back in. **LiveSplit One ASR Bridge**
+then appears in the launcher. If the icon doesn't show straight away, log out
+and back in.
+
+To uninstall, delete the same files:
+
+```sh
+rm ~/.local/bin/livesplit-asr-bridge
+rm ~/.local/share/applications/livesplit-asr-bridge.desktop
+rm ~/.local/share/icons/hicolor/*/apps/livesplit-asr-bridge.png
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development

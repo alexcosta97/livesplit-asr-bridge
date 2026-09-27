@@ -8,6 +8,7 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
     paths:
+      - assets/linux/**
       - cliff.toml
       - mise.toml
       - scripts/**
@@ -27,6 +28,21 @@ jobs:
       - uses: jdx/mise-action@v4
       - run: shellcheck scripts/*.sh scripts/release/*.sh
       - run: scripts/release/test-release-scripts.sh
+
+  # The Linux archive ships this .desktop entry. desktop-file-validate exits
+  # successfully on hints, so any output fails the job.
+  desktop-entry:
+    name: desktop-entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y desktop-file-utils
+      - run: |
+          out=$(desktop-file-validate assets/linux/livesplit-asr-bridge.desktop)
+          if [[ -n "$out" ]]; then
+            echo "$out"
+            exit 1
+          fi
 
   # Builds and packages every target the way a release does, so packaging
   # changes (such as macOS signing) are checked before they reach a release.
