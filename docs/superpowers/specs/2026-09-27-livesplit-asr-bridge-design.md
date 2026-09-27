@@ -136,7 +136,8 @@ during implementation planning, and covered by tests.
 
 **No connected timer:** commands are not queued. Each dropped command is logged
 (Connection category) and discarded. Replaying stale commands when a timer
-reconnects would be worse than missing them.
+reconnects would be worse than missing them. The Last action card still shows
+the action, marked as not sent (section 6.2).
 
 ### 5.2 Tracked timer state
 
@@ -275,6 +276,9 @@ notifications.
 
 - **CONNECTED · N TIMERS**, or **NOT CONNECTED** with "How do I connect?",
   which opens the Connection tab at its setup steps.
+- **SERVER STOPPED** while the server is not listening, for example when the
+  port is in use. There are no addresses to connect to, so none are shown; the
+  error card explains why.
 - While no timer is connected, the card lists the connection URL for each
   non-loopback IPv4 address of the machine (for example both a LAN address and
   a VPN address), each with **Copy**, and one `?` that opens the setup steps.
@@ -287,11 +291,17 @@ notifications.
 **Last action card:**
 
 - The latest timer action in large type, with its time: START, SPLIT (with
-  the segment name when known), SKIP SPLIT, UNDO SPLIT, RESET, GAME TIME
+  the segment name when the connected timer provides it, otherwise the split
+  number, for example "Split 12"), SKIP SPLIT, UNDO SPLIT, RESET, GAME TIME
   (for example "GAME TIME 1:23:45.600"), PAUSE GAME TIME or RESUME GAME TIME.
 - The 2 previous actions below it, as faint lines. This is only the recent
   history of this session; it is not stored.
+- An action taken while no timer is connected is still shown, with a faint
+  "Not sent: no timer connected" note, since it was dropped (section 5.1). It
+  tells the user the auto splitter works and the problem is the connection.
 - Custom variables (`setCustomVariable`) are logged but not shown here.
+- Whether LiveSplit One's server protocol exposes segment names is confirmed
+  against `livesplit-core` during implementation planning.
 - Empty state: "No actions yet", with "Actions appear here when the auto
   splitter starts, splits or resets."
 
@@ -419,7 +429,9 @@ the window dimmed behind them.
 ### 6.9 First launch
 
 With no existing app configuration, the app opens on the Connection tab with
-the setup steps visible.
+the setup steps visible. If the window starts in the compact state, it opens
+on the tab view (as **Show details** does, section 6.3) at the Connection
+setup steps, with **← Status** to go back.
 
 ### 6.10 Visual style
 
@@ -520,7 +532,7 @@ These locations are documented in all user-facing documentation.
 | The auto splitter crashes (traps) | Error card saying it stopped, with **Show in log**, **Reload** and **Dismiss**; the Game card shows STOPPED until Reload; the runtime has already stopped it |
 | The auto splitter hangs | Reload, unload and closing the app interrupt it through the runtime |
 | The game is not running | Game card "WAITING FOR GAME…"; not an error |
-| The port is in use | Error card with **Open Connection** and **Dismiss**, and the same error inline in the Connection tab, suggesting another port and **Restart server** |
+| The port is in use | Error card with **Open Connection** and **Dismiss**, the Timer card shows SERVER STOPPED, and the same error inline in the Connection tab, suggesting another port and **Restart server** |
 | A timer disconnects | Logged; with no timers left, tracked state becomes "not running", the Timer card shows NOT CONNECTED and commands are dropped |
 | LiveSplit One rejects a command (for example split with no run in progress) | Logged in the Connection category; not an error |
 

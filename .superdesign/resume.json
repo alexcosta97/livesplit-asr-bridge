@@ -10,7 +10,7 @@
         ".superdesign/design-system.md"
       ],
       "fingerprints": {
-        ".superdesign/design-system.md": "3c145e69e92a3c721ebc7d6e3d7f38a8edd881a864f584c745ff79e6dbd587f9"
+        ".superdesign/design-system.md": "a3839c89b14621456c529c233f1a22a9af92f4ae0de553e16e848fa8dc50191b"
       },
       "drafts": {
         "ebfbea53-a813-409d-b074-06a7bba99e50": {
@@ -46,7 +46,7 @@
           "title": "W4 Port in use",
           "visualDirection": "same as wide",
           "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
-          "currentVersion": 3
+          "currentVersion": 4
         },
         "333c2f4e-1040-42a2-bec7-2bac1b935298": {
           "title": "W5 Log tab — Show in log after a crash",
@@ -103,7 +103,7 @@
           "currentVersion": 2
         }
       },
-      "updatedAt": "2026-09-27T12:24:49Z",
+      "updatedAt": "2026-09-27T12:27:07Z",
       "referenceIds": [
         "581f4e0b-b7d5-443d-9bed-3cf5ce8ac7fe"
       ]

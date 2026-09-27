@@ -116,7 +116,8 @@ Every mockup must stay consistent with these rules.
   error) · STOPPED (neutral, "The auto splitter isn't running") after the auto splitter crashed,
   until Reload · "—" muted with "Load an auto splitter first" when no splitter is loaded.
 - **Timer:** CONNECTED · N TIMERS (green) · NOT CONNECTED (neutral) with an orange
-  "How do I connect?" link. The connection URL rows are always in the Timer card in the wide
+  "How do I connect?" link · SERVER STOPPED (neutral, no addresses) while the server isn't
+  listening, e.g. port in use (the error card explains why). The connection URL rows are always in the Timer card in the wide
   state, one row per non-loopback IPv4 address (e.g. `ws://192.168.1.20:16834` LAN and
   `ws://100.101.7.3:16834` VPN), each with **Copy**, plus one small "?" that opens the setup
   steps. The URL rows are shown ONLY while NOT CONNECTED (same rule as the compact state); once
@@ -128,7 +129,9 @@ Every mockup must stay consistent with these rules.
   (last resort); cards are never clipped.
 - **Last action:** the latest action big, plus the 2 previous ones as faint mono lines (this
   run's recent history only). Actions: START, SPLIT (+ segment name when known), SKIP SPLIT,
-  UNDO SPLIT, RESET, GAME TIME 1:23:45.600, PAUSE GAME TIME, RESUME GAME TIME. Custom
+  UNDO SPLIT, RESET, GAME TIME 1:23:45.600, PAUSE GAME TIME, RESUME GAME TIME. SPLIT shows
+  the segment name when the timer provides it, otherwise "Split 12". An action taken with no
+  timer connected is still shown, with a faint mono note "Not sent: no timer connected". Custom
   variables are NOT shown here (log only). Empty state: "NO ACTIONS YET" muted, "Actions appear
   here when the auto splitter starts, splits or resets."
 - **Error card**: does NOT exist when there is no error (no placeholder, no empty space).
@@ -143,6 +146,8 @@ Every mockup must stay consistent with these rules.
 - Only the status column, full width, bigger status words. The URL rows are hidden while a timer
   is connected; while NOT CONNECTED the card shows the first URL with Copy and
   "How do I connect?".
+- **First launch in compact:** opens on the tab view at the Connection setup steps, with
+  **← Status**.
 - **Show details** (top right): widens the window where the window manager allows it;
   otherwise it swaps the status column for the tab view in the same narrow space, with a
   **← Status** button to come back.
