@@ -1,0 +1,13 @@
+[package]
+name = "livesplit-asr-bridge"
+version = "0.0.0-dev"
+edition = "2024"
+rust-version = "1.95"
+description = "Run LiveSplit auto splitters on one machine and control LiveSplit One on another over its Connect to Server WebSocket."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/alexcosta97/livesplit-asr-bridge"
+readme = "README.md"
+publish = false
+
+[dependencies]
+eframe = "0.36.2"
