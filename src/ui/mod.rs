@@ -18,7 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use eframe::egui::{self, Frame, Margin, ScrollArea, ViewportCommand};
+use eframe::egui::{self, Frame, Margin, Rect, ScrollArea, UiBuilder, ViewportCommand, vec2};
 use livesplit_auto_splitting::{settings::WidgetKind, wasi_path};
 use toml::Value;
 
@@ -30,8 +30,8 @@ use crate::{
     version::VERSION,
 };
 use components::{
-    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, LOG_LINE_HEIGHT,
-    LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
+    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, HeaderButton, LogAction,
+    SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
 use server_status::ServerStatus;
@@ -58,6 +58,11 @@ const COMPACT_BELOW: f32 = 640.0;
 const COLUMN_WIDTH: f32 = 300.0;
 /// The space between cards in the status column.
 const CARD_GAP: f32 = 12.0;
+/// The window width Show details asks for: the width the window opens at.
+const DETAILS_WIDTH: f32 = 800.0;
+/// How long Show details waits for the window to widen before showing the
+/// tab view instead, as with a tiling window manager.
+const WIDEN_WAIT: Duration = Duration::from_millis(500);
 
 /// The window title. It names LiveSplit One, because "LiveSplit" alone usually
 /// means the original Windows LiveSplit, which this app does not control.
@@ -126,6 +131,9 @@ pub struct BridgeApp {
     /// In the compact state, the tab view is shown instead of the status
     /// column, until ← Status.
     tab_view: bool,
+    /// When Show details asked the window to widen, until it has, or the
+    /// tab view is shown instead.
+    widening: Option<Instant>,
     /// The configuration folder, if the OS has one for the user.
     config: Option<Config>,
     /// The app's own settings, read from `app.toml` at start-up. The
@@ -185,6 +193,7 @@ impl BridgeApp {
             scroll_to_highlighted: false,
             error_entry: None,
             tab_view: false,
+            widening: None,
             config,
             app_settings,
             loading: HashMap::new(),
@@ -457,7 +466,9 @@ impl BridgeApp {
         let game = self.game.as_ref().map(|game| game.name.clone());
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = CARD_GAP;
-            components::app_header(ui, width, false);
+            if components::app_header(ui, width, Some(HeaderButton::ShowDetails)) {
+                self.show_details(ui.ctx());
+            }
 
             if let Some(error) = self.status.error() {
                 match components::error_card(ui, error, width) {
@@ -514,22 +525,53 @@ impl BridgeApp {
         self.open_tab(Tab::Log, width);
     }
 
+    /// Show details (spec §6.3): asks the window to widen, and shows the
+    /// tab view if it doesn't.
+    fn show_details(&mut self, ctx: &egui::Context) {
+        let height = ctx.content_rect().height();
+        ctx.send_viewport_cmd(ViewportCommand::InnerSize(vec2(DETAILS_WIDTH, height)));
+        self.widening = Some(Instant::now());
+    }
+
+    /// After Show details, shows the tab view once the window has had time
+    /// to widen and hasn't.
+    fn check_widening(&mut self, ctx: &egui::Context, now: Instant) {
+        let Some(asked) = self.widening else {
+            return;
+        };
+        let waited = now.saturating_duration_since(asked);
+        if waited >= WIDEN_WAIT {
+            self.widening = None;
+            self.tab_view = true;
+        } else {
+            ctx.request_repaint_after(WIDEN_WAIT - waited);
+        }
+    }
+
     /// The compact state's tab view: the header with ← Status, then the tab
     /// area, in the space of the status column.
     fn tab_view(&mut self, ui: &mut egui::Ui) {
-        Frame::NONE
+        let header = Frame::NONE
             .fill(theme::PANEL)
             .inner_margin(Margin::same(16))
             .show(ui, |ui| {
-                if components::app_header(ui, Width::Compact, true) {
+                ui.set_min_width(ui.available_width());
+                if components::app_header(ui, Width::Compact, Some(HeaderButton::Back)) {
                     self.tab_view = false;
                 }
             });
-        self.tab_area(ui);
+        let rect = header.response.rect;
+        ui.painter().hline(
+            rect.x_range(),
+            rect.bottom() - 0.5,
+            egui::Stroke::new(1.0, theme::BORDER),
+        );
+        self.tab_area(ui, Width::Compact);
     }
 
-    /// The tab area: the tab strip, then the active tab.
-    fn tab_area(&mut self, ui: &mut egui::Ui) {
+    /// The tab area: the tab strip, then the active tab, with less padding
+    /// in the compact state's tab view.
+    fn tab_area(&mut self, ui: &mut egui::Ui, width: Width) {
         ui.spacing_mut().item_spacing.y = 0.0;
         components::tab_strip(
             ui,
@@ -540,8 +582,12 @@ impl BridgeApp {
             ],
             &mut self.tab,
         );
+        let padding = match width {
+            Width::Wide => 24,
+            Width::Compact => 16,
+        };
         Frame::NONE
-            .inner_margin(Margin::same(24))
+            .inner_margin(Margin::same(padding))
             .show(ui, |ui| match self.tab {
                 Tab::Settings => self.settings_tab(ui),
                 Tab::Connection => {
@@ -738,6 +784,18 @@ impl BridgeApp {
         }
         ui.add_space(12.0);
         let shown: Vec<_> = self.logger.view().shown(self.log_filters).collect();
+        // Lines differ in height (a trace, the highlight), so each line's top
+        // is added up, and only the lines in view are drawn.
+        let heights: Vec<f32> = shown
+            .iter()
+            .map(|entry| components::log_line_height(entry, self.highlighted == Some(entry.id)))
+            .collect();
+        let tops: Vec<f32> = std::iter::once(0.0)
+            .chain(heights.iter().scan(0.0, |top, height| {
+                *top += height;
+                Some(*top)
+            }))
+            .collect();
         let mut scroll = ScrollArea::both().auto_shrink(false);
         // Show in log scrolls once to the highlighted entry, centred;
         // following the newest line would scroll it away again.
@@ -747,17 +805,36 @@ impl BridgeApp {
             .and_then(|id| shown.iter().position(|entry| entry.id == id));
         match jump {
             Some(row) => {
-                let offset =
-                    row as f32 * LOG_LINE_HEIGHT - (ui.available_height() - LOG_LINE_HEIGHT) / 2.0;
+                let offset = tops[row] + heights[row] / 2.0 - ui.available_height() / 2.0;
                 scroll = scroll.vertical_scroll_offset(offset.max(0.0));
             }
             None => scroll = scroll.stick_to_bottom(true),
         }
-        scroll.show_rows(ui, LOG_LINE_HEIGHT, shown.len(), |ui, rows| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for entry in &shown[rows] {
-                components::log_line(ui, entry, self.highlighted == Some(entry.id));
-            }
+        // Widened into the tab's padding, so the text of the lines lines up
+        // with the toolbar (see LOG_LINE_INSET).
+        let list = ui
+            .available_rect_before_wrap()
+            .expand2(vec2(components::LOG_LINE_INSET, 0.0));
+        ui.scope_builder(UiBuilder::new().max_rect(list), |ui| {
+            scroll.show_viewport(ui, |ui, viewport| {
+                ui.set_height(tops[shown.len()]);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let first = tops[1..].partition_point(|&bottom| bottom <= viewport.min.y);
+                let last = tops
+                    .partition_point(|&top| top < viewport.max.y)
+                    .min(shown.len());
+                let top = ui.max_rect().top();
+                for row in first..last {
+                    let entry = shown[row];
+                    let rect = Rect::from_x_y_ranges(
+                        ui.max_rect().x_range(),
+                        top + tops[row]..=top + tops[row + 1],
+                    );
+                    ui.scope_builder(UiBuilder::new().max_rect(rect).id_salt(entry.id), |ui| {
+                        components::log_line(ui, entry, self.highlighted == Some(entry.id));
+                    });
+                }
+            });
         });
     }
 
@@ -845,6 +922,7 @@ impl eframe::App for BridgeApp {
             .fill(theme::PANEL)
             .inner_margin(Margin::same(16));
         if ui.max_rect().width() < COMPACT_BELOW {
+            self.check_widening(ui.ctx(), Instant::now());
             if self.tab_view {
                 egui::CentralPanel::default()
                     .frame(Frame::NONE.fill(theme::WINDOW))
@@ -859,6 +937,7 @@ impl eframe::App for BridgeApp {
         // Wide, the tab area is always shown: narrowing the window again
         // shows the status column.
         self.tab_view = false;
+        self.widening = None;
         egui::Panel::left("status")
             .exact_size(COLUMN_WIDTH)
             .resizable(false)
@@ -866,7 +945,7 @@ impl eframe::App for BridgeApp {
             .show(ui, |ui| self.status_column(ui, Width::Wide));
         egui::CentralPanel::default()
             .frame(Frame::NONE.fill(theme::WINDOW))
-            .show(ui, |ui| self.tab_area(ui));
+            .show(ui, |ui| self.tab_area(ui, Width::Wide));
     }
 }
 
@@ -1198,6 +1277,42 @@ mod tests {
         app.open_tab(Tab::Connection, Width::Compact);
         assert!(app.tab_view);
         assert_eq!(app.tab, Tab::Connection);
+    }
+
+    #[test]
+    fn show_details_shows_the_tab_view_if_the_window_does_not_widen() {
+        let (_dir, mut app) = app_with_lines();
+        let ctx = app.ctx.clone();
+        app.show_details(&ctx);
+        let asked = app.widening.unwrap();
+
+        app.check_widening(&ctx, asked + WIDEN_WAIT / 2);
+        assert!(!app.tab_view);
+        app.check_widening(&ctx, asked + WIDEN_WAIT);
+        assert!(app.tab_view);
+        assert_eq!(app.widening, None);
+    }
+
+    #[test]
+    fn a_trace_pushes_the_next_line_down() {
+        let (_dir, mut app) = app_with_lines();
+        app.runner_event(RunnerEvent::Crashed {
+            error: "wasm trap\n    at update (wasm function 42)".to_owned(),
+        });
+        app.runner_event(RunnerEvent::AutoSplitterLog("after".to_owned()));
+        app.log_filters.show(Category::AutoSplitter);
+        app.show_in_log(Width::Wide);
+        let on_screen = draw_log_tab(&mut app);
+        let bottom = |needle: &str| {
+            on_screen
+                .iter()
+                .find(|(text, _)| text.contains(needle))
+                .map(|(_, rect)| *rect)
+                .unwrap_or_else(|| panic!("{needle} not in {on_screen:?}"))
+        };
+        let trace = bottom("wasm function 42");
+        assert!(trace.top() >= bottom("wasm trap").bottom());
+        assert!(bottom("after").top() >= trace.bottom());
     }
 
     /// Draws the Log tab in an 800 × 600 window, returning the log lines on

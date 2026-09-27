@@ -28,7 +28,7 @@ mod timer_card;
 mod timer_row;
 mod unsaved_dialog;
 
-pub use app_header::app_header;
+pub use app_header::{HeaderButton, app_header};
 pub use checkbox::Checkbox;
 pub use empty_state::empty_state;
 pub use error_card::{ErrorAction, error_card};
@@ -36,7 +36,7 @@ pub use game_card::game_card;
 pub use game_dialog::{GameChoice, GameDialog, GameDialogAction, GameDialogKind, game_dialog};
 pub use how_to_connect::how_to_connect;
 pub use info_marker::info_marker;
-pub use log_line::{LOG_LINE_HEIGHT, log_line};
+pub use log_line::{LOG_LINE_INSET, log_line, log_line_height};
 pub use log_toolbar::{LogAction, log_toolbar};
 pub use section_label::section_label;
 pub use server_section::{PortNote, server_section};

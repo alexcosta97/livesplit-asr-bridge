@@ -401,14 +401,15 @@ notifications.
 ### 6.6 Log tab
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ Show: [x] Auto splitter  [ ] Connection  [ ] App & runtime   │
-│ Errors are always shown.  [Copy] [Save log…] [Clear] [Open log folder]
-├──────────────────────────────────────────────────────────────┤
-│ 19:31:01.254  auto splitter  Split: Los Santos Gym Moves     │
-│ 19:31:01.260  connection     → split                         │
-│ 19:32:10.002  ERROR          Auto splitter crashed: …        │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ SHOW [x] Auto splitter [ ] Connection [ ] App & runtime  Errors are always shown.
+│ [Copy] [Save log…] [Clear] [Open log folder]                             │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 19:31:01.254  AUTO SPLITTER  Split                                       │
+│ 19:31:01.260  CONNECTION     → split                                     │
+│ 19:32:10.002  ERROR          The auto splitter stopped because of an e…  │
+│                                  at … (wasm function 42)                 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 - Category filters (section 8.1). Errors are always shown. By default only
@@ -419,6 +420,8 @@ notifications.
   empties the in-app view. **Open log folder** opens the on-disk log folder.
 - Filter choices are remembered.
 - The entry reached through **Show in log** is highlighted.
+- The lines of a message after its first, such as the backtrace of a crash,
+  are shown muted under it.
 
 ### 6.7 Preferences tab
 

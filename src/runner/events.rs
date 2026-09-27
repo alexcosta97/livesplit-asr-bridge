@@ -76,9 +76,9 @@ impl RunnerEvent {
                 format!("Couldn't load {}: {error}", file_name(path))
             }
             Self::Unloaded => "Unloaded the auto splitter".to_owned(),
-            Self::Crashed { error } => format!(
-                "The auto splitter stopped because of an error. Press Reload to start it again. {error}"
-            ),
+            Self::Crashed { error } => {
+                format!("The auto splitter stopped because of an error: {error}")
+            }
             Self::GameAttached {
                 process: Some(name),
             } => format!("Attached to the game ({name})"),
