@@ -186,7 +186,10 @@ impl Shared {
             Ok((auto_splitter, interrupt)) => {
                 // Reported before the auto splitter can tick, so its first
                 // events come after this one.
-                self.events.send(RunnerEvent::Loaded { path: path.clone() });
+                self.events.send(RunnerEvent::Loaded {
+                    path: path.clone(),
+                    tick_rate: auto_splitter.tick_rate(),
+                });
                 if self
                     .commands
                     .send(Command::Replace(Box::new(auto_splitter)))

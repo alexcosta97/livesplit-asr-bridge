@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use livesplit_auto_splitting::AutoSplitter;
+use livesplit_auto_splitting::{AutoSplitter, Process};
 
 use super::{RunnerEvent, events::EventSink, timer::BridgeTimer};
 
@@ -20,16 +20,20 @@ pub(super) enum Command {
 /// The running auto splitter and what was last reported about it.
 struct Active {
     auto_splitter: Box<AutoSplitter<BridgeTimer>>,
-    attached: bool,
+    attached: Attached,
     tick_rate: Duration,
 }
+
+/// The first attached process's name, if a process is attached: `Some(None)`
+/// is a process whose name couldn't be read.
+type Attached = Option<Option<String>>;
 
 impl Active {
     fn new(auto_splitter: Box<AutoSplitter<BridgeTimer>>) -> Self {
         let tick_rate = auto_splitter.tick_rate();
         Self {
             auto_splitter,
-            attached: false,
+            attached: None,
             tick_rate,
         }
     }
@@ -67,7 +71,12 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
         let (result, attached) = {
             let mut guard = current.auto_splitter.lock();
             let result = guard.update();
-            (result, guard.attached_processes().next().is_some())
+            // Compared as borrowed names, so the name is only copied when it
+            // changes, not on every tick.
+            let first = guard.attached_processes().next().map(Process::name);
+            let changed = first != current.attached.as_ref().map(Option::as_deref);
+            let attached = changed.then(|| first.map(|name| name.map(str::to_owned)));
+            (result, attached)
         };
 
         if let Err(error) = result {
@@ -80,7 +89,7 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
                 next_tick = Instant::now();
                 continue;
             }
-            let was_attached = current.attached;
+            let was_attached = current.attached.is_some();
             active = None;
             events.send(RunnerEvent::Crashed {
                 error: format!("{error:#}"),
@@ -91,13 +100,16 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
             continue;
         }
 
-        if attached != current.attached {
-            current.attached = attached;
-            events.send(if attached {
-                RunnerEvent::GameAttached
-            } else {
-                RunnerEvent::GameDetached
+        // Also reported when the first attached process changes, so its name
+        // is never stale.
+        if let Some(attached) = attached {
+            events.send(match &attached {
+                Some(process) => RunnerEvent::GameAttached {
+                    process: process.clone(),
+                },
+                None => RunnerEvent::GameDetached,
             });
+            current.attached = attached;
         }
         let tick_rate = current.auto_splitter.tick_rate();
         if tick_rate != current.tick_rate {
@@ -110,7 +122,9 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
 
 /// Applies a command. The auto splitter it replaces or unloads is dropped.
 fn apply(command: Command, active: &mut Option<Active>, events: &EventSink) -> Flow {
-    let was_attached = active.as_ref().is_some_and(|current| current.attached);
+    let was_attached = active
+        .as_ref()
+        .is_some_and(|current| current.attached.is_some());
     let flow = match command {
         Command::Replace(auto_splitter) => {
             *active = Some(Active::new(auto_splitter));

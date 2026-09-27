@@ -14,6 +14,9 @@ fn main() -> eframe::Result {
     eframe::run_native(
         ui::APP_NAME,
         options,
-        Box::new(|cc| Ok(Box::new(ui::BridgeApp::new(&cc.egui_ctx)))),
+        Box::new(|cc| {
+            ui::install_theme(&cc.egui_ctx);
+            Ok(Box::new(ui::BridgeApp::new(&cc.egui_ctx)))
+        }),
     )
 }

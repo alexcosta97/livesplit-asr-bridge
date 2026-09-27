@@ -98,7 +98,7 @@ impl Harness {
 
     fn load(&self, path: &Path) -> Vec<RunnerEvent> {
         self.runner.load(path.to_owned());
-        self.wait_for(|event| matches!(event, RunnerEvent::Loaded { path: p } if p == path))
+        self.wait_for(|event| matches!(event, RunnerEvent::Loaded { path: p, .. } if p == path))
     }
 
     /// Collects every event that arrives within `duration`.
@@ -137,6 +137,15 @@ fn logging(message: &str) -> String {
 
 fn is_crash(event: &RunnerEvent) -> bool {
     matches!(event, RunnerEvent::Crashed { .. })
+}
+
+fn is_attached(event: &RunnerEvent) -> bool {
+    matches!(event, RunnerEvent::GameAttached { .. })
+}
+
+/// The tick rate upstream starts every auto splitter at: 120 ticks a second.
+fn default_tick_rate() -> Duration {
+    Duration::from_secs_f64(1.0 / 120.0)
 }
 
 #[test]
@@ -181,6 +190,39 @@ fn runs_the_schedule_and_reports_actions_and_logs_in_order() {
         ]
     );
     assert_eq!(harness.runner.loaded_path(), Some(path));
+}
+
+#[test]
+fn loaded_reports_the_default_tick_rate() {
+    let harness = Harness::new();
+    let path = harness.write("splitter.wasm", &logging("tick"));
+    let events = harness.load(&path);
+    assert_eq!(
+        events.last(),
+        Some(&RunnerEvent::Loaded {
+            path,
+            tick_rate: default_tick_rate()
+        })
+    );
+}
+
+#[test]
+fn a_tick_rate_set_while_ticking_follows_the_default_one() {
+    // Upstream runs all of an auto splitter's code, including `_start`, in
+    // ticks, so a requested rate always arrives after the load.
+    let harness = Harness::new();
+    let path = harness.write("slow.wasm", SLOW);
+    let events = harness.load(&path);
+    assert_eq!(
+        events.last(),
+        Some(&RunnerEvent::Loaded {
+            path,
+            tick_rate: default_tick_rate()
+        })
+    );
+    harness.wait_for(|event| {
+        *event == RunnerEvent::TickRateChanged(Duration::from_secs_f64(1.0 / 10.0))
+    });
 }
 
 #[test]
@@ -321,7 +363,22 @@ fn reports_attaching_to_and_detaching_from_the_game() {
     let wat = ATTACH.replace("PID", &std::process::id().to_string());
     harness.load(&harness.write("attach.wasm", &wat));
     let events = harness.wait_for(|event| *event == RunnerEvent::GameDetached);
-    assert!(events.contains(&RunnerEvent::GameAttached), "{events:#?}");
+    let attached: Vec<_> = events.iter().filter(|event| is_attached(event)).collect();
+    let [RunnerEvent::GameAttached { process }] = attached[..] else {
+        panic!("expected one attach: {events:#?}");
+    };
+
+    // The name comes from the path the OS reports for the process, and
+    // `current_exe` asks the OS the same thing, so the file names match.
+    // Compared ignoring case, as Windows paths are case-insensitive and the
+    // two APIs needn't agree on case.
+    let exe = std::env::current_exe().unwrap();
+    let expected = exe.file_name().unwrap().to_str().unwrap();
+    let process = process.as_deref().expect("no process name");
+    assert!(
+        process.eq_ignore_ascii_case(expected),
+        "{process} != {expected}"
+    );
 }
 
 #[test]
@@ -340,7 +397,7 @@ fn unloading_an_attached_auto_splitter_reports_the_game_detached() {
         std::process::id()
     );
     harness.load(&harness.write("attach.wasm", &wat));
-    harness.wait_for(|event| *event == RunnerEvent::GameAttached);
+    harness.wait_for(is_attached);
 
     harness.runner.unload();
     harness.wait_for(|event| *event == RunnerEvent::GameDetached);

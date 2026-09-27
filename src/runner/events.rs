@@ -18,16 +18,19 @@ const CAPACITY: usize = 10_000;
 /// Something that happened in the Runner.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RunnerEvent {
-    /// An auto splitter was loaded and started.
-    Loaded { path: PathBuf },
+    /// An auto splitter was loaded and started. `tick_rate` is how long it
+    /// waits between ticks at first; later changes are `TickRateChanged`.
+    Loaded { path: PathBuf, tick_rate: Duration },
     /// A file couldn't be loaded. The previous auto splitter keeps running.
     LoadFailed { path: PathBuf, error: String },
     /// The auto splitter was unloaded.
     Unloaded,
     /// The auto splitter crashed, and the runtime stopped it.
     Crashed { error: String },
-    /// The auto splitter attached to a game process, having had none.
-    GameAttached,
+    /// The auto splitter attached to a game process, having had none, or the
+    /// first attached process changed. `process` is its executable's file
+    /// name, if it could be read.
+    GameAttached { process: Option<String> },
     /// The auto splitter no longer has any game process attached.
     GameDetached,
     /// The auto splitter changed how long it waits between ticks.
@@ -44,7 +47,7 @@ impl RunnerEvent {
     /// A one-line description for people.
     pub fn describe(&self) -> String {
         match self {
-            Self::Loaded { path } => format!("Loaded {}", file_name(path)),
+            Self::Loaded { path, .. } => format!("Loaded {}", file_name(path)),
             Self::LoadFailed { path, error } => {
                 format!("Couldn't load {}: {error}", file_name(path))
             }
@@ -52,7 +55,10 @@ impl RunnerEvent {
             Self::Crashed { error } => format!(
                 "The auto splitter stopped because of an error. Press Reload to start it again. {error}"
             ),
-            Self::GameAttached => "Attached to the game".to_owned(),
+            Self::GameAttached {
+                process: Some(name),
+            } => format!("Attached to the game ({name})"),
+            Self::GameAttached { process: None } => "Attached to the game".to_owned(),
             Self::GameDetached => "Detached from the game".to_owned(),
             Self::TickRateChanged(interval) => {
                 format!(
