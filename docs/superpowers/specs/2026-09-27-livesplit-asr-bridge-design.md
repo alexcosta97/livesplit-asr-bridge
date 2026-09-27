@@ -291,8 +291,8 @@ notifications.
 **Last action card:**
 
 - The latest timer action in large type, with its time: START, SPLIT (with
-  the segment name when the connected timer provides it, otherwise the split
-  number, for example "Split 12"), SKIP SPLIT, UNDO SPLIT, RESET, GAME TIME
+  the segment name only when the connected timer provides it; the app never
+  makes up a name such as "Split 12"), SKIP SPLIT, UNDO SPLIT, RESET, GAME TIME
   (for example "GAME TIME 1:23:45.600"), PAUSE GAME TIME or RESUME GAME TIME.
 - The 2 previous actions below it, as faint lines. This is only the recent
   history of this session; it is not stored.
