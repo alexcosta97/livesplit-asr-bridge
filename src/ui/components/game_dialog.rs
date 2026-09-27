@@ -2,11 +2,11 @@
 //! and "Change game" from the Auto splitter card (spec §6.8).
 
 use eframe::egui::{
-    self, Align, Color32, Frame, Id, Key, Label, Margin, Modal, RichText, ScrollArea, Sense,
-    Stroke, StrokeKind, TextEdit, Ui, vec2,
+    self, Align, Frame, Id, Key, Label, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
+    StrokeKind, TextEdit, Ui, vec2,
 };
 
-use super::{button::Button, section_label::section_label};
+use super::{BACKDROP, button::Button, section_label::section_label};
 use crate::{
     config::{GameSummary, name_from_file},
     ui::theme,
@@ -20,8 +20,6 @@ const FIELD_HEIGHT: f32 = 32.0;
 const ROW_HEIGHT: f32 = 32.0;
 /// The list of games scrolls beyond this height.
 const LIST_HEIGHT: f32 = 200.0;
-/// The flat overlay that dims the window behind the dialog: 60 % black.
-const BACKDROP: Color32 = Color32::from_black_alpha(153);
 
 /// Why the dialog is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

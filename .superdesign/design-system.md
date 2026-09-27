@@ -198,9 +198,10 @@ Every mockup must stay consistent with these rules.
   from the file name ("gta sa de"), a list of games already set up to pick from (each with how
   many splitters use it), buttons **Use this game** (primary) and **Cancel**. When changing,
   the title is "Change game" and the current game is selected.
-- **Unsaved settings** (Reload / Open another file / closing the app with unsaved settings):
-  "Save your settings changes?", text naming the change count, buttons **Save and reload**
-  (primary; **Save** when opening another file or closing the app), **Discard**, **Cancel**.
+- **Unsaved settings** (Reload / Open another file / Change game / closing the app with unsaved
+  settings): "Save your settings changes?", text naming the change count, buttons **Save and
+  reload** (primary; **Save** when opening another file, changing the game or closing the
+  app), **Discard**, **Cancel**.
 
 ### Tabs
 - **Settings:** fixed toolbar (Save, Revert to defaults, status text: "● Unsaved changes"

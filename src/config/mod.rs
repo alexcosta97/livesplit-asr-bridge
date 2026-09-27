@@ -31,9 +31,12 @@ use crate::ui::APP_NAME;
 pub use app::AppSettings;
 pub use games::{Game, GameSummary};
 pub use names::{name_from_file, slug};
-pub use settings::{SettingKey, merge_saved, to_runtime};
-#[expect(unused_imports, reason = "the Settings tab saves and reverts (#8)")]
-pub use settings::{from_runtime, revert_to_defaults};
+#[expect(
+    unused_imports,
+    reason = "settings are saved from the draft, not the runtime"
+)]
+pub use settings::from_runtime;
+pub use settings::{SettingKey, merge_saved, revert_to_defaults, to_runtime};
 pub use splitters::Splitters;
 
 /// The app's configuration folder and the files in it.

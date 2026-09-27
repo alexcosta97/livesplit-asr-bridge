@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use livesplit_auto_splitting::settings::{self, Widget, WidgetKind};
+use livesplit_auto_splitting::settings::{self, WidgetKind};
 use toml::{Table, Value};
 
 /// A key the loaded auto splitter publishes as a setting, with its default
@@ -25,18 +25,9 @@ pub struct SettingKey {
 }
 
 impl SettingKey {
-    /// The keys of the settings `widgets` publish, in order. Headings have a
-    /// key but no value, so they aren't settings.
-    #[expect(dead_code, reason = "the Settings tab saves and reverts (#8)")]
-    pub fn from_widgets(widgets: &[Widget]) -> Vec<Self> {
-        widgets
-            .iter()
-            .filter_map(|widget| Self::new(&widget.key, &widget.kind))
-            .collect()
-    }
-
     /// The setting a widget of `kind` publishes under `key`, if it is one.
-    fn new(key: &str, kind: &WidgetKind) -> Option<Self> {
+    /// Headings have a key but no value, so they aren't settings.
+    pub fn new(key: &str, kind: &WidgetKind) -> Option<Self> {
         let default = match kind {
             WidgetKind::Title { .. } => return None,
             WidgetKind::Bool { default_value } => Some(Value::Boolean(*default_value)),
@@ -58,7 +49,6 @@ impl SettingKey {
 /// The game's saved settings after saving `current`, the loaded auto
 /// splitter's settings: its keys take their values from `current` (a key
 /// missing there is removed), and every other saved key is kept.
-#[cfg_attr(not(test), expect(dead_code, reason = "the Settings tab saves (#8)"))]
 pub fn merge_saved(saved: &Table, current: &Table, keys: &[SettingKey]) -> Table {
     let mut merged = saved.clone();
     for SettingKey { key, .. } in keys {
@@ -76,7 +66,6 @@ pub fn merge_saved(saved: &Table, current: &Table, keys: &[SettingKey]) -> Table
 
 /// `draft` with the loaded auto splitter's keys set to their defaults. Other
 /// keys are unchanged.
-#[cfg_attr(not(test), expect(dead_code, reason = "the Settings tab reverts (#8)"))]
 pub fn revert_to_defaults(draft: &Table, keys: &[SettingKey]) -> Table {
     let mut reverted = draft.clone();
     for SettingKey { key, default } in keys {
@@ -124,7 +113,13 @@ fn value_to_runtime(value: &Value) -> Option<settings::Value> {
 
 /// The runtime's settings map as settings to save. Kinds of value the
 /// runtime may add later are left out.
-#[cfg_attr(not(test), expect(dead_code, reason = "the Settings tab saves (#8)"))]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "settings are saved from the draft, not the runtime"
+    )
+)]
 pub fn from_runtime(map: &settings::Map) -> Table {
     map.iter()
         .filter_map(|(key, value)| Some((key.to_owned(), value_from_runtime(value)?)))
