@@ -14,11 +14,13 @@ use crate::ui::{status::StatusError, theme};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorAction {
     Reload,
+    OpenConnection,
     Dismiss,
 }
 
-/// The error card: the message, Reload after a crash, and Dismiss. Show in
-/// log comes with the Log tab (#14).
+/// The error card: the message, Reload after a crash, Open Connection after
+/// a server error (wide only, until the compact tab view, #15), and Dismiss.
+/// Show in log comes with the Log tab (#14).
 pub fn error_card(ui: &mut Ui, error: &StatusError, width: Width) -> Option<ErrorAction> {
     let edge = Edge {
         color: theme::STATUS_ERROR,
@@ -42,9 +44,13 @@ pub fn error_card(ui: &mut Ui, error: &StatusError, width: Width) -> Option<Erro
             ui.spacing_mut().item_spacing = Vec2::splat(6.0);
             let reload = (*error == StatusError::Crashed)
                 .then(|| ui.add(Button::secondary("Reload").size(ButtonSize::Sm)));
+            let open_connection = (error.is_server() && width == Width::Wide)
+                .then(|| ui.add(Button::secondary("Open Connection").size(ButtonSize::Sm)));
             let dismiss = ui.add(Button::secondary("Dismiss").size(ButtonSize::Sm));
             if reload.is_some_and(|reload| reload.clicked()) {
                 Some(ErrorAction::Reload)
+            } else if open_connection.is_some_and(|open| open.clicked()) {
+                Some(ErrorAction::OpenConnection)
             } else if dismiss.clicked() {
                 Some(ErrorAction::Dismiss)
             } else {

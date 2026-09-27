@@ -45,6 +45,8 @@ pub struct Button<'a> {
     kind: ButtonKind,
     size: ButtonSize,
     enabled: bool,
+    /// Replaces the label's colour, for a confirmation like "COPIED ✓".
+    text_color: Option<Color32>,
 }
 
 impl<'a> Button<'a> {
@@ -62,6 +64,7 @@ impl<'a> Button<'a> {
             kind,
             size: ButtonSize::Md,
             enabled: true,
+            text_color: None,
         }
     }
 
@@ -72,6 +75,11 @@ impl<'a> Button<'a> {
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    pub fn text_color(mut self, color: Color32) -> Self {
+        self.text_color = Some(color);
         self
     }
 }
@@ -113,6 +121,7 @@ impl Widget for Button<'_> {
                     (fill, theme::BORDER_STRONG, theme::TEXT)
                 }
             };
+            let text = self.text_color.unwrap_or(text);
             let opacity = if self.enabled { 1.0 } else { 0.4 };
             let painter = ui.painter();
             painter.rect(
