@@ -4,15 +4,18 @@
 //! It listens on all interfaces, on a dedicated thread running a
 //! single-threaded tokio runtime, and keeps a registry of the connected
 //! timers. Everything that happens (listening, a port in use, timers
-//! connecting and disconnecting) is reported as a [`ServerEvent`].
+//! connecting and disconnecting, a command rejected) is reported as a
+//! [`ServerEvent`].
 //!
-//! Sending commands to the timers, and tracking their state, come later
-//! (#10, #11): the registry already holds a queue per connection that any
-//! thread can push to without blocking, which is what the auto splitter
-//! thread needs.
+//! The auto splitter controls the timers through the [`TimerLink`] from
+//! [`Server::link`]: each action becomes a command (spec §5.1), sent to every
+//! connected timer through its queue in the registry, which never blocks the
+//! auto splitter thread. With no timer connected, the command is dropped.
+//! Tracking the timers' state comes later (#11).
 
 mod addresses;
 mod events;
+mod protocol;
 mod thread;
 
 use std::{
@@ -20,8 +23,10 @@ use std::{
     thread::JoinHandle,
 };
 
+use livesplit_auto_splitting::TimerState;
 use tokio::sync::mpsc::{self, UnboundedSender};
-use tokio_tungstenite::tungstenite::Message;
+
+use crate::runner::{TimerAction, TimerLink};
 
 pub use addresses::{Network, NetworkAddress, network_addresses};
 pub use events::{ConnectionId, ServerEvent};
@@ -48,8 +53,16 @@ struct Shared {
 /// A connected timer, in the registry.
 struct Connection {
     id: ConnectionId,
-    /// Messages for this timer. Its task sends them in order.
-    outgoing: UnboundedSender<Message>,
+    /// Commands for this timer. Its task sends them in order.
+    outgoing: UnboundedSender<Outgoing>,
+}
+
+/// A command queued for a timer.
+struct Outgoing {
+    /// The command, as JSON text.
+    text: String,
+    /// Its name, to say which command a rejection is for.
+    command: &'static str,
 }
 
 impl Server {
@@ -90,22 +103,53 @@ impl Server {
         let _ = self.commands.send(Command::Restart(port));
     }
 
-    /// Queues a text message for every connected timer, returning how many
-    /// it was queued for. Never blocks, so the auto splitter thread can call
-    /// it.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "timer commands are sent with it from #10")
-    )]
-    pub fn send_to_all(&self, text: &str) -> usize {
+    /// The timer the auto splitter controls: its actions are sent to every
+    /// connected timer. It keeps working across restarts.
+    pub fn link(&self) -> Arc<ServerLink> {
+        Arc::new(ServerLink {
+            shared: self.shared.clone(),
+        })
+    }
+}
+
+/// Sends the auto splitter's actions to the connected timers.
+pub struct ServerLink {
+    shared: Arc<Shared>,
+}
+
+impl TimerLink for ServerLink {
+    // The tracked timer state comes with #11. Until then, the timer is never
+    // running, as with no timer connected (spec §5.2).
+    fn state(&self) -> TimerState {
+        TimerState::NotRunning
+    }
+
+    fn current_split_index(&self) -> Option<usize> {
+        None
+    }
+
+    fn segment_splitted(&self, _index: usize) -> Option<bool> {
+        None
+    }
+
+    /// Queues the action's command for every connected timer, returning how
+    /// many it was queued for. With none, the command is dropped, never
+    /// queued for later (spec §5.1).
+    fn send(&self, action: TimerAction) -> usize {
         let connections = self.shared.connections();
+        if connections.is_empty() {
+            return 0;
+        }
+        let text = protocol::encode(&action);
+        let command = protocol::command_name(&action);
         connections
             .iter()
             .filter(|connection| {
-                connection
-                    .outgoing
-                    .send(Message::text(text.to_owned()))
-                    .is_ok()
+                let outgoing = Outgoing {
+                    text: text.clone(),
+                    command,
+                };
+                connection.outgoing.send(outgoing).is_ok()
             })
             .count()
     }

@@ -6,8 +6,9 @@ use livesplit_auto_splitting::{LogLevel, Timer, TimerState, time};
 
 use super::{RunnerEvent, TimerAction, TimerLink, events::EventSink};
 
-/// Forwards the auto splitter's actions to the [`TimerLink`] and reports them
-/// as events; answers state queries from the link.
+/// Forwards the auto splitter's actions to the [`TimerLink`] and reports them,
+/// with how many timers they were sent to, as events; answers state queries
+/// from the link.
 pub(super) struct BridgeTimer {
     link: Arc<dyn TimerLink>,
     events: EventSink,
@@ -19,8 +20,9 @@ impl BridgeTimer {
     }
 
     fn act(&self, action: TimerAction) {
-        self.events.send(RunnerEvent::TimerAction(action.clone()));
-        self.link.send(action);
+        let sent_to = self.link.send(action.clone());
+        self.events
+            .send(RunnerEvent::TimerAction { action, sent_to });
     }
 }
 

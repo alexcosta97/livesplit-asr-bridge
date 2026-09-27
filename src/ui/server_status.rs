@@ -91,7 +91,7 @@ impl ServerStatus {
             ServerEvent::TimerDisconnected { id, .. } => {
                 self.timers.retain(|timer| timer.id != *id);
             }
-            ServerEvent::HandshakeFailed { .. } => {}
+            ServerEvent::HandshakeFailed { .. } | ServerEvent::CommandRejected { .. } => {}
         }
     }
 

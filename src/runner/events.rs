@@ -41,8 +41,9 @@ pub enum RunnerEvent {
     AutoSplitterLog(String),
     /// A message from the runtime about the auto splitter.
     RuntimeLog { level: LogLevel, message: String },
-    /// The auto splitter took an action on the timer.
-    TimerAction(TimerAction),
+    /// The auto splitter took an action on the timer, which was sent to
+    /// `sent_to` timers: 0 when no timer was connected, so it was dropped.
+    TimerAction { action: TimerAction, sent_to: usize },
     /// The auto splitter published its settings widgets, or changed them.
     SettingsWidgets(Widgets),
 }
@@ -92,7 +93,11 @@ impl RunnerEvent {
             }
             Self::AutoSplitterLog(message) => message.clone(),
             Self::RuntimeLog { level, message } => format!("{level:?}: {message}"),
-            Self::TimerAction(action) => format!("Timer: {action}"),
+            Self::TimerAction { action, sent_to: 0 } => {
+                format!("Dropped {action}: no timer connected")
+            }
+            Self::TimerAction { action, sent_to: 1 } => format!("Sent {action} to 1 timer"),
+            Self::TimerAction { action, sent_to } => format!("Sent {action} to {sent_to} timers"),
             Self::SettingsWidgets(widgets) => match widgets.0.len() {
                 1 => "The auto splitter published 1 setting".to_owned(),
                 n => format!("The auto splitter published {n} settings"),

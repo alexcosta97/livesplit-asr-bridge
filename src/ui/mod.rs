@@ -4,6 +4,7 @@
 mod components;
 mod connection_tab;
 mod folder;
+mod last_action;
 mod server_status;
 mod settings;
 mod settings_tab;
@@ -14,7 +15,7 @@ use std::{
     collections::HashMap,
     fs,
     path::PathBuf,
-    sync::{Arc, mpsc::Receiver},
+    sync::mpsc::Receiver,
     time::{Duration, Instant},
 };
 
@@ -25,7 +26,7 @@ use toml::Value;
 use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters},
     logging::{self, Category, Filters, Logger},
-    runner::{NoTimer, Runner, RunnerEvent, file_name},
+    runner::{Runner, RunnerEvent, TimerAction, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
     version::VERSION,
 };
@@ -34,6 +35,7 @@ use components::{
     SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
+use last_action::LastActions;
 use server_status::ServerStatus;
 use settings::{Setting, SettingsEditor};
 use settings_tab::SettingsAction;
@@ -101,8 +103,7 @@ impl Pending {
     }
 }
 
-/// The application. Later issues add the Last action card and the other
-/// tabs.
+/// The application. Later issues add the other tabs.
 pub struct BridgeApp {
     ctx: egui::Context,
     runner: Runner,
@@ -111,6 +112,10 @@ pub struct BridgeApp {
     server_events: Receiver<ServerEvent>,
     status: Status,
     server_status: ServerStatus,
+    last_actions: LastActions,
+    /// Whether the latest timer action set the game time, so another game
+    /// time right after it isn't logged.
+    setting_game_time: bool,
     /// The machine's addresses, and when they were read.
     addresses: Vec<NetworkAddress>,
     addresses_read: Instant,
@@ -166,15 +171,15 @@ impl BridgeApp {
             let ctx = ctx.clone();
             move || ctx.request_repaint()
         };
-        // The Server replaces NoTimer (#10, #11).
-        let (runner, events) = Runner::new(Arc::new(NoTimer), wake.clone());
         let loaded = config.as_ref().map(AppSettings::load);
         let app_settings = match &loaded {
             Some(Ok(settings)) => settings.clone(),
             _ => AppSettings::default(),
         };
         let port = app_settings.port();
-        let (server, server_events) = Server::new(port, wake);
+        let (server, server_events) = Server::new(port, wake.clone());
+        // The auto splitter controls the timers connected to the Server.
+        let (runner, events) = Runner::new(server.link(), wake);
         let mut app = Self {
             ctx: ctx.clone(),
             runner,
@@ -183,6 +188,8 @@ impl BridgeApp {
             server_events,
             status: Status::default(),
             server_status: ServerStatus::default(),
+            last_actions: LastActions::default(),
+            setting_game_time: false,
             addresses: server::network_addresses(),
             addresses_read: Instant::now(),
             tab: Tab::Connection,
@@ -253,6 +260,8 @@ impl BridgeApp {
     /// Acts on what the Runner reported, and logs it.
     fn runner_event(&mut self, event: RunnerEvent) {
         self.status.apply(&event);
+        self.last_actions
+            .apply(&event, chrono::Local::now().time(), Instant::now());
         match &event {
             RunnerEvent::Loaded { path, .. } => {
                 self.game = self.loading.remove(path);
@@ -265,6 +274,11 @@ impl BridgeApp {
             RunnerEvent::Unloaded => {
                 self.game = None;
                 self.settings.reset(toml::Table::new());
+            }
+            RunnerEvent::TimerAction { action, .. } => {
+                if repeats_game_time(&mut self.setting_game_time, action) {
+                    return;
+                }
             }
             RunnerEvent::SettingsWidgets(widgets) => {
                 self.settings
@@ -459,7 +473,8 @@ impl BridgeApp {
     }
 
     /// The status column: the header, the error card while there is one, the
-    /// auto splitter and the game. It scrolls rather than clip a card.
+    /// auto splitter, the game, the timer and the last action. It scrolls
+    /// rather than clip a card.
     fn status_column(&mut self, ui: &mut egui::Ui, width: Width) {
         let loaded = self.runner.loaded_path().map(|path| file_name(&path));
         let loaded = loaded.as_deref();
@@ -496,6 +511,8 @@ impl BridgeApp {
 
             let urls = self.server_status.urls(&self.addresses);
             components::timer_card(ui, self.server_status.timer_state(), &urls, width);
+
+            components::last_action_card(ui, &self.last_actions, width, Instant::now());
         });
     }
 
@@ -893,13 +910,25 @@ fn server_category(event: &ServerEvent) -> Category {
     }
 }
 
+/// Whether `action` sets the game time right after another game time, so it
+/// isn't logged: auto splitters often set it on every tick, which would fill
+/// the log (spec §8.1). `setting_game_time` follows the latest action.
+fn repeats_game_time(setting_game_time: &mut bool, action: &TimerAction) -> bool {
+    let game_time = matches!(action, TimerAction::SetGameTime(_));
+    let repeat = game_time && *setting_game_time;
+    *setting_game_time = game_time;
+    repeat
+}
+
 /// The log category of a Runner event (spec §8.1).
 fn category(event: &RunnerEvent) -> Category {
     if event.is_error() {
         return Category::Error;
     }
     match event {
-        RunnerEvent::AutoSplitterLog(_) | RunnerEvent::TimerAction(_) => Category::AutoSplitter,
+        RunnerEvent::AutoSplitterLog(_) => Category::AutoSplitter,
+        // Commands sent and dropped (spec §8.1).
+        RunnerEvent::TimerAction { .. } => Category::Connection,
         _ => Category::App,
     }
 }
@@ -952,6 +981,7 @@ impl eframe::App for BridgeApp {
 #[cfg(test)]
 mod tests {
     use eframe::egui::{RawInput, ViewportEvent, ViewportId};
+    use livesplit_auto_splitting::time;
 
     use super::*;
 
@@ -1114,8 +1144,11 @@ mod tests {
                 Category::App,
             ),
             (
-                RunnerEvent::TimerAction(crate::runner::TimerAction::Split),
-                Category::AutoSplitter,
+                RunnerEvent::TimerAction {
+                    action: TimerAction::Split,
+                    sent_to: 0,
+                },
+                Category::Connection,
             ),
             (RunnerEvent::GameDetached, Category::App),
             (
@@ -1153,6 +1186,16 @@ mod tests {
                 ServerEvent::HandshakeFailed {
                     address,
                     error: "not a WebSocket".to_owned(),
+                },
+                Category::Connection,
+            ),
+            (
+                ServerEvent::CommandRejected {
+                    id: 0,
+                    address,
+                    command: Some("split".to_owned()),
+                    code: "NoRunInProgress".to_owned(),
+                    message: None,
                 },
                 Category::Connection,
             ),
@@ -1376,6 +1419,33 @@ mod tests {
         // Then it stays there rather than jumping back to the newest line.
         let on_screen = draw_log_tab(&mut app);
         assert!(on_screen.iter().any(|(text, _)| text.contains("wasm trap")));
+    }
+
+    #[test]
+    fn only_the_first_of_several_game_times_in_a_row_is_logged() {
+        let game_time = |seconds| TimerAction::SetGameTime(time::Duration::seconds(seconds));
+        let mut setting_game_time = false;
+        let logged: Vec<_> = [
+            TimerAction::Start,
+            game_time(1),
+            game_time(2),
+            game_time(3),
+            TimerAction::Split,
+            game_time(4),
+            game_time(5),
+        ]
+        .into_iter()
+        .filter(|action| !repeats_game_time(&mut setting_game_time, action))
+        .collect();
+        assert_eq!(
+            logged,
+            [
+                TimerAction::Start,
+                game_time(1),
+                TimerAction::Split,
+                game_time(4)
+            ]
+        );
     }
 
     #[test]
