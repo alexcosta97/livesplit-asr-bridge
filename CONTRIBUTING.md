@@ -30,8 +30,9 @@ development environment and the conventions every change follows.
 
    ```sh
    cargo fmt --check
-   cargo clippy --all-targets -- -D warnings
-   cargo test
+   cargo clippy --all-targets --locked -- -D warnings
+   cargo build --locked
+   cargo test --locked
    ```
 
 ## Commits
