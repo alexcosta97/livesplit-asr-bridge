@@ -440,9 +440,14 @@ the window dimmed behind them.
   titled "Change game", with the current game selected.
 - **"Save your settings changes?"**, when the app is closed, a different
   `.wasm` is opened, or **Reload** or **Change** is pressed with unsaved
-  settings: text
-  naming how many settings changed, and **Save and reload** (**Save** for the
-  other triggers), **Discard** and **Cancel**.
+  settings. The text names how many settings changed and for which game, and
+  what discards them: "You changed 3 settings for GTA San Andreas. Reloading
+  the auto splitter without saving discards them." The action is "Reloading
+  the auto splitter", "Opening another auto splitter", "Changing the game" or
+  "Closing the app". The buttons, aligned right, are **Cancel**, **Discard**
+  and **Save and reload** (**Save** for the other triggers). For opening a
+  `.wasm`, the dialog comes before the file picker, and the file picker opens
+  only after **Save** or **Discard**.
 
 ### 6.9 First launch
 
@@ -506,7 +511,7 @@ and their exact values are in `.superdesign/design-system.md`.
 | **How to connect** | expanded or collapsed | Connection tab |
 | **Log toolbar** and **Log line** | filter states; line categories, highlighted entry | Log tab |
 | **About row** | a folder with **Open** | Preferences tab |
-| **Game dialog** and **Unsaved dialog** | new file or change; reload, open or close | dialogs |
+| **Game dialog** and **Unsaved dialog** | new file or change; reload, open, change game or close | dialogs |
 
 ## 7. Configuration and settings storage
 
