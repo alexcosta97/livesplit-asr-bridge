@@ -1,5 +1,6 @@
 //! Unsaved dialog: "Save your settings changes?" when reloading, opening
-//! another file or closing the app with unsaved settings (spec §6.8).
+//! another file, changing the game or closing the app with unsaved settings
+//! (spec §6.8).
 
 use eframe::egui::{self, Frame, Id, Label, Margin, Modal, RichText, Stroke, Ui};
 
@@ -14,6 +15,7 @@ const WIDTH: f32 = 400.0;
 pub enum UnsavedTrigger {
     Reload,
     Open,
+    ChangeGame,
     Close,
 }
 
@@ -98,7 +100,7 @@ fn message(changes: usize) -> String {
 fn save_label(trigger: UnsavedTrigger) -> &'static str {
     match trigger {
         UnsavedTrigger::Reload => "Save and reload",
-        UnsavedTrigger::Open | UnsavedTrigger::Close => "Save",
+        UnsavedTrigger::Open | UnsavedTrigger::ChangeGame | UnsavedTrigger::Close => "Save",
     }
 }
 
@@ -116,6 +118,7 @@ mod tests {
     fn save_says_it_reloads_only_for_reload() {
         assert_eq!(save_label(UnsavedTrigger::Reload), "Save and reload");
         assert_eq!(save_label(UnsavedTrigger::Open), "Save");
+        assert_eq!(save_label(UnsavedTrigger::ChangeGame), "Save");
         assert_eq!(save_label(UnsavedTrigger::Close), "Save");
     }
 }

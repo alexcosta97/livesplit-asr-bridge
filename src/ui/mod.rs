@@ -78,6 +78,9 @@ enum Tab {
 enum Pending {
     Reload,
     Open(PathBuf),
+    /// Change the loaded auto splitter's game: the game's settings replace
+    /// the draft.
+    ChangeGame,
     Close,
 }
 
@@ -86,6 +89,7 @@ impl Pending {
         match self {
             Self::Reload => UnsavedTrigger::Reload,
             Self::Open(_) => UnsavedTrigger::Open,
+            Self::ChangeGame => UnsavedTrigger::ChangeGame,
             Self::Close => UnsavedTrigger::Close,
         }
     }
@@ -440,7 +444,7 @@ impl BridgeApp {
             match action {
                 Some(SplitterAction::Open) => self.open(),
                 Some(SplitterAction::Reload) => self.ask(Pending::Reload),
-                Some(SplitterAction::Change) => self.change_game(),
+                Some(SplitterAction::Change) => self.ask(Pending::ChangeGame),
                 None => {}
             }
 
@@ -517,6 +521,7 @@ impl BridgeApp {
         match pending {
             Pending::Reload => self.reload(),
             Pending::Open(path) => self.load(path),
+            Pending::ChangeGame => self.change_game(),
             Pending::Close => {
                 self.closing = true;
                 self.ctx.send_viewport_cmd(ViewportCommand::Close);
@@ -801,13 +806,15 @@ mod tests {
     }
 
     #[test]
-    fn reload_and_open_ask_first_with_unsaved_settings() {
+    fn reload_open_and_change_game_ask_first_with_unsaved_settings() {
         let (_dir, mut app) = app_with_unsaved_edit();
         app.ask(Pending::Reload);
         assert_eq!(app.pending, Some(Pending::Reload));
         let path = PathBuf::from("/other.wasm");
         app.ask(Pending::Open(path.clone()));
         assert_eq!(app.pending, Some(Pending::Open(path)));
+        app.ask(Pending::ChangeGame);
+        assert_eq!(app.pending, Some(Pending::ChangeGame));
     }
 
     #[test]

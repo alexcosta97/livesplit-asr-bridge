@@ -358,8 +358,9 @@ notifications.
   After saving, "✓ Saved" is shown briefly.
 - **Revert to defaults** replaces the draft with the auto splitter's default
   values, as unsaved changes, so it still requires **Save** to take effect.
-- Closing the app, opening a different `.wasm`, or pressing **Reload** with
-  unsaved changes opens the unsaved-settings dialog (section 6.8).
+- Closing the app, opening a different `.wasm`, pressing **Reload** or
+  pressing **Change** (the game) with unsaved changes opens the
+  unsaved-settings dialog (section 6.8).
 - With no auto splitter loaded, the tab explains how to load one, with
   **Open…**.
 
@@ -424,7 +425,8 @@ the window dimmed behind them.
   and **Cancel**. **Change** on the Auto splitter card opens the same dialog,
   titled "Change game", with the current game selected.
 - **"Save your settings changes?"**, when the app is closed, a different
-  `.wasm` is opened or **Reload** is pressed with unsaved settings: text
+  `.wasm` is opened, or **Reload** or **Change** is pressed with unsaved
+  settings: text
   naming how many settings changed, and **Save and reload** (**Save** for the
   other triggers), **Discard** and **Cancel**.
 
