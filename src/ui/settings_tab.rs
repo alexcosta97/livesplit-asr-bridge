@@ -15,6 +15,8 @@ use super::{
 
 /// How far each heading level indents the settings under it.
 const INDENT: f32 = 16.0;
+/// The height of a checkbox's row.
+const CHECKBOX_ROW: f32 = 24.0;
 
 /// What the Settings tab asks the app to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,9 +109,20 @@ fn setting(ui: &mut Ui, editor: &mut SettingsEditor, widget: &Setting) -> Option
         }
         WidgetKind::Bool { .. } => {
             let mut checked = value.and_then(|value| value.as_bool()).unwrap_or_default();
-            let response =
-                components::checkbox(ui, &mut checked, &widget.description, tooltip, None);
-            if response.changed() {
+            // Rows as tall as a small button, so checkboxes don't crowd.
+            let changed = ui
+                .horizontal(|ui| {
+                    ui.set_min_height(CHECKBOX_ROW);
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let response =
+                        ui.add(components::Checkbox::new(&mut checked, &widget.description));
+                    if let Some(tooltip) = tooltip {
+                        components::info_marker(ui, tooltip);
+                    }
+                    response.changed()
+                })
+                .inner;
+            if changed {
                 editor.set(widget, Some(Value::Boolean(checked)));
             }
             ui.add_space(4.0);

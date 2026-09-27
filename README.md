@@ -50,6 +50,23 @@ Releases are not code-signed yet, so the first launch shows a warning.
 - **Windows:** if SmartScreen says "Windows protected your PC", click **More
   info**, then **Run anyway**.
 
+## Logs
+
+The app keeps a log of what it does, by category: errors, the auto
+splitter's messages and actions, the connection to LiveSplit One, and the app
+itself. The **Log** tab shows the most recent lines; errors are always shown,
+and the other categories when ticked. Every category is also written to disk,
+one file per day, kept for 7 days, in:
+
+| OS | Log folder |
+|---|---|
+| Linux | `$XDG_STATE_HOME/livesplit-asr-bridge/logs/` (default `~/.local/state/livesplit-asr-bridge/logs/`) |
+| macOS | `~/Library/Logs/livesplit-asr-bridge/` |
+| Windows | `%LOCALAPPDATA%\livesplit-asr-bridge\logs\` |
+
+A day's file stops at 50 MB, after which only errors are added to it.
+**Open log folder** in the Log tab opens it.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development

@@ -3,6 +3,7 @@
 
 mod components;
 mod connection_tab;
+mod folder;
 mod server_status;
 mod settings;
 mod settings_tab;
@@ -10,25 +11,27 @@ mod status;
 mod theme;
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
+    fs,
     path::PathBuf,
     sync::{Arc, mpsc::Receiver},
     time::{Duration, Instant},
 };
 
-use eframe::egui::{self, Frame, Label, Margin, RichText, ScrollArea, ViewportCommand};
+use eframe::egui::{self, Frame, Margin, ScrollArea, ViewportCommand};
 use livesplit_auto_splitting::{settings::WidgetKind, wasi_path};
 use toml::Value;
 
 use crate::{
     config::{self, AppSettings, Config, Game, GameSummary, Splitters},
+    logging::{self, Category, Filters, Logger},
     runner::{NoTimer, Runner, RunnerEvent, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
     version::VERSION,
 };
 use components::{
-    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, SplitterAction,
-    UnsavedAction, UnsavedTrigger, Width,
+    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, LOG_LINE_HEIGHT,
+    LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
 use server_status::ServerStatus;
@@ -38,16 +41,12 @@ use status::Status;
 
 pub use theme::install as install_theme;
 
-/// The application name, used for the window and, later, the config and log
+/// The application name, used for the window and the config and log
 /// folders.
 pub const APP_NAME: &str = "livesplit-asr-bridge";
 
 /// The name shown to people, in the window title.
 pub const DISPLAY_NAME: &str = "LiveSplit One ASR Bridge";
-
-/// How many recent Runner and Server messages the window keeps, until the
-/// Log tab replaces this list.
-const RECENT_MESSAGES: usize = 500;
 
 /// How often the machine's addresses are read again, so a VPN coming up
 /// appears.
@@ -71,7 +70,6 @@ pub fn window_title() -> String {
 enum Tab {
     Settings,
     Connection,
-    /// Holds the recent activity list until the Log tab (#12).
     Log,
 }
 
@@ -106,10 +104,15 @@ pub struct BridgeApp {
     /// The machine's addresses, and when they were read.
     addresses: Vec<NetworkAddress>,
     addresses_read: Instant,
+    /// The tab shown in the tab area.
     tab: Tab,
     connection_tab: ConnectionTab,
-    /// Each message, and whether it is an error.
-    recent: VecDeque<(String, bool)>,
+    /// Everything the app records, in the Log tab and on disk.
+    logger: Logger,
+    /// The Log tab's filters, saved in `app.toml`.
+    log_filters: Filters,
+    /// The log entry reached through Show in log (#14), highlighted.
+    highlighted: Option<u64>,
     /// The configuration folder, if the OS has one for the user.
     config: Option<Config>,
     /// The app's own settings, read from `app.toml` at start-up. The
@@ -161,7 +164,9 @@ impl BridgeApp {
             addresses_read: Instant::now(),
             tab: Tab::Connection,
             connection_tab: ConnectionTab::new(port),
-            recent: VecDeque::new(),
+            logger: Logger::new(logging::standard_dir()),
+            log_filters: app_settings.log_filters(),
+            highlighted: None,
             config,
             app_settings,
             loading: HashMap::new(),
@@ -178,9 +183,10 @@ impl BridgeApp {
             None => {
                 let _ = app.config();
             }
-            Some(Err(error)) => {
-                app.note(format!("Couldn't read the app's settings: {error}"), true)
-            }
+            Some(Err(error)) => app.log(
+                Category::Error,
+                format!("Couldn't read the app's settings: {error}"),
+            ),
             Some(Ok(_)) => {}
         }
         app
@@ -194,7 +200,7 @@ impl BridgeApp {
             return;
         };
         if let Err(error) = self.app_settings.save(&config) {
-            self.note(format!("Couldn't save the port: {error}"), true);
+            self.log(Category::Error, format!("Couldn't save the port: {error}"));
         }
     }
 
@@ -222,31 +228,28 @@ impl BridgeApp {
                 }
                 _ => {}
             }
-            self.note(event.describe(), event.is_error());
+            self.log(category(&event), event.describe());
         }
         while let Ok(event) = self.server_events.try_recv() {
             self.status.apply_server(&event);
             self.server_status.apply(&event);
-            self.note(event.describe(), event.is_error());
+            self.log(server_category(&event), event.describe());
         }
     }
 
-    /// Adds a message to the recent activity.
-    fn note(&mut self, message: String, is_error: bool) {
-        if self.recent.len() == RECENT_MESSAGES {
-            self.recent.pop_front();
-        }
-        self.recent.push_back((message, is_error));
+    /// Records a line in the log.
+    fn log(&mut self, category: Category, message: String) {
+        self.logger.record(category, message);
     }
 
     /// The configuration folder, or `None` after reporting that there is
     /// none.
     fn config(&mut self) -> Option<Config> {
         if self.config.is_none() {
-            self.note(
+            self.log(
+                Category::Error,
                 "Couldn't find the configuration folder, so games and settings aren't saved"
                     .to_owned(),
-                true,
             );
         }
         self.config.clone()
@@ -256,9 +259,9 @@ impl BridgeApp {
     /// and no auto splitter is known.
     fn splitters(&mut self, config: &Config) -> Splitters {
         Splitters::load(config).unwrap_or_else(|error| {
-            self.note(
+            self.log(
+                Category::Error,
                 format!("Couldn't read the games of auto splitters: {error}"),
-                true,
             );
             Splitters::default()
         })
@@ -268,7 +271,10 @@ impl BridgeApp {
     /// the game has no saved settings.
     fn game(&mut self, config: &Config, slug: &str) -> Game {
         Game::load(config, slug).unwrap_or_else(|error| {
-            self.note(format!("Couldn't read the game's settings: {error}"), true);
+            self.log(
+                Category::Error,
+                format!("Couldn't read the game's settings: {error}"),
+            );
             Game {
                 slug: slug.to_owned(),
                 name: slug.to_owned(),
@@ -281,7 +287,7 @@ impl BridgeApp {
     fn games(&mut self, config: &Config, splitters: &Splitters) -> Vec<GameSummary> {
         let (games, errors) = Game::list(config, splitters);
         for error in errors {
-            self.note(format!("Couldn't read a game: {error}"), true);
+            self.log(Category::Error, format!("Couldn't read a game: {error}"));
         }
         games
     }
@@ -362,7 +368,7 @@ impl BridgeApp {
             GameChoice::New(name) => match Game::create(&config, &name) {
                 Ok(game) => game,
                 Err(error) => {
-                    self.note(format!("Couldn't set up {name}: {error}"), true);
+                    self.log(Category::Error, format!("Couldn't set up {name}: {error}"));
                     return;
                 }
             },
@@ -374,9 +380,9 @@ impl BridgeApp {
                 // The running auto splitter carries on with the new game's
                 // settings.
                 self.runner.set_settings(config::to_runtime(&game.settings));
-                self.note(
+                self.log(
+                    Category::App,
                     format!("{} is now for {}", file_name(&path), game.name),
-                    false,
                 );
                 self.settings.reset_keeping_widgets(game.settings.clone());
                 self.game = Some(game);
@@ -392,9 +398,9 @@ impl BridgeApp {
             splitters.save(config)
         });
         if let Err(error) = saved {
-            self.note(
+            self.log(
+                Category::Error,
                 format!("Couldn't remember the game of {}: {error}", file_name(path)),
-                true,
             );
         }
     }
@@ -469,7 +475,7 @@ impl BridgeApp {
                         self.save_port(port);
                     }
                 }
-                Tab::Log => self.recent_activity(ui),
+                Tab::Log => self.log_tab(ui),
             });
     }
 
@@ -576,7 +582,10 @@ impl BridgeApp {
                         saved
                     }
                     Err(error) => {
-                        self.note(format!("Couldn't save the settings: {error}"), true);
+                        self.log(
+                            Category::Error,
+                            format!("Couldn't save the settings: {error}"),
+                        );
                         return false;
                     }
                 }
@@ -587,6 +596,7 @@ impl BridgeApp {
         };
         self.runner.set_settings(config::to_runtime(&saved));
         self.settings.saved(saved, Instant::now());
+        self.log(Category::App, "Saved the settings".to_owned());
         true
     }
 
@@ -617,12 +627,12 @@ impl BridgeApp {
             Some(value) => self
                 .settings
                 .set(&widget, Some(Value::String(value.into()))),
-            None => self.note(
+            None => self.log(
+                Category::Error,
                 format!(
                     "Couldn't give {} to the auto splitter: the path isn't supported",
                     path.display()
                 ),
-                true,
             ),
         }
     }
@@ -634,26 +644,95 @@ impl BridgeApp {
         }
     }
 
-    /// The Runner's and the Server's recent messages, until the Log tab
-    /// (#12) replaces them.
-    fn recent_activity(&self, ui: &mut egui::Ui) {
-        ScrollArea::vertical()
+    /// The Log tab (spec §6.6): the toolbar, then the lines the filters
+    /// show, following the newest.
+    fn log_tab(&mut self, ui: &mut egui::Ui) {
+        match components::log_toolbar(ui, &mut self.log_filters) {
+            Some(LogAction::FiltersChanged) => self.save_log_filters(),
+            Some(LogAction::Copy) => ui
+                .ctx()
+                .copy_text(self.logger.view().export(self.log_filters)),
+            Some(LogAction::Save) => self.save_log(),
+            Some(LogAction::Clear) => self.logger.clear(),
+            Some(LogAction::OpenFolder) => self.open_log_folder(),
+            None => {}
+        }
+        ui.add_space(12.0);
+        let shown: Vec<_> = self.logger.view().shown(self.log_filters).collect();
+        ScrollArea::both()
             .auto_shrink(false)
             .stick_to_bottom(true)
-            .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 6.0;
-                for (message, is_error) in &self.recent {
-                    let color = if *is_error {
-                        theme::STATUS_ERROR
-                    } else {
-                        theme::TEXT
-                    };
-                    ui.add(
-                        Label::new(RichText::new(message).font(theme::mono(12.0)).color(color))
-                            .wrap(),
-                    );
+            .show_rows(ui, LOG_LINE_HEIGHT, shown.len(), |ui, rows| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for entry in &shown[rows] {
+                    components::log_line(ui, entry, self.highlighted == Some(entry.id));
                 }
             });
+    }
+
+    /// Remembers the Log tab's filters in `app.toml`.
+    fn save_log_filters(&mut self) {
+        self.app_settings.set_log_filters(self.log_filters);
+        let Some(config) = self.config() else {
+            return;
+        };
+        if let Err(error) = self.app_settings.save(&config) {
+            self.log(
+                Category::Error,
+                format!("Couldn't remember the log filters: {error}"),
+            );
+        }
+    }
+
+    /// Asks where to save the lines shown, and saves them there.
+    fn save_log(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Log", &["log", "txt"])
+            .set_file_name(format!("{APP_NAME}.log"))
+            .save_file()
+        else {
+            return;
+        };
+        if let Err(error) = fs::write(&path, self.logger.view().export(self.log_filters)) {
+            self.log(
+                Category::Error,
+                format!("Couldn't save the log to {}: {error}", path.display()),
+            );
+        }
+    }
+
+    /// Opens the log folder in the file manager.
+    fn open_log_folder(&mut self) {
+        let result = match self.logger.dir() {
+            Some(dir) => folder::open_folder(dir),
+            None => Err("Couldn't find the log folder".to_owned()),
+        };
+        if let Err(error) = result {
+            self.log(Category::Error, error);
+        }
+    }
+}
+
+/// The log category of a Server event (spec §8.1).
+fn server_category(event: &ServerEvent) -> Category {
+    if event.is_error() {
+        return Category::Error;
+    }
+    match event {
+        // Server restarts are the app's.
+        ServerEvent::Listening { .. } => Category::App,
+        _ => Category::Connection,
+    }
+}
+
+/// The log category of a Runner event (spec §8.1).
+fn category(event: &RunnerEvent) -> Category {
+    if event.is_error() {
+        return Category::Error;
+    }
+    match event {
+        RunnerEvent::AutoSplitterLog(_) | RunnerEvent::TimerAction(_) => Category::AutoSplitter,
+        _ => Category::App,
     }
 }
 
@@ -789,6 +868,83 @@ mod tests {
         assert_eq!(app.pending, None);
         assert!(app.settings.is_unsaved());
         assert!(!app.closing);
+    }
+
+    #[test]
+    fn runner_events_are_logged_in_their_category() {
+        let path = PathBuf::from("a.wasm");
+        let cases = [
+            (
+                RunnerEvent::LoadFailed {
+                    path: path.clone(),
+                    error: "bad".to_owned(),
+                },
+                Category::Error,
+            ),
+            (
+                RunnerEvent::Crashed {
+                    error: "trap".to_owned(),
+                },
+                Category::Error,
+            ),
+            (
+                RunnerEvent::AutoSplitterLog("hi".to_owned()),
+                Category::AutoSplitter,
+            ),
+            (
+                RunnerEvent::Loaded {
+                    path,
+                    tick_rate: std::time::Duration::from_millis(50),
+                },
+                Category::App,
+            ),
+            (
+                RunnerEvent::TimerAction(crate::runner::TimerAction::Split),
+                Category::AutoSplitter,
+            ),
+            (RunnerEvent::GameDetached, Category::App),
+            (
+                RunnerEvent::TickRateChanged(std::time::Duration::from_millis(50)),
+                Category::App,
+            ),
+        ];
+        for (event, expected) in cases {
+            assert_eq!(category(&event), expected, "{event:?}");
+        }
+    }
+
+    #[test]
+    fn server_events_are_logged_in_their_category() {
+        let address = "192.168.1.42:53122".parse().unwrap();
+        let cases = [
+            (
+                ServerEvent::BindFailed {
+                    port: 16834,
+                    error: "in use".to_owned(),
+                    in_use: true,
+                },
+                Category::Error,
+            ),
+            (ServerEvent::Listening { port: 16834 }, Category::App),
+            (
+                ServerEvent::TimerConnected { id: 0, address },
+                Category::Connection,
+            ),
+            (
+                ServerEvent::TimerDisconnected { id: 0, address },
+                Category::Connection,
+            ),
+            (
+                ServerEvent::HandshakeFailed {
+                    address,
+                    error: "not a WebSocket".to_owned(),
+                },
+                Category::Connection,
+            ),
+        ];
+        for (event, expected) in cases {
+            assert_eq!(server_category(&event), expected, "{event:?}");
+        }
     }
 
     #[test]
