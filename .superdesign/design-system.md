@@ -113,18 +113,27 @@ Every mockup must stay consistent with these rules.
 - **Auto splitter card, nothing loaded:** "NO AUTO SPLITTER" (muted), help text "Open a .wasm auto
   splitter to start.", primary **Open…**; Reload disabled.
 - **Game:** ATTACHED (green) · WAITING FOR GAME… (neutral grey, outlined dot; normal, not an
-  error) · "—" muted when no splitter is loaded.
+  error) · STOPPED (neutral, "The auto splitter isn't running") after the auto splitter crashed,
+  until Reload · "—" muted with "Load an auto splitter first" when no splitter is loaded.
 - **Timer:** CONNECTED · N TIMERS (green) · NOT CONNECTED (neutral) with an orange
   "How do I connect?" link. The connection URL rows are always in the Timer card in the wide
   state, one row per non-loopback IPv4 address (e.g. `ws://192.168.1.20:16834` LAN and
   `ws://100.101.7.3:16834` VPN), each with **Copy**, plus one small "?" that opens the setup
-  steps. A timer disconnecting is logged; with no timers left the card goes back to NOT CONNECTED.
+  steps. The URL rows are shown ONLY while NOT CONNECTED (same rule as the compact state); once
+  a timer is connected the card shows just the status, the timer count and the "?" (the
+  addresses stay on the Connection tab). The URLs always use the port the server is actually
+  listening on, never an edited-but-not-applied port. A timer disconnecting is logged; with no
+  timers left the card goes back to NOT CONNECTED.
+- **Column overflow:** if the cards still don't fit the window height, the column scrolls
+  (last resort); cards are never clipped.
 - **Last action:** the latest action big, plus the 2 previous ones as faint mono lines (this
   run's recent history only). Actions: START, SPLIT (+ segment name when known), SKIP SPLIT,
   UNDO SPLIT, RESET, GAME TIME 1:23:45.600, PAUSE GAME TIME, RESUME GAME TIME. Custom
   variables are NOT shown here (log only). Empty state: "NO ACTIONS YET" muted, "Actions appear
   here when the auto splitter starts, splits or resets."
-- **Error card** (only one, the most recent): red. Kinds: auto splitter crashed ("The auto
+- **Error card**: does NOT exist when there is no error (no placeholder, no empty space).
+  When there is an error it appears at the TOP of the column, directly under the wordmark and
+  above the Auto splitter card, pushing every other card down. Only one, the most recent: red. Kinds: auto splitter crashed ("The auto
   splitter stopped because of an error." + **Show in log** + **Reload**), load failed
   ("Couldn't load foo.wasm: not a valid WebAssembly module. The previous auto splitter is still
   running." + **Show in log**), port in use ("Port 16834 is already in use. Choose another port
