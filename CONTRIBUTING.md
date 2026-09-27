@@ -108,9 +108,9 @@ example `feat/port-setting` or `fix/reconnect-state`.
   tested, and a short checklist.
 - **Scope:** one logical change per pull request.
 - **Requirements to merge:**
-  - all CI checks pass: formatting, clippy, build and tests on Linux, macOS
-    and Windows, and the Conventional Commits check on the title and every
-    commit;
+  - all CI checks pass: formatting, clippy and tests on Linux, a build on
+    Linux, macOS and Windows, and the Conventional Commits check on the title
+    and every commit;
   - all review conversations are resolved;
   - all commits are signed.
 - **Merging:** only maintainers can merge into `main`, using squash merge.

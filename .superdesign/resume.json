@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "main-window": {
+      "targetKind": "new-target",
+      "projectId": "bca2406a-5118-4388-9e38-b0e37fab0d9f",
+      "activeDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [
+        ".superdesign/design-system.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "1499cc4a4f1c82bb956b99ef8c9125970205a6bd59c9f1183d36c50ea5401fe8"
+      },
+      "drafts": {
+        "ebfbea53-a813-409d-b074-06a7bba99e50": {
+          "title": "Main window — wide (setup), 1280x800, Settings tab (flow source)",
+          "visualDirection": "speedrun / stream deck (Kinetic Orange adapted for egui), approach A status column",
+          "currentVersion": 6
+        },
+        "7486d4fd-6eb3-4c04-801a-9ec576e0c831": {
+          "title": "C1 Compact — mid-run, all good (400x800)",
+          "visualDirection": "same as wide; status column only, bigger status words",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 3
+        },
+        "807302a7-f9ce-41a0-b788-77017cbe67f4": {
+          "title": "W1 First launch — Connection tab",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 1
+        },
+        "e0e8a599-cc8c-4b50-91a0-47f6b4c15321": {
+          "title": "W2 Which game is this auto splitter for?",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 3
+        },
+        "6059f9bf-4c3d-465b-ae59-cbc1a254ec85": {
+          "title": "W3 Connection tab — changing the port",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 4
+        },
+        "abf405ee-cea5-422d-97ce-beb754d09858": {
+          "title": "W4 Port in use",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 4
+        },
+        "333c2f4e-1040-42a2-bec7-2bac1b935298": {
+          "title": "W5 Log tab — Show in log after a crash",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 3
+        },
+        "cb41ce06-5ccb-4fbc-b0e6-2cdece93bd63": {
+          "title": "W6 Unsaved settings dialog",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 4
+        },
+        "c87d234e-cdd3-4b4e-9683-0988193be8fd": {
+          "title": "W7 Settings saved, all widget kinds",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 3
+        },
+        "33f1cb15-1efd-4bb1-97bf-f47f97221901": {
+          "title": "W8 Settings tab — no auto splitter",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 4
+        },
+        "d9a7b66b-66e6-43bb-af48-f697c07bcc98": {
+          "title": "W9 Preferences tab",
+          "visualDirection": "same as wide",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 4
+        },
+        "5e8cb616-8d00-42cb-8748-4b2649f5e5aa": {
+          "title": "C1e Compact — auto splitter crashed",
+          "visualDirection": "same as compact; hand-authored (Superdesign credits ran out)",
+          "parentDraftId": "7486d4fd-6eb3-4c04-801a-9ec576e0c831",
+          "currentVersion": 2
+        },
+        "1e11d598-164e-4674-8506-ef286a8ddd21": {
+          "title": "C2 Compact — before the run",
+          "visualDirection": "same as compact; hand-authored (Superdesign credits ran out)",
+          "parentDraftId": "7486d4fd-6eb3-4c04-801a-9ec576e0c831",
+          "currentVersion": 2
+        },
+        "5c59ca54-520a-4bb1-b834-b807a9c2ace8": {
+          "title": "C3 Compact — no auto splitter",
+          "visualDirection": "same as compact; hand-authored (Superdesign credits ran out)",
+          "parentDraftId": "7486d4fd-6eb3-4c04-801a-9ec576e0c831",
+          "currentVersion": 2
+        },
+        "78862405-0815-4d57-a89f-1f860e1a8743": {
+          "title": "BACK-POCKET ALTERNATIVE (not approved): wide main window in LiveSplit One's dark default style",
+          "visualDirection": "LiveSplit One dark default, values from one.livesplit.org CSS :root; see design-system-livesplit-one.md",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 2
+        },
+        "42c19180-e357-40d6-a1f2-787d02ea379d": {
+          "title": "C4 Compact — tab view (Show details on a tiling WM, or first launch)",
+          "visualDirection": "built from components",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-09-27T13:30:04Z",
+      "referenceIds": [
+        "581f4e0b-b7d5-443d-9bed-3cf5ce8ac7fe"
+      ],
+      "brandAssets": {
+        "logo": {
+          "assetKey": "assets-brand-logo-icon.svg",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/bca2406a-5118-4388-9e38-b0e37fab0d9f/brand-assets/assets-brand-logo-icon.svg/icon.svg",
+          "sourcePath": "assets/brand/logo/icon.svg"
+        }
+      },
+      "componentsFile": ".superdesign/components/components.json",
+      "screensFile": ".superdesign/screens/screens.json",
+      "note": "Superdesign is the source of truth: every screen is built only from the project's components. Change a component (canvas, or update-component after reading its template from its preview page), never a screen. Screen draft ids: screens.json; component ids: components.json. The 'drafts' map below is history.",
+      "components": [
+        {
+          "name": "Btn",
+          "id": "5794552b-71ba-4a29-a620-eaa6e886b681"
+        },
+        {
+          "name": "SectionLabel",
+          "id": "d55b5404-6f47-4fa0-805f-1e1c2a45186b"
+        },
+        {
+          "name": "InfoMarker",
+          "id": "9da26067-d084-418d-931a-5acfb9781d19"
+        },
+        {
+          "name": "Tooltip",
+          "id": "6261772f-47d8-43ba-8f3b-02010fbda175"
+        },
+        {
+          "name": "AddressRow",
+          "id": "f5d47feb-9c19-4ebc-bbd3-8ecabbe16d65"
+        },
+        {
+          "name": "Checkbox",
+          "id": "efbc3080-cb48-4798-8c97-28ef779116c4"
+        },
+        {
+          "name": "AppHeader",
+          "id": "a1bc1fab-a3c3-4903-95fa-f631f12bd725"
+        },
+        {
+          "name": "ErrorCard",
+          "id": "9af2c407-6e00-4d33-abb5-340b4d4849d0"
+        },
+        {
+          "name": "SplitterCard",
+          "id": "43f8fd59-ffbc-4559-86f7-1f20f0059ecc"
+        },
+        {
+          "name": "SplitterStrip",
+          "id": "b53606dc-d50d-4488-b43f-7f73dd0e9d1f"
+        },
+        {
+          "name": "GameCard",
+          "id": "227f34f7-6178-4fb4-b595-386e5b777bef"
+        },
+        {
+          "name": "TimerCard",
+          "id": "854b3a24-6ee6-412e-90a0-68a312ebe8e8"
+        },
+        {
+          "name": "LastActionCard",
+          "id": "5d3a79c7-0c3c-44af-bbce-79bde1a129d2"
+        },
+        {
+          "name": "TabStrip",
+          "id": "36c5934f-97b6-4d4c-b8c3-50e608ee3532"
+        },
+        {
+          "name": "SettingsToolbar",
+          "id": "007ab86c-3263-4110-b21b-430c05eac7e1"
+        },
+        {
+          "name": "SettingHeading",
+          "id": "7111797f-4959-4899-9296-8b44cc7ef5f9"
+        },
+        {
+          "name": "SettingChoice",
+          "id": "b651e1aa-e707-4525-8f66-8beaec303f07"
+        },
+        {
+          "name": "SettingFile",
+          "id": "5b9f3dbe-9a8c-44c5-b720-7d78e4643821"
+        },
+        {
+          "name": "EmptyState",
+          "id": "282879dc-4709-4034-ab76-6d7f066a8d1e"
+        },
+        {
+          "name": "ServerSection",
+          "id": "494ec673-dbcd-4d06-b9d5-d28464ccfebb"
+        },
+        {
+          "name": "TimerRow",
+          "id": "e0dd9f6d-4aa7-44db-aae6-2ed8e092d7e3"
+        },
+        {
+          "name": "HowToConnect",
+          "id": "3faf58eb-e49b-4d98-81b3-a488f04c27ab"
+        },
+        {
+          "name": "LogToolbar",
+          "id": "81491172-8409-4018-afaa-ce125b12aeba"
+        },
+        {
+          "name": "LogLine",
+          "id": "d4b20ddc-62d0-44cd-9131-3e8390de9fca"
+        },
+        {
+          "name": "AboutRow",
+          "id": "796f3219-862a-45df-9792-df24af6c7c94"
+        },
+        {
+          "name": "GameDialog",
+          "id": "4f5ae936-edb3-4768-bcb3-d33762a0036b"
+        },
+        {
+          "name": "UnsavedDialog",
+          "id": "dd4c0478-c43e-4aa8-8dd3-3800248b4d21"
+        }
+      ]
+    },
+    "brand-logo": {
+      "targetKind": "graphic-options",
+      "projectId": "bca2406a-5118-4388-9e38-b0e37fab0d9f",
+      "designSystemPath": ".superdesign/design-system.md",
+      "drafts": {
+        "2331d561-fb3b-4b96-b628-d849493b734d": {
+          "title": "Logo A — Split marker (hand-drawn SVG)",
+          "currentVersion": 2
+        },
+        "c3cda4f0-4b92-4c7b-a1c2-e74ba68b4873": {
+          "title": "Logo B — Bridge (hand-drawn SVG)",
+          "currentVersion": 2
+        },
+        "137f8f3c-69fc-4962-ade2-3be486c2afdc": {
+          "title": "Logo C — Stream-deck key (hand-drawn SVG; text needs outlining before use)",
+          "currentVersion": 2
+        }
+      },
+      "note": "Owner picked direction B (bridge). The three option sheets stay on the canvas; the final kit is assets/brand/ (built by assets/brand/build.py); logo and fonts uploaded as Brand Assets.",
+      "updatedAt": "2026-09-27T13:30:04Z",
+      "brandAssets": {
+        "logo": {
+          "assetKey": "assets-brand-logo-icon.svg",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/bca2406a-5118-4388-9e38-b0e37fab0d9f/brand-assets/assets-brand-logo-icon.svg/icon.svg",
+          "sourcePath": "assets/brand/logo/icon.svg"
+        }
+      },
+      "selectedDraftId": "c3cda4f0-4b92-4c7b-a1c2-e74ba68b4873"
+    }
+  }
+}
