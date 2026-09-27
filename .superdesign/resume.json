@@ -95,9 +95,15 @@
           "visualDirection": "same as compact; hand-authored (Superdesign credits ran out)",
           "parentDraftId": "7486d4fd-6eb3-4c04-801a-9ec576e0c831",
           "currentVersion": 1
+        },
+        "78862405-0815-4d57-a89f-1f860e1a8743": {
+          "title": "ALTERNATIVE LOOK (exploration, not approved): wide main window styled like LiveSplit One",
+          "visualDirection": "LiveSplit One brushed-panel chrome + dark data wells, see design-system-livesplit-one.md",
+          "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
+          "currentVersion": 1
         }
       },
-      "updatedAt": "2026-09-27T07:28:56Z",
+      "updatedAt": "2026-09-27T12:17:28Z",
       "referenceIds": [
         "581f4e0b-b7d5-443d-9bed-3cf5ce8ac7fe"
       ]
