@@ -18,7 +18,7 @@ if-addrs = "0.15.0"
 # The upstream runtime, from the livesplit-core repository by git rev: its only
 # crates.io release (0.1.0) is from 2022. Renovate keeps the rev up to date.
 livesplit-auto-splitting = { git = "https://github.com/LiveSplit/livesplit-core", rev = "a065a8d66c2c5151769cc7625f760724b5ea2413" }
-pollster = "0.4.0"
+pollster = "1.0.0"
 rfd = "0.17"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
