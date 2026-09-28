@@ -2436,7 +2436,7 @@ dependencies = [
  "futures-util",
  "if-addrs",
  "livesplit-auto-splitting",
- "pollster 0.4.0",
+ "pollster 1.0.1",
  "rfd",
  "serde",
  "serde_json",
