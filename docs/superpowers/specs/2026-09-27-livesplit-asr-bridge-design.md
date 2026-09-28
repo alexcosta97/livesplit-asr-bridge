@@ -230,7 +230,6 @@ the right.
 ││ How do I connect?              ││                                            │
 ││ ws://192.168.1.20:16834 [Copy] ││                                            │
 ││ ws://100.101.7.3:16834  [Copy] ││                                            │
-││ [?]                            ││                                            │
 │└────────────────────────────────┘│                                            │
 │┌ LAST ACTION ─────────  19:31:01┐│                                            │
 ││ SPLIT                          ││                                            │
@@ -305,9 +304,10 @@ notifications.
   error card explains why.
 - While no timer is connected, the card lists the connection URL for each
   non-loopback IPv4 address of the machine (for example both a LAN address and
-  a VPN address), each with **Copy**, and one `?` that opens the setup steps.
-- Once a timer is connected, the URLs are hidden. The card shows a line
-  pointing to the Connection tab, where the addresses remain, and the `?`.
+  a VPN address), each with **Copy**.
+- Once a timer is connected, the URLs are hidden. In the wide state the card
+  shows "Addresses: Connection tab", pointing to where the addresses remain,
+  with a `?` at the card's right edge that opens the setup steps.
 - The URLs always use the port the server is actually listening on, never a
   port that was edited but not yet applied.
 - When the last timer disconnects, the card goes back to NOT CONNECTED.
@@ -352,7 +352,6 @@ notifications.
 │┌ TIMER ───────────────────────────┐│
 ││ ● CONNECTED                      ││
 ││ 1 timer · LiveSplit One          ││
-││ Addresses: Connection tab [?]    ││
 │└──────────────────────────────────┘│
 │┌ LAST ACTION ───────────  19:31:01┐│
 ││ SPLIT                            ││
@@ -369,12 +368,13 @@ notifications.
   **Reload**, or "No auto splitter loaded" and **Open…**.
 - The error card, Game, Timer and Last action cards keep their order and
   states. While no timer is connected, the Timer card shows the first
-  connection URL with **Copy**, and "How do I connect?".
+  connection URL with **Copy**, and "How do I connect?". Once a timer is
+  connected, the card shows only the status and the timer count.
 - **Show details** widens the window where the window manager allows it.
   Otherwise, for example with a tiling window manager, it swaps the status
   column for the tab view in the same space, with **← Status** to come back.
 - Buttons that open a tab (**Show in log**, **Open Connection**, "How do I
-  connect?", `?`) show the tab view the same way.
+  connect?") show the tab view the same way.
 
 ### 6.4 Settings tab
 
@@ -414,8 +414,11 @@ notifications.
   2. In LiveSplit One, open Settings → Connect to Server and paste it.
   3. When Chrome asks, allow local network access.
 
-  It notes that LiveSplit One must run in a Chrome-based browser. The section
-  can be collapsed while a timer is connected.
+  It notes that LiveSplit One must run in a Chrome-based browser. While a
+  timer is connected the section starts collapsed, with "Show setup steps" to
+  expand it and "Hide setup steps" to collapse it again. With no timer it is
+  always expanded. "How do I connect?", the Timer card's `?` and the first
+  launch open it expanded.
 
 ### 6.6 Log tab
 
@@ -530,7 +533,7 @@ and their exact values are in `.superdesign/design-system.md`.
 | **Empty state** | no auto splitter loaded | Settings tab |
 | **Server section** | port, edited, port in use | Connection tab |
 | **Timer row** | address, tracked state, **PRIMARY** | Connection tab |
-| **How to connect** | expanded or collapsed | Connection tab |
+| **How to connect** | expanded, collapsed, or expanded and collapsible | Connection tab |
 | **Log toolbar** and **Log line** | filter states; line categories, highlighted entry | Log tab |
 | **About row** | a folder with **Open** | Preferences tab |
 | **Game dialog** and **Unsaved dialog** | new file or change; reload, open, change game or close | dialogs |

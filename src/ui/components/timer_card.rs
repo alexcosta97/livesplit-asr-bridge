@@ -1,10 +1,11 @@
 //! Timer card: whether LiveSplit One is connected, and where to connect.
 
-use eframe::egui::{RichText, Sense, Ui, vec2};
+use eframe::egui::{Align, Layout, Link, RichText, Sense, Ui, vec2};
 
 use super::{
     Width,
     address_row::address_row,
+    button::{Button, ButtonSize},
     card::{Edge, card},
     section_label::section_label,
     status_word::{Dot, status_word},
@@ -19,13 +20,21 @@ use crate::{
 
 /// The Timer card: connected with the timer count, not connected with the
 /// addresses to connect to (all of them when wide, the first when compact),
-/// or server stopped. "How do I connect?" and `?` come with #15.
-pub fn timer_card(ui: &mut Ui, state: TimerState, urls: &[(Network, String)], width: Width) {
+/// or server stopped. Not connected, it has "How do I connect?"; connected
+/// and wide, "Addresses: Connection tab" with a `?` at the card's right
+/// edge. Returns whether either was clicked, to open the setup steps.
+pub fn timer_card(
+    ui: &mut Ui,
+    state: TimerState,
+    urls: &[(Network, String)],
+    width: Width,
+) -> bool {
     let edge = matches!(state, TimerState::Connected { .. }).then_some(Edge {
         color: theme::STATUS_OK,
         tint: theme::TINT_OK,
     });
     card(ui, edge, |ui| {
+        let mut steps = false;
         section_label(ui, "Timer");
         ui.add_space(8.0);
         match state {
@@ -35,7 +44,21 @@ pub fn timer_card(ui: &mut Ui, state: TimerState, urls: &[(Network, String)], wi
                 detail(ui, &timer_count(timers));
                 if width == Width::Wide {
                     ui.add_space(12.0);
-                    detail(ui, "Addresses: Connection tab");
+                    // The `?` at the card's right edge, the text centred on it.
+                    ui.allocate_ui_with_layout(
+                        vec2(ui.available_width(), ButtonSize::Xs.height()),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            detail(ui, "Addresses: Connection tab");
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                steps |= ui
+                                    .add(Button::secondary("?").size(ButtonSize::Xs))
+                                    .on_hover_text("How to connect")
+                                    .clicked();
+                            });
+                        },
+                    );
                 }
             }
             TimerState::NotConnected => {
@@ -46,6 +69,12 @@ pub fn timer_card(ui: &mut Ui, state: TimerState, urls: &[(Network, String)], wi
                     theme::STATUS_WAITING,
                     width,
                 );
+                ui.add_space(4.0);
+                steps |= ui
+                    .add(Link::new(
+                        RichText::new("How do I connect?").font(theme::body_semibold(13.0)),
+                    ))
+                    .clicked();
                 ui.add_space(12.0);
                 divider(ui);
                 ui.add_space(12.0);
@@ -75,7 +104,9 @@ pub fn timer_card(ui: &mut Ui, state: TimerState, urls: &[(Network, String)], wi
                 help(ui, "No timer can connect until the server restarts");
             }
         }
-    });
+        steps
+    })
+    .inner
 }
 
 /// A mono detail line, like the timer count.
@@ -100,4 +131,72 @@ fn help(ui: &mut Ui, text: &str) {
 fn divider(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
     ui.painter().rect_filled(rect, 0.0, theme::BORDER);
+}
+
+#[cfg(test)]
+mod tests {
+    use eframe::egui::{CentralPanel, Context, RawInput, accesskit::Role};
+
+    use super::*;
+
+    /// The buttons on the card, and the link, as "button: …" and
+    /// "link: …". egui reports a link to accessibility as a label, so the
+    /// link is found by its text.
+    fn controls(state: TimerState, width: Width) -> Vec<String> {
+        let ctx = Context::default();
+        theme::install(&ctx);
+        ctx.enable_accesskit();
+        let urls = [(Network::Lan, "ws://192.168.1.20:16834".to_owned())];
+        let mut output = ctx.run_ui(RawInput::default(), |ui| {
+            CentralPanel::default().show(ui, |ui| timer_card(ui, state, &urls, width));
+        });
+        // Nothing draws the frame, so its textures are dropped.
+        output.textures_delta.clear();
+        let mut controls: Vec<String> = output
+            .platform_output
+            .accesskit_update
+            .map(|update| update.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(_, node)| {
+                let label = node.label()?;
+                match node.role() {
+                    Role::Button => Some(format!("button: {label}")),
+                    Role::Label if label == "How do I connect?" => Some(format!("link: {label}")),
+                    _ => None,
+                }
+            })
+            .collect();
+        controls.sort();
+        controls
+    }
+
+    #[test]
+    fn not_connected_has_the_link_and_no_question_mark() {
+        for width in [Width::Wide, Width::Compact] {
+            assert_eq!(
+                controls(TimerState::NotConnected, width),
+                ["button: Copy", "link: How do I connect?"],
+                "{width:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn connected_wide_has_only_the_question_mark() {
+        assert_eq!(
+            controls(TimerState::Connected { timers: 1 }, Width::Wide),
+            ["button: ?"]
+        );
+    }
+
+    #[test]
+    fn connected_compact_has_no_controls() {
+        assert!(controls(TimerState::Connected { timers: 1 }, Width::Compact).is_empty());
+    }
+
+    #[test]
+    fn server_stopped_has_nothing_to_connect_to() {
+        assert!(controls(TimerState::ServerStopped, Width::Wide).is_empty());
+    }
 }

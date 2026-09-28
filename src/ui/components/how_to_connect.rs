@@ -1,8 +1,9 @@
 //! How to connect: the setup steps, in the Connection tab.
 
 use eframe::egui::{
-    Align, Align2, Frame, Label, Layout, Margin, RichText, Sense, Stroke, TextFormat, Ui,
-    text::LayoutJob, vec2,
+    Align, Align2, CursorIcon, Frame, Label, Layout, Margin, Response, RichText, Sense, Stroke,
+    TextFormat, TextStyle, TextWrapMode, Ui, WidgetInfo, WidgetText, WidgetType, epaint::TextShape,
+    pos2, text::LayoutJob, vec2,
 };
 
 use super::{Width, address_row::address_row, section_label::section_label};
@@ -14,15 +15,30 @@ const NUMBER_SIZE: f32 = 24.0;
 const ADDRESSES_WIDTH: f32 = 280.0;
 /// The steps' font size.
 const FONT_SIZE: f32 = 14.0;
+/// The width of the chevron after Show setup steps and Hide setup steps.
+const CHEVRON_WIDTH: f32 = 8.0;
+/// The space between that link's text and its chevron.
+const CHEVRON_GAP: f32 = 4.0;
 
 /// How to connect: three numbered steps, the first with every address and
 /// its Copy, and the note that LiveSplit One must run in a Chrome-based
 /// browser. `listening` is whether the server listens, to explain an empty
-/// address list. Collapsing, and opening at these steps, come with #15.
-pub fn how_to_connect(ui: &mut Ui, urls: &[(Network, String)], listening: bool) {
+/// address list. With `expanded`, while a timer is connected, the steps
+/// show only when it is true, and the header has Show setup steps or Hide
+/// setup steps, which toggles it (spec §6.5). Returns the section's
+/// response, to scroll to it.
+pub fn how_to_connect(
+    ui: &mut Ui,
+    urls: &[(Network, String)],
+    listening: bool,
+    expanded: Option<&mut bool>,
+) -> Response {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 16.0;
-        section_label(ui, "How to connect");
+        let shown = header(ui, expanded);
+        if !shown {
+            return;
+        }
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 18.0;
             step(ui, 1, |ui| {
@@ -63,7 +79,84 @@ pub fn how_to_connect(ui: &mut Ui, urls: &[(Network, String)], listening: bool) 
                 );
             });
         });
+    })
+    .response
+}
+
+/// The section label, with Show setup steps or Hide setup steps at the
+/// right when the section can be collapsed. Returns whether the steps are
+/// shown.
+fn header(ui: &mut Ui, expanded: Option<&mut bool>) -> bool {
+    let Some(expanded) = expanded else {
+        section_label(ui, "How to connect");
+        return true;
+    };
+    ui.horizontal(|ui| {
+        section_label(ui, "How to connect");
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if toggle_link(ui, *expanded).clicked() {
+                *expanded = !*expanded;
+            }
+        });
     });
+    *expanded
+}
+
+/// The link that shows or hides the steps: Show setup steps with a down
+/// chevron while they are hidden, Hide setup steps with an up chevron while
+/// they are shown. The chevron is drawn as lines rather than a font glyph,
+/// and is part of the link's click area.
+fn toggle_link(ui: &mut Ui, expanded: bool) -> Response {
+    let text = if expanded {
+        "Hide setup steps"
+    } else {
+        "Show setup steps"
+    };
+    let color = ui.visuals().hyperlink_color;
+    let galley = WidgetText::from(RichText::new(text).font(theme::body(13.0))).into_galley(
+        ui,
+        Some(TextWrapMode::Extend),
+        f32::INFINITY,
+        TextStyle::Body,
+    );
+    let size = vec2(
+        galley.size().x + CHEVRON_GAP + CHEVRON_WIDTH,
+        galley.size().y,
+    );
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Link, ui.is_enabled(), text));
+    if ui.is_rect_visible(rect) {
+        let highlighted = response.hovered() || response.has_focus();
+        let underline = if highlighted {
+            Stroke::new(1.0, color)
+        } else {
+            Stroke::NONE
+        };
+        let text_height = galley.size().y;
+        let painter = ui.painter();
+        painter.add(TextShape::new(rect.min, galley, color).with_underline(underline));
+        // Two lines meeting in a point: down while hidden, up while shown.
+        let left = rect.right() - CHEVRON_WIDTH;
+        let center_y = rect.top() + text_height / 2.0;
+        let half = CHEVRON_WIDTH / 4.0;
+        let (edge_y, tip_y) = if expanded {
+            (center_y + half, center_y - half)
+        } else {
+            (center_y - half, center_y + half)
+        };
+        painter.line(
+            vec![
+                pos2(left, edge_y),
+                pos2(left + CHEVRON_WIDTH / 2.0, tip_y),
+                pos2(left + CHEVRON_WIDTH, edge_y),
+            ],
+            Stroke::new(1.5, color),
+        );
+        if response.hovered() {
+            ui.set_cursor_icon(CursorIcon::PointingHand);
+        }
+    }
+    response
 }
 
 /// A numbered step: the number in a circle, then its content.

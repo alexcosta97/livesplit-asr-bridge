@@ -157,10 +157,11 @@ Every mockup must stay consistent with these rules.
   "How do I connect?" link · SERVER STOPPED (neutral, no addresses) while the server isn't
   listening, e.g. port in use (the error card explains why). The connection URL rows are always in the Timer card in the wide
   state, one row per non-loopback IPv4 address (e.g. `ws://192.168.1.20:16834` LAN and
-  `ws://100.101.7.3:16834` VPN), each with **Copy**, plus one small "?" that opens the setup
-  steps. The URL rows are shown ONLY while NOT CONNECTED (same rule as the compact state); once
-  a timer is connected the card shows just the status, the timer count and the "?" (the
-  addresses stay on the Connection tab). The URLs always use the port the server is actually
+  `ws://100.101.7.3:16834` VPN), each with **Copy**. The URL rows are shown ONLY while NOT
+  CONNECTED (same rule as the compact state); once a timer is connected the wide card shows the
+  status, the timer count and "Addresses: Connection tab" with a small "?" at the right edge that
+  opens the setup steps (the addresses stay on the Connection tab). The compact card shows only
+  the status and the timer count. The URLs always use the port the server is actually
   listening on, never an edited-but-not-applied port. A timer disconnecting is logged; with no
   timers left the card goes back to NOT CONNECTED.
 - **Column overflow:** if the cards still don't fit the window height, the column scrolls
@@ -224,7 +225,9 @@ Every mockup must stay consistent with these rules.
   empty: "No timers connected yet."), "HOW TO CONNECT" (numbered steps: 1 Copy an address
   (with the URL rows + Copy), 2 In LiveSplit One open Settings → Connect to Server and paste it,
   3 When Chrome asks, allow local network access. Note: LiveSplit One must run in a
-  Chrome-based browser).
+  Chrome-based browser). While a timer is connected it starts collapsed, with an orange
+  "Show setup steps ⌄" link at the right of its label; expanded, the link is "Hide setup
+  steps ⌃". With no timer it is always expanded, with no link.
 - **Log:** toolbar: "SHOW" checkboxes Auto splitter / Connection / App & runtime, muted text
   "Errors are always shown.", buttons Copy, Save log…, Clear, Open log folder. Lines in Space
   Mono 12 px: time · category tag · message. An entry reached through **Show in log** is
