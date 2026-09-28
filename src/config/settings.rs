@@ -1,14 +1,16 @@
-//! A game's saved settings and the merge rules of spec §7.2.
+//! A game's saved settings and the rules of spec §7.2.
 //!
 //! A game's file holds one map of setting keys to values, shared by every
-//! auto splitter associated with the game:
+//! auto splitter associated with the game. As in LiveSplit, the running auto
+//! splitter's settings map is the truth:
 //!
-//! - **Loading:** the auto splitter starts with the game's map. It reads the
-//!   values of the keys it publishes as widgets, and the runtime ignores a
-//!   saved value whose type doesn't match the widget. Other keys are
-//!   ignored.
-//! - **Saving:** only the loaded auto splitter's keys are written. Other
-//!   keys are kept unchanged.
+//! - **Loading:** the auto splitter starts with the game's whole map. It
+//!   reads the values of the keys it publishes as widgets, and the runtime
+//!   ignores a saved value whose type doesn't match the widget. It can read
+//!   and store any other key.
+//! - **Saving:** the running auto splitter's whole map is written, so values
+//!   it stored itself are kept, and so are keys it was given but never
+//!   touched, such as another auto splitter's.
 //! - **Revert to defaults:** only the loaded auto splitter's keys change.
 
 use std::sync::Arc;
@@ -46,19 +48,14 @@ impl SettingKey {
     }
 }
 
-/// The game's saved settings after saving `current`, the loaded auto
-/// splitter's settings: its keys take their values from `current` (a key
-/// missing there is removed), and every other saved key is kept.
-pub fn merge_saved(saved: &Table, current: &Table, keys: &[SettingKey]) -> Table {
-    let mut merged = saved.clone();
-    for SettingKey { key, .. } in keys {
-        match current.get(key) {
-            Some(value) => {
-                merged.insert(key.clone(), value.clone());
-            }
-            None => {
-                merged.remove(key);
-            }
+/// The game's saved settings after saving `current`, the running auto
+/// splitter's whole settings map: `current`, plus the saved dates, which
+/// have no runtime value, so the auto splitter never had them to keep.
+pub fn merge_saved(saved: &Table, current: &Table) -> Table {
+    let mut merged = current.clone();
+    for (key, value) in saved {
+        if matches!(value, Value::Datetime(_)) && !merged.contains_key(key) {
+            merged.insert(key.clone(), value.clone());
         }
     }
     merged
@@ -93,7 +90,8 @@ pub fn to_runtime(table: &Table) -> settings::Map {
     map
 }
 
-fn value_to_runtime(value: &Value) -> Option<settings::Value> {
+/// A saved value as a runtime value, if the runtime has one for it.
+pub fn value_to_runtime(value: &Value) -> Option<settings::Value> {
     Some(match value {
         Value::Boolean(value) => settings::Value::Bool(*value),
         Value::Integer(value) => settings::Value::I64(*value),
@@ -113,13 +111,6 @@ fn value_to_runtime(value: &Value) -> Option<settings::Value> {
 
 /// The runtime's settings map as settings to save. Kinds of value the
 /// runtime may add later are left out.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "settings are saved from the draft, not the runtime"
-    )
-)]
 pub fn from_runtime(map: &settings::Map) -> Table {
     map.iter()
         .filter_map(|(key, value)| Some((key.to_owned(), value_from_runtime(value)?)))
@@ -156,35 +147,30 @@ mod tests {
     }
 
     #[test]
-    fn saving_writes_only_the_loaded_auto_splitters_keys() {
+    fn saving_writes_the_whole_map() {
         let saved = table("gym = false\nother_splitter = 3\n");
-        let current = table("gym = true\nnot_published = \"x\"\n");
-        let keys = [key("gym", Some(Value::Boolean(false)))];
+        let current = table("gym = true\nstored = [1, 2]\n[nested]\nx = 1\n");
+        assert_eq!(merge_saved(&saved, &current), current);
+    }
+
+    #[test]
+    fn saving_keeps_saved_dates_the_runtime_never_had() {
+        let saved = table("when = 1979-05-27\nflag = true\n");
+        let current = table("flag = false\n");
         assert_eq!(
-            merge_saved(&saved, &current, &keys),
-            table("gym = true\nother_splitter = 3\n")
+            merge_saved(&saved, &current),
+            table("flag = false\nwhen = 1979-05-27\n")
         );
     }
 
     #[test]
-    fn saving_keeps_keys_the_loaded_auto_splitter_does_not_recognise() {
-        let saved = table("other_splitter = \"keep me\"\n[nested]\nx = 1\n");
-        let current = table("gym = true\n");
-        let keys = [key("gym", None)];
-        let merged = merge_saved(&saved, &current, &keys);
-        assert_eq!(merged["other_splitter"].as_str(), Some("keep me"));
-        assert_eq!(merged["nested"], table("x = 1\n").into());
-        assert_eq!(merged["gym"].as_bool(), Some(true));
-    }
-
-    #[test]
-    fn saving_removes_a_recognised_key_that_has_no_value() {
-        let saved = table("route_file = \"/old.txt\"\nother = 1\n");
-        let keys = [key("route_file", None)];
-        assert_eq!(
-            merge_saved(&saved, &Table::new(), &keys),
-            table("other = 1\n")
-        );
+    fn values_of_every_type_survive_saving_and_loading() {
+        let text = "flag = true\ncount = -3\nratio = 0.5\nname = \"x\"\n\
+                    list = [1, \"two\", [false], { inner = 2.5 }]\n\
+                    [nested]\ninner = false\n[nested.deeper]\nempty = []\n";
+        let saved = table(text);
+        let written = toml::to_string(&from_runtime(&to_runtime(&saved))).unwrap();
+        assert_eq!(table(&written), saved);
     }
 
     #[test]

@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use livesplit_auto_splitting::settings::Widget;
+use livesplit_auto_splitting::settings::{self, Widget};
 
 use super::TimerAction;
 
@@ -52,6 +52,10 @@ pub enum RunnerEvent {
     },
     /// The auto splitter published its settings widgets, or changed them.
     SettingsWidgets(Widgets),
+    /// The running auto splitter's settings map changed: the auto splitter
+    /// stored values itself, or edits were written into it. `epoch` is the
+    /// epoch of the map that changed (see [`super::Runner::settings_epoch`]).
+    SettingsChanged { settings: settings::Map, epoch: u64 },
 }
 
 /// The settings widgets an auto splitter publishes, in order. Two are equal
@@ -110,6 +114,10 @@ impl RunnerEvent {
             Self::TimerAction {
                 action, sent_to, ..
             } => format!("Sent {action} to {sent_to} timers"),
+            Self::SettingsChanged { settings, .. } => match settings.len() {
+                1 => "The settings map holds 1 value".to_owned(),
+                n => format!("The settings map holds {n} values"),
+            },
             Self::SettingsWidgets(widgets) => match widgets.0.len() {
                 1 => "The auto splitter published 1 setting".to_owned(),
                 n => format!("The auto splitter published {n} settings"),
