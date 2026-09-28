@@ -779,10 +779,10 @@ Automated:
   kind of file filter, then stores values of every type itself. Runner tests
   check what it publishes and stores and that saved edits keep its values;
   the file filter rules of section 6.4.1 are unit tested; the Settings tab,
-  Preferences tab and each new component state are tested headless; an end
-  to end test drives the whole app with the real Runner through its window:
-  every kind shows, an edit is saved, and every value survives in the game's
-  file and a reload.
+  Preferences tab and each new component state are tested headless; an
+  integration test runs the whole app with the real Runner and clicks
+  through its window: every kind shows, an edit is saved, and every value
+  survives in the game's file and a reload.
 - **Logging:** daily rotation, 7-day deletion and the size cap, using temporary
   folders only.
 - **End to end:** a small test auto splitter built for the test suite, which

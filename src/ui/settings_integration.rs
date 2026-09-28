@@ -1,7 +1,9 @@
-//! End to end for settings (spec §6.4, §7.2, §12): the whole app, with the
-//! real Runner, loads the test auto splitter that publishes every kind of
-//! widget and stores values of every type itself, and is driven through its
-//! window, drawn headless: the settings show, an edit is saved, and every
+//! Integration tests for settings (spec §6.4, §7.2, §12): the whole app,
+//! with the real Runner, loads the test auto splitter that publishes every
+//! kind of widget and stores values of every type itself. Its window is drawn
+//! headless and clicked through, but loading, reloading and some edits go
+//! through the app's own methods, and the checks read its state, so these
+//! aren't end-to-end tests: the settings show, an edit is saved, and every
 //! value survives in the game's file and a reload.
 
 use std::{

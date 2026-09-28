@@ -10,7 +10,7 @@ mod preferences_tab;
 mod server_status;
 mod settings;
 #[cfg(test)]
-mod settings_end_to_end;
+mod settings_integration;
 mod settings_tab;
 mod status;
 mod theme;
