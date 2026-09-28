@@ -64,7 +64,7 @@
           "title": "W7 Settings saved, all widget kinds",
           "visualDirection": "same as wide",
           "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
-          "currentVersion": 3
+          "currentVersion": 5
         },
         "33f1cb15-1efd-4bb1-97bf-f47f97221901": {
           "title": "W8 Settings tab — no auto splitter",
@@ -76,7 +76,7 @@
           "title": "W9 Preferences tab",
           "visualDirection": "same as wide",
           "parentDraftId": "ebfbea53-a813-409d-b074-06a7bba99e50",
-          "currentVersion": 4
+          "currentVersion": 6
         },
         "5e8cb616-8d00-42cb-8748-4b2649f5e5aa": {
           "title": "C1e Compact — auto splitter crashed",
@@ -118,9 +118,46 @@
           "visualDirection": "built from components (UnsavedDialog trigger prop); hand-authored",
           "parentDraftId": "cb41ce06-5ccb-4fbc-b0e6-2cdece93bd63",
           "currentVersion": 1
+        },
+        "433b6d8d-e33d-4d5b-a8f5-0a3b12ef670c": {
+          "title": "W10 Settings tab — developer mode, settings map",
+          "visualDirection": "built from components; hand-authored",
+          "parentDraftId": "c87d234e-cdd3-4b4e-9683-0988193be8fd",
+          "currentVersion": 1
+        },
+        "cf6c207b-0f3f-4a74-8fe1-a8b8b0cf1382": {
+          "title": "W11 Preferences tab — developer mode on",
+          "visualDirection": "built from components; hand-authored",
+          "parentDraftId": "d9a7b66b-66e6-43bb-af48-f697c07bcc98",
+          "currentVersion": 1
+        },
+        "c03ad5d5-1fa3-4eef-a03a-abad0e93259f": {
+          "title": "S1 Settings — every widget kind (#46 proposal, approved)",
+          "visualDirection": "approval sheet with notes (not a screen; notes and NEW tags are not UI)",
+          "currentVersion": 1
+        },
+        "dd48ba48-460d-44c0-b96f-1e9f8a9cd592": {
+          "title": "S2 Setting text input — states (#46 proposal, option B approved)",
+          "visualDirection": "approval sheet with notes (not a screen; notes and NEW tags are not UI)",
+          "currentVersion": 1
+        },
+        "7e430de0-6954-493b-ade7-566e4c505518": {
+          "title": "S3 Setting file — clear and dialog filters (#46 proposal, approved)",
+          "visualDirection": "approval sheet with notes (not a screen; notes and NEW tags are not UI)",
+          "currentVersion": 1
+        },
+        "64431ae8-d406-48be-9390-81eacaa048e5": {
+          "title": "S4 Stored values — developer mode (#46 proposal, approved)",
+          "visualDirection": "approval sheet with notes (not a screen; notes and NEW tags are not UI)",
+          "currentVersion": 1
+        },
+        "47e76818-d2fa-4c77-819f-b4c7e585d7e1": {
+          "title": "S5 Developer mode — Preferences and Log (#46 proposal, approved)",
+          "visualDirection": "approval sheet with notes (not a screen; notes and NEW tags are not UI)",
+          "currentVersion": 1
         }
       },
-      "updatedAt": "2026-09-27T17:00:00Z",
+      "updatedAt": "2026-09-28T12:00:00Z",
       "referenceIds": [
         "581f4e0b-b7d5-443d-9bed-3cf5ce8ac7fe"
       ],
@@ -206,6 +243,14 @@
         {
           "name": "SettingFile",
           "id": "5b9f3dbe-9a8c-44c5-b720-7d78e4643821"
+        },
+        {
+          "name": "SettingText",
+          "id": "acdbf67e-1b67-4464-af31-dd91639f5300"
+        },
+        {
+          "name": "SettingsMap",
+          "id": "040ec984-0df5-4ee4-ba8f-9f5f67e01d77"
         },
         {
           "name": "EmptyState",

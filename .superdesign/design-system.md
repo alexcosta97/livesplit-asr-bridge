@@ -39,7 +39,7 @@ Jobs to be done:
 
 ## Components
 
-The Superdesign project is the source of truth for the mockups: 27 reusable components, and
+The Superdesign project is the source of truth for the mockups: 29 reusable components, and
 screens built only from them. The repository keeps only pointers: component ids in
 `.superdesign/components/components.json` and screen draft ids in
 `.superdesign/screens/screens.json`. The list of components, variants and states is in the
@@ -120,6 +120,23 @@ for what egui can render.
 - **Disabled**: 40 % opacity.
 - **Checkbox**: 16 px square, 1 px border, orange fill + black check when on.
 - **Dropdown / choice**: `#151517` field, 1 px border, 32 px tall, chevron.
+- **Setting text**: label (Inter 14 px) with info marker, 6 px gap, then a `#151517` field,
+  1 px `#2A2A2E` border (orange `#FF4D00` when focused), 32 px tall, 10 px side padding, at
+  most 480 px wide, Inter 14 px text; an empty field shows the muted hint "Empty". While the
+  text differs from the default, 6 px below: "Default: prologue" in Space Mono 11 px muted and
+  **Use default**, an orange Inter 12 px link, 12 px apart.
+- **Setting file**: label as above, then the path field (Space Mono 12 px, `#151517`, 1 px
+  `#2A2A2E`, 32 px; "No file selected" muted when empty), a 32 × 32 px secondary clear button
+  with a ✕ drawn as two 1.5 px `#A1A1AA` strokes (only while a file is picked, tooltip
+  "Clear"), then **Browse…**, 8 px apart. Under them, 4 px below, the filter names joined with
+  " · " in Space Mono 11 px muted (hidden with no filters).
+- **Settings map** (developer mode): after a 1 px `#2A2A2E` divider, the section label
+  "SETTINGS MAP · 6 VALUES", a DEVELOPER tag (Space Mono 10 px `#A1A1AA`, 1 px `#3A3A40`
+  border, 2 px radius) and **Hide** / **Show** (orange Inter 600 12 px) at the right; the help
+  text in Inter 12 px muted; then 26 px rows, 1 px `#2A2A2E` lines, Space Mono 12 px: key
+  (220 px, indented 16 px per level, a ▸ / ▾ triangle before lists and maps), type (64 px,
+  `#A1A1AA`), value (lists and maps by size, in `#A1A1AA`). A value the auto splitter just
+  changed is tinted `#1A0F0B` with "changed" in orange Space Mono 11 px for 3 s.
 - **Copy button next to a URL**: small secondary button, shows "COPIED ✓" in green for 1.5 s.
 - **Log line**: Space Mono 12 px: time (muted) · category tag (fixed width, coloured text:
   auto splitter = orange, connection = `#7DD3FC`, app & runtime = secondary, ERROR = red)
@@ -214,10 +231,13 @@ Every mockup must stay consistent with these rules.
 - **Settings:** fixed toolbar (Save, Revert to defaults, status text: "● Unsaved changes"
   amber / "✓ Saved" green for a few seconds / nothing). Scrollable list of the splitter's
   widgets in order: headings (level 1 in Space Mono 11 px uppercase, level 2 in Inter 600 13 px
-  secondary, indented 16 px), checkboxes, choices (dropdown), **file selection** (mono path
-  field + **Browse…**), and a tooltip on hover (small #1E1E21 box, Inter 12 px) shown via an
-  "i" in a 14 px outlined circle drawn as a shape (not a font glyph). No splitter loaded: an
-  empty state explaining how to load one, with **Open…**.
+  secondary; each level indents 16 px, at most 3 levels), checkboxes, choices (dropdown),
+  **text inputs** (Setting text, with "Default: … · Use default" while changed), **file
+  selections** (mono path field, ✕ clear, **Browse…**, filter names under it), and a tooltip
+  on hover (small #1E1E21 box, Inter 12 px) shown via an "i" in a 14 px outlined circle drawn
+  as a shape (not a font glyph). Widgets show the running auto splitter's current values,
+  including ones it stored itself. In developer mode the **Settings map** follows the
+  settings. No splitter loaded: an empty state explaining how to load one, with **Open…**.
 - **Connection:** sections separated by headings: "SERVER" (Port field 120 px, default 16834,
   **Restart server** secondary button always enabled; after the port is edited an amber note
   "Restart the server to apply"), "CONNECTED TIMERS" (rows: address `192.168.1.42:53122`,
@@ -233,4 +253,8 @@ Every mockup must stay consistent with these rules.
   Mono 12 px: time · category tag · message. An entry reached through **Show in log** is
   highlighted with a 1 px orange outline and #1E1E21 background.
 - **Preferences:** checkbox "Remember window size and position" (on) with the note "Turn this
-  off with a tiling window manager, so the window manager decides the size."
+  off with a tiling window manager, so the window manager decides the size."; under the
+  section label "Auto splitter development", checkbox "Developer mode" (off) with the note
+  "Shows the auto splitter's settings map in Settings, and its messages in Log. For writing or
+  debugging auto splitters." Turning it on ticks the Log tab's Auto splitter filter; turning
+  it off puts that filter back.

@@ -380,12 +380,29 @@ notifications.
 
 - A fixed toolbar with **Save** and **Revert to defaults**, and a status text.
   Only the settings list below it scrolls.
-- The settings list renders the auto splitter's published widgets in order:
-  headings (with heading levels), checkboxes, choices, file selections (the
-  path with **Browse…**), and any other widget kind the runtime exposes, with
-  their tooltips.
-- Edits are drafts. The running auto splitter keeps using the saved settings
-  until **Save** is pressed, so a stray click mid-run cannot change behaviour.
+- The settings list renders the auto splitter's published widgets in order,
+  each with its tooltip (section 6.4.1 lists every kind):
+  - **Headings** at their level. Each level indents the settings under it by
+    16 px, up to three levels (48 px), so deep trees don't squeeze the
+    fields.
+  - **Checkboxes** and **choices** (a dropdown).
+  - **Text inputs**: a one-line field, at most 480 px wide. While the text
+    differs from the auto splitter's default, "Default: …" and **Use
+    default** show under the field; **Use default** puts the default back as
+    an edit. An empty field shows the hint "Empty": an empty text is a value
+    of its own, not the default.
+  - **File selections**: the path, a clear button (✕, only while a file is
+    picked) and **Browse…**, with the names of the file filters in a muted
+    line under them. **Browse…** opens the OS file dialog with the filters of
+    section 6.4.1, in the current file's folder.
+- Widgets show the running auto splitter's settings map as it is now,
+  including values it stores itself, and follow it when it changes
+  (section 7.2).
+- Edits are drafts. The running auto splitter keeps its current values until
+  **Save** is pressed, so a stray click mid-run cannot change behaviour. Until
+  then an edit shows instead of the map's value, even if the auto splitter
+  stores that key meanwhile. **Save** writes only the edited keys into the
+  map, so the last writer wins, as in LiveSplit.
 - Unsaved changes are visible: "● Unsaved changes" in the toolbar, a `•` on
   the tab label, and **Save** enabled only when there is something to save.
   After saving, "✓ Saved" is shown briefly.
@@ -396,6 +413,54 @@ notifications.
   unsaved-settings dialog (section 6.8).
 - With no auto splitter loaded, the tab explains how to load one, with
   **Open…**.
+- In developer mode (section 6.7), the **settings map** section follows the
+  settings: the running auto splitter's whole map, read only, as it is now.
+  Its label gives the number of values, with a DEVELOPER tag and **Hide** or
+  **Show** at the right. Each row has the key, the type (bool, int, float,
+  string, list, map) and the value; lists and maps show their size and fold
+  open by clicking the key. A value the auto splitter just changed itself is
+  tinted orange, with "changed", for 3 seconds.
+
+#### 6.4.1 What auto splitters can publish
+
+Auto splitters built with the `asr` crate, with SplitScript, or by hand
+publish their settings through the runtime's `user_settings_*` functions.
+The runtime (`livesplit-auto-splitting`, pinned rev `a065a8d`) has five
+widget kinds, and neither `asr` nor SplitScript adds any: both compile their
+settings to these.
+
+| Kind | Published by | Shown as |
+|---|---|---|
+| Title, with a heading level | `user_settings_add_title`; `asr`: a `Title` field with `#[heading_level]`; SplitScript: a quoted block, its nesting depth being the level | a heading |
+| Bool, with a default | `user_settings_add_bool`; `asr`: a `bool` field with `#[default]`; SplitScript: a `true` or `false` default | a checkbox |
+| Choice, with options and a default | `user_settings_add_choice` and `…_choice_option`; `asr`: an enum deriving `Gui`, `#[default]` on a variant; SplitScript: `choice { … }` | a dropdown |
+| File select, with filters | `user_settings_add_file_select`, `…_name_filter` and `…_mime_filter`; `asr`: `FileSelect` with `#[filter(…)]`; SplitScript: `file { … }` | a path with ✕ and **Browse…** |
+| Text input, with a default | `user_settings_add_text_input`; `asr`: `TextInput` with `#[default = "…"]`; SplitScript: a quoted string default | a text field |
+
+- Any widget can have a tooltip (`user_settings_set_tooltip`; doc comments in
+  `asr` and SplitScript). It shows as the info marker.
+- `asr`'s `Pair<T>` only tracks changes inside the auto splitter; it shows as
+  the widget it wraps. SplitScript's `for` families expand into ordinary
+  checkboxes, up to 4096.
+- A file selection's path is stored as a path in the auto splitter's file
+  system (`/mnt/c/…` for `C:\…`) and shown as a path on this machine.
+
+The file dialog gets the filters LiveSplit's own auto splitter component
+builds, so they read the same:
+
+- A **name filter** is named by its description. Without one, it is named
+  after the MIME type of its first extension ("PNG images", "JSON
+  application files"), or else after its extensions ("SAV or BAK files"), or
+  else by its pattern. Only `*.ext` patterns reach the dialog: the file
+  dialog library (`rfd`) takes extensions only, on every OS, and macOS's
+  dialog filters by type anyway. A filter left with none is left out, and so
+  is a pattern with `;` or `|`, as in LiveSplit.
+- A **MIME type filter** gets the MIME type's extensions from `mime_guess`,
+  as LiveSplit does, and a name from the type ("Plain text files", "Images"
+  for `image/*`). `*/*`, a type with no `/` and unknown types are left out.
+- **All files (\*.\*)** comes last, as in LiveSplit, so a file a pattern
+  couldn't describe can still be picked. macOS's dialog has no filter list
+  (it allows every filter's extensions at once), so there it is left out.
 
 ### 6.5 Connection tab
 
@@ -441,6 +506,8 @@ notifications.
 - **Copy** and **Save log…** export the lines currently shown. **Clear**
   empties the in-app view. **Open log folder** opens the on-disk log folder.
 - Filter choices are remembered.
+- Turning developer mode on (section 6.7) ticks **Auto splitter**; turning it
+  off puts that filter back as it was before.
 - The entry reached through **Show in log** is highlighted.
 - The lines of a message after its first, such as the backtrace of a crash,
   are shown muted under it.
@@ -450,6 +517,12 @@ notifications.
 - **Remember window size and position**, on by default, with a note that users
   of tiling window managers may want it off. When off, the app does not set a
   window size or position and leaves it to the window manager.
+- **Developer mode**, under "Auto splitter development", off by default, with
+  the note "Shows the auto splitter's settings map in Settings, and its
+  messages in Log. For writing or debugging auto splitters." It shows the
+  settings map section in the Settings tab (section 6.4) and ticks the Log
+  tab's **Auto splitter** filter (section 6.6). It never makes anything
+  editable, and the running auto splitter behaves the same either way.
 - **About**: the version, and the config folder and log folder, each with
   **Open**.
 
@@ -518,7 +591,7 @@ and their exact values are in `.superdesign/design-system.md`.
 | **Section label** | uppercase mono label | cards, tab sections |
 | **Info marker** and **Tooltip** | the `i` marker and the tooltip it opens | settings |
 | **Address row** | network label (LAN, VPN), URL, **Copy**; wide or compact | Timer card, How to connect |
-| **Checkbox** | checked or not, indented under a level-2 heading, tooltip marker, optional note | settings, log filters, preferences |
+| **Checkbox** | checked or not, indented under a heading, tooltip marker, optional note | settings, log filters, preferences (including Developer mode) |
 | **App header** | wordmark and version; compact with **Show details** or **← Status** | status column |
 | **Error card** | crashed, load failed, port in use; wide or compact | status column |
 | **Auto splitter card** | loaded or nothing loaded | status column (wide) |
@@ -528,8 +601,10 @@ and their exact values are in `.superdesign/design-system.md`.
 | **Last action card** | an action with its two previous ones, not sent, empty; wide or compact | status column |
 | **Tab strip** | active tab, unsaved `•` | tab area |
 | **Settings toolbar** | unsaved, saved, nothing to save | Settings tab |
-| **Setting heading** | level 1 or 2 | Settings tab |
-| **Setting choice** and **Setting file** | a dropdown; a path with **Browse…** | Settings tab |
+| **Setting heading** | level 1 or 2 (runtime level 0, and 1 or deeper), indented up to three levels | Settings tab |
+| **Setting choice** and **Setting file** | a dropdown; a path, or "No file selected", with ✕ (while a file is picked) and **Browse…**, and the filter names under it | Settings tab |
+| **Setting text** | default, focused, emptied (hint "Empty"), longer than the field; "Default: …" with **Use default** while the text differs from the default | Settings tab |
+| **Settings map** | shown or hidden; rows of every value type, lists and maps folded or open, a value just changed | Settings tab, developer mode |
 | **Empty state** | no auto splitter loaded | Settings tab |
 | **Server section** | port, edited, port in use | Connection tab |
 | **Timer row** | address, tracked state, **PRIMARY** | Connection tab |
@@ -548,7 +623,8 @@ for the app:
 ```
 <config folder>/
   app.toml            port, last loaded .wasm, log filters, window preference
-                      and remembered geometry, first-launch flag
+                      and remembered geometry, first-launch flag, developer
+                      mode
   splitters.toml      maps each known .wasm path to a game
   games/
     <game-slug>.toml  display name and saved auto splitter settings for a game
@@ -564,14 +640,38 @@ for the app:
 ### 7.2 Settings merge rules
 
 A game's settings file holds a single map of setting keys to values, shared by
-every auto splitter associated with that game.
+every auto splitter associated with that game. The map can hold booleans,
+integers, floats, strings, lists and maps, nested.
 
-- **Loading:** the auto splitter receives the saved values for the keys it
-  recognises (keys it publishes as widgets). Other keys are ignored.
-- **Saving:** only the loaded auto splitter's keys are written. Keys it does
-  not recognise are kept unchanged.
+As in LiveSplit, the running auto splitter's settings map is the truth, so an
+auto splitter behaves the same through the bridge as in LiveSplit:
+
+- **Loading:** the auto splitter is given the game's whole map. It reads the
+  keys it publishes as widgets, and can read and store any other key.
+- **What the auto splitter stores:** an auto splitter can store values in its
+  map itself (`settings_map_store`, `asr`'s `Map::store`), for its own keys
+  or its widgets'. Widgets follow the change, and the whole map is written to
+  the game's file straight away, at most once a second since some auto
+  splitters store on every tick. LiveSplit only keeps these values when the
+  layout is saved; writing them straight away means nothing is lost.
+- **Saving:** only the edited keys are written into the running auto
+  splitter's map, each replacing the key's value (or removing it, for a
+  cleared file). The map is replaced only if nothing changed it in the
+  meantime, and otherwise the edits are applied again, as LiveSplit does for
+  each edit. Every other value is kept, including values the auto splitter
+  stored and keys it never published, such as another auto splitter's. The
+  whole map is then written to the game's file.
+- **Last writer wins:** an edit saved after the auto splitter stored a key
+  replaces its value, and a value it stores after the edit was saved
+  replaces the edit, as in LiveSplit.
 - **Revert to defaults:** only affects the loaded auto splitter's keys.
 - Keys with the same name in different auto splitters share one value.
+- Changing the game, loading another auto splitter, **Reload** and closing
+  the app first write what the auto splitter stored to its current game's
+  file. A change reported for a map that has since been replaced (another
+  game's, or a previous auto splitter's) is ignored.
+- TOML dates have no runtime value. A date in a game's file is kept when the
+  map is written, but the auto splitter never sees it.
 
 ### 7.3 Game association
 
@@ -590,7 +690,7 @@ every auto splitter associated with that game.
 | Category | Contents | Display |
 |---|---|---|
 | Errors | Load failures, auto splitter crashes, server start failures, connection errors | Always shown, also in the error card (section 6.2) |
-| Auto splitter | Messages printed by the auto splitter | Optional filter |
+| Auto splitter | Messages printed by the auto splitter, and "Stored settings: …" naming the keys it changed in its settings map | Optional filter, ticked by developer mode |
 | Connection | Timers connecting and disconnecting, commands sent, events and responses received, dropped commands | Optional filter |
 | App & runtime | Process attach and detach, tick rate changes, settings saved, server restarts, reloads | Optional filter |
 
@@ -598,6 +698,9 @@ A game time set right after another game time is still sent, but not logged,
 whether it was sent or dropped: only the first of such a run is, so an auto
 splitter setting the game time on every tick doesn't fill the log. Any other
 action ends the run.
+
+A store of the same keys right after another is not logged either, so an
+auto splitter storing a value on every tick logs it once.
 
 The in-app view keeps the most recent 10,000 lines.
 
@@ -669,8 +772,17 @@ Automated:
 - **Protocol:** each timer action produces the correct JSON command; each
   LiveSplit One event and state response updates the tracked state correctly
   (split index, skipped segments, resets, reconnects).
-- **Settings storage:** merge rules in section 7.2; `splitters.toml` lookups
-  for known and new files; slug generation.
+- **Settings storage:** the rules in section 7.2, and values of every type
+  surviving saving and loading; `splitters.toml` lookups for known and new
+  files; slug generation.
+- **Settings:** a test auto splitter publishes every widget kind and every
+  kind of file filter, then stores values of every type itself. Runner tests
+  check what it publishes and stores and that saved edits keep its values;
+  the file filter rules of section 6.4.1 are unit tested; the Settings tab,
+  Preferences tab and each new component state are tested headless; an end
+  to end test drives the whole app with the real Runner through its window:
+  every kind shows, an edit is saved, and every value survives in the game's
+  file and a reload.
 - **Logging:** daily rotation, 7-day deletion and the size cap, using temporary
   folders only.
 - **End to end:** a small test auto splitter built for the test suite, which
