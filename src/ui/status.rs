@@ -126,7 +126,8 @@ impl Status {
             RunnerEvent::AutoSplitterLog(_)
             | RunnerEvent::RuntimeLog { .. }
             | RunnerEvent::TimerAction { .. }
-            | RunnerEvent::SettingsWidgets(_) => {}
+            | RunnerEvent::SettingsWidgets(_)
+            | RunnerEvent::SettingsChanged { .. } => {}
         }
     }
 

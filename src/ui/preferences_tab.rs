@@ -1,5 +1,5 @@
 //! The Preferences tab (spec §6.7): whether the window's size and position
-//! are remembered, and the About section.
+//! are remembered, developer mode, and the About section.
 
 use std::path::Path;
 
@@ -20,15 +20,19 @@ const ROW_GAP: f32 = 16.0;
 pub enum PreferencesAction {
     /// Remember window size and position was ticked or unticked.
     RememberWindowChanged,
+    /// Developer mode was ticked or unticked.
+    DeveloperModeChanged,
     OpenConfigFolder,
     OpenLogFolder,
 }
 
-/// Shows the Preferences tab, with the preference in `remember_window` and
-/// the folders to show in About. Returns what was clicked.
+/// Shows the Preferences tab, with the preferences in `remember_window` and
+/// `developer_mode` and the folders to show in About. Returns what was
+/// clicked.
 pub fn preferences_tab(
     ui: &mut Ui,
     remember_window: &mut bool,
+    developer_mode: &mut bool,
     config_dir: Option<&Path>,
     log_dir: Option<&Path>,
 ) -> Option<PreferencesAction> {
@@ -42,6 +46,17 @@ pub fn preferences_tab(
         );
         if ui.add(checkbox).changed() {
             action = Some(PreferencesAction::RememberWindowChanged);
+        }
+
+        ui.add_space(SECTION_GAP);
+        components::section_label(ui, "Auto splitter development");
+        ui.add_space(LABEL_GAP);
+        let checkbox = Checkbox::new(developer_mode, "Developer mode").note(
+            "Shows the auto splitter's settings map in Settings, and its messages in Log. \
+             For writing or debugging auto splitters.",
+        );
+        if ui.add(checkbox).changed() {
+            action = Some(PreferencesAction::DeveloperModeChanged);
         }
 
         ui.add_space(SECTION_GAP);
@@ -88,6 +103,8 @@ mod tests {
         ctx: Context,
         config_dir: Option<PathBuf>,
         log_dir: Option<PathBuf>,
+        /// The developer mode preference, as the tab leaves it.
+        developer: std::cell::Cell<bool>,
     }
 
     impl Screen {
@@ -99,6 +116,7 @@ mod tests {
                 ctx,
                 config_dir: config_dir.map(PathBuf::from),
                 log_dir: log_dir.map(PathBuf::from),
+                developer: std::cell::Cell::new(false),
             }
         }
 
@@ -110,19 +128,22 @@ mod tests {
             events: Vec<Event>,
         ) -> (Option<PreferencesAction>, Vec<Node>) {
             let input = RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(700.0, 600.0))),
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(700.0, 800.0))),
                 events,
                 ..RawInput::default()
             };
             let mut action = None;
+            let mut developer = self.developer.get();
             let mut output = self.ctx.run_ui(input, |ui| {
                 action = preferences_tab(
                     ui,
                     remember,
+                    &mut developer,
                     self.config_dir.as_deref(),
                     self.log_dir.as_deref(),
                 );
             });
+            self.developer.set(developer);
             // Nothing draws the frame, so its textures are dropped.
             output.textures_delta.clear();
             let nodes = output
@@ -193,6 +214,27 @@ mod tests {
             Some(PreferencesAction::RememberWindowChanged)
         );
         assert!(!remember);
+    }
+
+    const DEVELOPER: &str = "Developer mode";
+
+    #[test]
+    fn developer_mode_shows_unticked_and_ticks_when_clicked() {
+        let screen = Screen::new(Some("/config"), Some("/logs"));
+        let (_, nodes) = screen.frame(&mut true, Vec::new());
+        find_all(&nodes, "AUTO SPLITTER DEVELOPMENT");
+        assert_eq!(find_all(&nodes, DEVELOPER)[0].toggled, Some(false));
+        assert_eq!(
+            screen.click(&mut true, DEVELOPER, 0),
+            Some(PreferencesAction::DeveloperModeChanged)
+        );
+        assert!(screen.developer.get());
+        // Nothing marks it as new: the mockup's tag was a note, not UI.
+        let (_, nodes) = screen.frame(&mut true, Vec::new());
+        assert!(
+            !nodes.iter().any(|node| node.label.contains("NEW")),
+            "{nodes:#?}"
+        );
     }
 
     #[test]

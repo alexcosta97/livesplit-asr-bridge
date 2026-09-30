@@ -9,6 +9,8 @@ mod last_action;
 mod preferences_tab;
 mod server_status;
 mod settings;
+#[cfg(test)]
+mod settings_integration;
 mod settings_tab;
 mod status;
 mod theme;
@@ -72,6 +74,10 @@ const DETAILS_WIDTH: f32 = 800.0;
 /// How long Show details waits for the window to widen before showing the
 /// tab view instead, as with a tiling window manager.
 const WIDEN_WAIT: Duration = Duration::from_millis(500);
+/// The settings map the auto splitter changes itself is written to its
+/// game's file at most this often, since some auto splitters store values
+/// on every tick.
+const SETTINGS_WRITE_EVERY: Duration = Duration::from_secs(1);
 
 /// The window title. It names LiveSplit One, because "LiveSplit" alone usually
 /// means the original Windows LiveSplit, which this app does not control.
@@ -179,6 +185,10 @@ pub struct BridgeApp {
     /// Whether the window's size and position are remembered, as shown in
     /// the Preferences tab.
     remember_window: bool,
+    /// Whether developer mode is on, as shown in the Preferences tab.
+    developer_mode: bool,
+    /// In developer mode, whether the Settings tab shows the settings map.
+    settings_map_shown: bool,
     /// The window's size and position as last seen, saved when the app
     /// closes.
     window: WindowGeometry,
@@ -190,6 +200,14 @@ pub struct BridgeApp {
     dialog: Option<(GameDialog, PathBuf)>,
     /// The loaded auto splitter's settings, and the edits not saved yet.
     settings: SettingsEditor,
+    /// When to write the settings map the auto splitter changed to its
+    /// game's file, if it changed since it was last written.
+    settings_write: Option<Instant>,
+    /// When the settings map was last written.
+    settings_written: Option<Instant>,
+    /// The keys of the latest store logged, so the same store repeated on
+    /// every tick is logged once.
+    stored_keys: Vec<String>,
     /// What the open Unsaved dialog is asking about.
     pending: Option<Pending>,
     /// Closing was asked for and the unsaved settings dealt with.
@@ -251,12 +269,17 @@ impl BridgeApp {
             widening: None,
             config,
             remember_window: app_settings.remember_window(),
+            developer_mode: app_settings.developer_mode(),
+            settings_map_shown: true,
             window: app_settings.window_geometry(),
             app_settings,
             loading: HashMap::new(),
             game: None,
             dialog: None,
             settings: SettingsEditor::default(),
+            settings_write: None,
+            settings_written: None,
+            stored_keys: Vec::new(),
             pending: None,
             closing: false,
             requested: None,
@@ -337,14 +360,19 @@ impl BridgeApp {
             .apply(&event, chrono::Local::now().time(), Instant::now());
         match &event {
             RunnerEvent::Loaded { path, .. } => {
+                // What the previous auto splitter stored belongs to its game.
+                self.write_settings();
                 self.game = self.loading.remove(path);
                 let saved = self.game.as_ref().map(|game| game.settings.clone());
-                self.settings.reset(saved.unwrap_or_default());
+                self.settings
+                    .reset(as_runtime_has_it(&saved.unwrap_or_default()));
+                self.stored_keys.clear();
             }
             RunnerEvent::LoadFailed { path, .. } => {
                 self.loading.remove(path);
             }
             RunnerEvent::Unloaded => {
+                self.write_settings();
                 self.game = None;
                 self.settings.reset(toml::Table::new());
             }
@@ -359,12 +387,71 @@ impl BridgeApp {
                 // Shown in the Settings tab, not worth a message.
                 return;
             }
+            RunnerEvent::SettingsChanged { settings, epoch } => {
+                // A change to an earlier map, another game's or a previous
+                // auto splitter's, is out of date.
+                if *epoch == self.runner.settings_epoch() {
+                    self.settings_changed(config::from_runtime(settings), Instant::now());
+                }
+                return;
+            }
             _ => {}
         }
         let id = self.log(category(&event), event.describe());
         if event.is_error() {
             // The error the card now shows, reached by Show in log.
             self.error_entry = Some(id);
+        }
+    }
+
+    /// The running auto splitter's settings map changed to `live`: widgets
+    /// follow it, the change is logged, and it is written to the game's file
+    /// soon (spec §7.2).
+    fn settings_changed(&mut self, live: toml::Table, now: Instant) {
+        let changed = self.settings.set_live(live, now);
+        if changed.is_empty() {
+            return;
+        }
+        let due = self
+            .settings_written
+            .map_or(now, |written| (written + SETTINGS_WRITE_EVERY).max(now));
+        self.settings_write.get_or_insert(due);
+        // The same store on every tick is logged once (spec §8.1).
+        if changed != self.stored_keys {
+            self.log(Category::AutoSplitter, stored_message(&changed));
+            self.stored_keys = changed;
+        }
+    }
+
+    /// Writes the settings map to the game's file if it is due, or asks to
+    /// be woken when it is.
+    fn write_settings_when_due(&mut self, ctx: &egui::Context, now: Instant) {
+        match self.settings_write {
+            Some(due) if due <= now => self.write_settings(),
+            Some(due) => ctx.request_repaint_after(due - now),
+            None => {}
+        }
+    }
+
+    /// Writes the settings map the auto splitter changed to its game's file
+    /// now, if it changed since it was last written: before another game or
+    /// auto splitter takes over, and when the app closes.
+    fn write_settings(&mut self) {
+        if self.settings_write.take().is_none() {
+            return;
+        }
+        self.settings_written = Some(Instant::now());
+        let (Some(config), Some(game)) = (self.config.clone(), &self.game) else {
+            return;
+        };
+        match Game::save_settings(&config, &game.slug, self.settings.live()) {
+            Ok(game) => self.game = Some(game),
+            Err(error) => {
+                self.log(
+                    Category::Error,
+                    format!("Couldn't save the settings the auto splitter stored: {error}"),
+                );
+            }
         }
     }
 
@@ -426,6 +513,8 @@ impl BridgeApp {
     /// Loads the auto splitter at `path` with its game's settings (spec
     /// §7.3). A file with no game yet asks which game it is for first.
     fn load(&mut self, path: PathBuf) {
+        // The game's file is read next, so it has to be up to date.
+        self.write_settings();
         let Some(config) = self.config() else {
             self.runner.load(path, Default::default());
             return;
@@ -508,6 +597,8 @@ impl BridgeApp {
         match dialog.kind() {
             GameDialogKind::New => self.load_with(path, game),
             GameDialogKind::Change => {
+                // What it stored so far belongs to the previous game.
+                self.write_settings();
                 // The running auto splitter carries on with the new game's
                 // settings.
                 self.runner.set_settings(config::to_runtime(&game.settings));
@@ -515,7 +606,9 @@ impl BridgeApp {
                     Category::App,
                     format!("{} is now for {}", file_name(&path), game.name),
                 );
-                self.settings.reset_keeping_widgets(game.settings.clone());
+                self.settings
+                    .reset_keeping_widgets(as_runtime_has_it(&game.settings));
+                self.stored_keys.clear();
                 self.game = Some(game);
             }
         }
@@ -706,7 +799,14 @@ impl BridgeApp {
     /// The Settings tab, and what it asks for.
     fn settings_tab(&mut self, ui: &mut egui::Ui) {
         let loaded = self.runner.loaded_path().is_some();
-        match settings_tab::settings_tab(ui, &mut self.settings, loaded, Instant::now()) {
+        let settings_map = self.developer_mode.then_some(&mut self.settings_map_shown);
+        match settings_tab::settings_tab(
+            ui,
+            &mut self.settings,
+            loaded,
+            settings_map,
+            Instant::now(),
+        ) {
             Some(SettingsAction::Save) => {
                 self.save_settings();
             }
@@ -723,10 +823,12 @@ impl BridgeApp {
         match preferences_tab::preferences_tab(
             ui,
             &mut self.remember_window,
+            &mut self.developer_mode,
             config_dir.as_deref(),
             log_dir.as_deref(),
         ) {
             Some(PreferencesAction::RememberWindowChanged) => self.save_remember_window(),
+            Some(PreferencesAction::DeveloperModeChanged) => self.save_developer_mode(),
             Some(PreferencesAction::OpenConfigFolder) => {
                 if let Some(dir) = config_dir
                     && let Err(error) = folder::open_folder(&dir)
@@ -750,6 +852,32 @@ impl BridgeApp {
             self.log(
                 Category::Error,
                 format!("Couldn't save the window preference: {error}"),
+            );
+        }
+    }
+
+    /// Saves in `app.toml` whether developer mode is on. Turning it on also
+    /// shows the auto splitter's lines in the Log tab; turning it off puts
+    /// that filter back as it was before (spec §6.7).
+    fn save_developer_mode(&mut self) {
+        if self.developer_mode {
+            self.app_settings
+                .set_auto_splitter_filter_before_developer_mode(self.log_filters.auto_splitter);
+            self.log_filters.auto_splitter = true;
+        } else {
+            self.log_filters.auto_splitter = self
+                .app_settings
+                .auto_splitter_filter_before_developer_mode();
+        }
+        self.app_settings.set_developer_mode(self.developer_mode);
+        self.app_settings.set_log_filters(self.log_filters);
+        let Some(config) = self.config() else {
+            return;
+        };
+        if let Err(error) = self.app_settings.save(&config) {
+            self.log(
+                Category::Error,
+                format!("Couldn't save the developer mode preference: {error}"),
             );
         }
     }
@@ -861,37 +989,40 @@ impl BridgeApp {
         }
     }
 
-    /// Saves the draft in the game's file (spec §7.2) and gives it to the
-    /// running auto splitter. Returns whether it was saved.
+    /// Saves the edits (spec §7.2): writes the settings map with them to the
+    /// game's file, and writes only the edited keys into the running auto
+    /// splitter's map, keeping what it stored itself. Returns whether they
+    /// were saved.
     fn save_settings(&mut self) -> bool {
-        let saved = match (self.config.clone(), &self.game) {
-            (Some(config), Some(game)) => {
-                match Game::save_settings(
-                    &config,
-                    &game.slug,
-                    self.settings.draft(),
-                    self.settings.keys(),
-                ) {
-                    Ok(game) => {
-                        let saved = game.settings.clone();
-                        self.game = Some(game);
-                        saved
-                    }
-                    Err(error) => {
-                        self.log(
-                            Category::Error,
-                            format!("Couldn't save the settings: {error}"),
-                        );
-                        return false;
-                    }
+        let draft = self.settings.draft();
+        // With no configuration folder there is no game file: the settings
+        // last until the app closes.
+        if let (Some(config), Some(game)) = (self.config.clone(), &self.game) {
+            match Game::save_settings(&config, &game.slug, &draft) {
+                Ok(game) => self.game = Some(game),
+                Err(error) => {
+                    self.log(
+                        Category::Error,
+                        format!("Couldn't save the settings: {error}"),
+                    );
+                    return false;
                 }
             }
-            // With no configuration folder there is no game file: the
-            // settings last until the app closes.
-            _ => self.settings.draft().clone(),
-        };
-        self.runner.set_settings(config::to_runtime(&saved));
-        self.settings.saved(saved, Instant::now());
+        }
+        let edits = self
+            .settings
+            .edits()
+            .into_iter()
+            .map(|(key, value)| {
+                let value = value.as_ref().and_then(config::value_to_runtime);
+                (key.as_str().into(), value)
+            })
+            .collect();
+        self.runner.apply_edits(edits);
+        self.settings.saved(Instant::now());
+        // Written with the edits.
+        self.settings_write = None;
+        self.settings_written = Some(Instant::now());
         self.log(Category::App, "Saved the settings".to_owned());
         true
     }
@@ -922,6 +1053,22 @@ impl BridgeApp {
                 let mut dialog = dialog.set_title(&*widget.description);
                 for (name, extensions) in settings::file_filters(filters) {
                     dialog = dialog.add_filter(name, &extensions);
+                }
+                // In the current file's folder, with it selected, as
+                // LiveSplit does.
+                let current = self.settings.value(&widget);
+                let current = current
+                    .as_ref()
+                    .and_then(Value::as_str)
+                    .and_then(|value| wasi_path::to_native(value, false))
+                    .filter(|path| path.is_file());
+                if let Some(path) = current {
+                    if let Some(dir) = path.parent() {
+                        dialog = dialog.set_directory(dir);
+                    }
+                    if let Some(name) = path.file_name() {
+                        dialog = dialog.set_file_name(name.to_string_lossy());
+                    }
                 }
                 Some(dialog)
             }
@@ -1126,6 +1273,25 @@ impl BridgeApp {
     }
 }
 
+/// `settings` as the runtime has them once given to an auto splitter: dates
+/// have no runtime value.
+fn as_runtime_has_it(settings: &toml::Table) -> toml::Table {
+    config::from_runtime(&config::to_runtime(settings))
+}
+
+/// The log line for values the auto splitter stored itself under `keys`.
+fn stored_message(keys: &[String]) -> String {
+    const LISTED: usize = 5;
+    let mut message = format!(
+        "Stored settings: {}",
+        keys[..keys.len().min(LISTED)].join(", ")
+    );
+    if keys.len() > LISTED {
+        message.push_str(&format!(" and {} more", keys.len() - LISTED));
+    }
+    message
+}
+
 /// The log category of a Server event (spec §8.1).
 fn server_category(event: &ServerEvent) -> Category {
     if event.is_error() {
@@ -1170,6 +1336,7 @@ impl eframe::App for BridgeApp {
         self.game_dialog(&ui.ctx().clone());
         self.unsaved_dialog();
         self.refresh_addresses(ui.ctx());
+        self.write_settings_when_due(&ui.ctx().clone(), Instant::now());
         let column = Frame::NONE
             .fill(theme::PANEL)
             .inner_margin(Margin::same(16));
@@ -1210,6 +1377,7 @@ impl eframe::App for BridgeApp {
     }
 
     fn on_exit(&mut self) {
+        self.write_settings();
         self.save_window();
     }
 }
@@ -1911,5 +2079,142 @@ mod tests {
             window_title(),
             format!("LiveSplit One ASR Bridge {VERSION}")
         );
+    }
+
+    /// The runtime's map with `text` in it, reported as changed for the
+    /// settings in force.
+    fn stored(app: &BridgeApp, text: &str) -> RunnerEvent {
+        RunnerEvent::SettingsChanged {
+            settings: config::to_runtime(&text.parse().unwrap()),
+            epoch: app.runner.settings_epoch(),
+        }
+    }
+
+    fn saved_settings_of_gta(app: &BridgeApp) -> toml::Table {
+        Game::load(app.config.as_ref().unwrap(), "gta")
+            .unwrap()
+            .settings
+    }
+
+    /// The messages logged in `category`.
+    fn lines(app: &BridgeApp, category: Category) -> Vec<String> {
+        let all = Filters {
+            auto_splitter: true,
+            connection: true,
+            app: true,
+        };
+        app.logger
+            .view()
+            .shown(all)
+            .filter(|entry| entry.category == category)
+            .map(|entry| entry.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn values_the_auto_splitter_stores_are_written_to_its_games_file() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.settings.discard();
+        app.runner_event(stored(&app, "stored = 7\ngym = true\n"));
+        // Written when due, not at once.
+        let due = app.settings_write.expect("a write is due");
+        app.write_settings_when_due(&app.ctx.clone(), due);
+        assert_eq!(
+            saved_settings_of_gta(&app),
+            "stored = 7\ngym = true\n".parse::<toml::Table>().unwrap()
+        );
+        assert_eq!(
+            lines(&app, Category::AutoSplitter),
+            ["Stored settings: stored, gym"]
+        );
+    }
+
+    #[test]
+    fn stores_on_every_tick_are_written_at_most_once_a_second() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.runner_event(stored(&app, "ticks = 1\n"));
+        app.write_settings();
+        let written = app.settings_written.unwrap();
+        app.runner_event(stored(&app, "ticks = 2\n"));
+        assert!(app.settings_write.unwrap() >= written + SETTINGS_WRITE_EVERY);
+        app.runner_event(stored(&app, "ticks = 3\n"));
+        // Still one line: the same key again isn't logged again.
+        assert_eq!(
+            lines(&app, Category::AutoSplitter),
+            ["Stored settings: ticks"]
+        );
+        app.write_settings();
+        assert_eq!(saved_settings_of_gta(&app)["ticks"].as_integer(), Some(3));
+    }
+
+    #[test]
+    fn a_change_to_an_earlier_map_is_ignored() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        let old = stored(&app, "old = 1\n");
+        // Another game's settings are given to the auto splitter.
+        app.runner.set_settings(Default::default());
+        app.runner_event(old);
+        assert!(app.settings.live().is_empty());
+        assert_eq!(app.settings_write, None);
+    }
+
+    #[test]
+    fn saving_keeps_what_the_auto_splitter_stored() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.runner_event(stored(&app, "stored = 7\n"));
+        assert!(app.save_settings());
+        assert_eq!(
+            saved_settings_of_gta(&app),
+            "stored = 7\ngym = true\n".parse::<toml::Table>().unwrap()
+        );
+        // The file has it all, so nothing is left to write.
+        assert_eq!(app.settings_write, None);
+    }
+
+    #[test]
+    fn values_stored_for_one_game_are_written_before_the_game_changes() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.settings.discard();
+        app.runner_event(stored(&app, "stored = 7\n"));
+        // Loading reads the game's file, so it is written first.
+        app.load(PathBuf::from("/unknown.wasm"));
+        assert_eq!(saved_settings_of_gta(&app)["stored"].as_integer(), Some(7));
+    }
+
+    #[test]
+    fn developer_mode_shows_the_auto_splitters_lines_until_turned_off() {
+        let (_dir, mut app) = app_with_lines();
+        assert!(!app.log_filters.auto_splitter);
+        app.developer_mode = true;
+        app.save_developer_mode();
+        assert!(app.log_filters.auto_splitter);
+        let saved = saved_settings(&app);
+        assert!(saved.developer_mode());
+        assert!(saved.log_filters().auto_splitter);
+
+        app.developer_mode = false;
+        app.save_developer_mode();
+        assert!(!app.log_filters.auto_splitter);
+        assert!(!saved_settings(&app).developer_mode());
+    }
+
+    #[test]
+    fn developer_mode_leaves_a_ticked_filter_ticked_when_turned_off() {
+        let (_dir, mut app) = app_with_lines();
+        app.log_filters.auto_splitter = true;
+        app.developer_mode = true;
+        app.save_developer_mode();
+        app.developer_mode = false;
+        app.save_developer_mode();
+        assert!(app.log_filters.auto_splitter);
+    }
+
+    #[test]
+    fn developer_mode_is_remembered() {
+        let (dir, mut app) = app_with_lines();
+        app.developer_mode = true;
+        app.save_developer_mode();
+        let config = Config::at(dir.path().join("config"));
+        assert!(test_app(config).developer_mode);
     }
 }

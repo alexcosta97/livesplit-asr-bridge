@@ -13,7 +13,7 @@ use std::fs;
 use serde::{Deserialize, Serialize};
 use toml::Table;
 
-use super::{Config, SettingKey, Splitters, merge_saved, read_if_exists, slug, write_replacing};
+use super::{Config, Splitters, merge_saved, read_if_exists, slug, write_replacing};
 
 /// A game and its saved settings.
 #[derive(Debug, Clone, PartialEq)]
@@ -85,18 +85,12 @@ impl Game {
         Ok(game)
     }
 
-    /// Saves `current`, the loaded auto splitter's settings, with the merge
-    /// rules of spec §7.2: only the keys in `keys` are written, and other
-    /// saved keys are kept. The file is read again first, so the saved
-    /// settings are the latest.
-    pub fn save_settings(
-        config: &Config,
-        slug: &str,
-        current: &Table,
-        keys: &[SettingKey],
-    ) -> Result<Self, String> {
+    /// Saves `current`, the running auto splitter's whole settings map, with
+    /// the rules of spec §7.2. The file is read again first, so its name and
+    /// dates are the latest.
+    pub fn save_settings(config: &Config, slug: &str, current: &Table) -> Result<Self, String> {
         let mut game = Self::load(config, slug)?;
-        game.settings = merge_saved(&game.settings, current, keys);
+        game.settings = merge_saved(&game.settings, current);
         game.write(config)?;
         Ok(game)
     }
@@ -195,30 +189,17 @@ mod tests {
     }
 
     #[test]
-    fn saving_settings_keeps_keys_the_auto_splitter_does_not_recognise() {
+    fn saving_settings_writes_the_whole_map_and_keeps_the_name() {
         let (_dir, config) = config();
         let game = Game::create(&config, "GTA").unwrap();
-        let mut earlier = Table::new();
-        earlier.insert("other_splitter".to_owned(), Value::Integer(3));
-        earlier.insert("gym".to_owned(), Value::Boolean(false));
-        let keys_of_other = [SettingKey {
-            key: "other_splitter".to_owned(),
-            default: None,
-        }];
-        Game::save_settings(&config, &game.slug, &earlier, &keys_of_other).unwrap();
-
         let mut current = Table::new();
+        current.insert("other_splitter".to_owned(), Value::Integer(3));
         current.insert("gym".to_owned(), Value::Boolean(true));
-        let keys = [SettingKey {
-            key: "gym".to_owned(),
-            default: Some(Value::Boolean(false)),
-        }];
-        Game::save_settings(&config, &game.slug, &current, &keys).unwrap();
+        Game::save_settings(&config, &game.slug, &current).unwrap();
 
         let saved = Game::load(&config, &game.slug).unwrap();
         assert_eq!(saved.name, "GTA");
-        assert_eq!(saved.settings["other_splitter"].as_integer(), Some(3));
-        assert_eq!(saved.settings["gym"].as_bool(), Some(true));
+        assert_eq!(saved.settings, current);
     }
 
     #[test]

@@ -14,12 +14,28 @@ use super::{RunnerEvent, Widgets, events::EventSink, timer::BridgeTimer};
 
 /// Instructions for the Runner thread.
 pub(super) enum Command {
-    /// Run this auto splitter instead of the current one.
-    Replace(Box<AutoSplitter<BridgeTimer>>),
-    /// Give the running auto splitter these settings.
-    SetSettings(settings::Map),
+    /// Run this auto splitter instead of the current one. It was given
+    /// `settings`, the map of this epoch.
+    Replace {
+        auto_splitter: Box<AutoSplitter<BridgeTimer>>,
+        settings: settings::Map,
+        epoch: u64,
+    },
+    /// Give the running auto splitter these settings, the map of this epoch.
+    SetSettings(settings::Map, u64),
+    /// Write these values into the running auto splitter's settings map,
+    /// removing the keys with `None`.
+    ApplyEdits(Vec<(Arc<str>, Option<settings::Value>)>),
     Unload,
     Shutdown,
+}
+
+impl Command {
+    /// Whether this only changes the running auto splitter's settings, so it
+    /// never interrupts a tick.
+    fn is_settings(&self) -> bool {
+        matches!(self, Self::SetSettings(..) | Self::ApplyEdits(_))
+    }
 }
 
 /// The running auto splitter and what was last reported about it.
@@ -29,6 +45,9 @@ struct Active {
     tick_rate: Duration,
     /// The settings widgets last reported.
     widgets: Arc<Vec<settings::Widget>>,
+    /// The settings map last reported, or given, and its epoch.
+    settings: settings::Map,
+    epoch: u64,
 }
 
 /// The first attached process's name, if a process is attached: `Some(None)`
@@ -36,7 +55,11 @@ struct Active {
 type Attached = Option<Option<String>>;
 
 impl Active {
-    fn new(auto_splitter: Box<AutoSplitter<BridgeTimer>>) -> Self {
+    fn new(
+        auto_splitter: Box<AutoSplitter<BridgeTimer>>,
+        settings: settings::Map,
+        epoch: u64,
+    ) -> Self {
         let tick_rate = auto_splitter.tick_rate();
         let widgets = auto_splitter.settings_widgets();
         Self {
@@ -44,6 +67,21 @@ impl Active {
             attached: None,
             tick_rate,
             widgets,
+            settings,
+            epoch,
+        }
+    }
+
+    /// Reports the settings map if it changed since it was last reported,
+    /// whoever changed it.
+    fn report_settings(&mut self, events: &EventSink) {
+        let settings = self.auto_splitter.settings_map();
+        if !settings.is_unchanged(&self.settings) {
+            self.settings = settings.clone();
+            events.send(RunnerEvent::SettingsChanged {
+                settings,
+                epoch: self.epoch,
+            });
         }
     }
 }
@@ -65,7 +103,7 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
         match received {
             // New settings take effect on the next tick, which stays on
             // schedule.
-            Ok(command @ Command::SetSettings(_)) => {
+            Ok(command) if command.is_settings() => {
                 apply(command, &mut active, &events);
                 continue;
             }
@@ -99,7 +137,7 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
             // interrupting, so an interrupted tick finds it waiting. Settings
             // don't interrupt, so they are skipped: the tick really failed.
             let mut waiting = commands.try_recv();
-            while let Ok(Command::SetSettings(_)) = waiting {
+            while waiting.as_ref().is_ok_and(Command::is_settings) {
                 waiting = commands.try_recv();
             }
             if let Ok(command) = waiting {
@@ -137,6 +175,8 @@ pub(super) fn run(commands: Receiver<Command>, events: EventSink) {
             current.widgets = widgets.clone();
             events.send(RunnerEvent::SettingsWidgets(Widgets(widgets)));
         }
+        // Values the auto splitter stored itself.
+        current.report_settings(&events);
         let tick_rate = current.auto_splitter.tick_rate();
         if tick_rate != current.tick_rate {
             current.tick_rate = tick_rate;
@@ -152,8 +192,12 @@ fn apply(command: Command, active: &mut Option<Active>, events: &EventSink) -> F
         .as_ref()
         .is_some_and(|current| current.attached.is_some());
     let flow = match command {
-        Command::Replace(auto_splitter) => {
-            let replacement = Active::new(auto_splitter);
+        Command::Replace {
+            auto_splitter,
+            settings,
+            epoch,
+        } => {
+            let replacement = Active::new(auto_splitter, settings, epoch);
             // Widgets published while starting up; most auto splitters
             // publish theirs on the first tick instead.
             if !replacement.widgets.is_empty() {
@@ -164,11 +208,21 @@ fn apply(command: Command, active: &mut Option<Active>, events: &EventSink) -> F
             *active = Some(replacement);
             Flow::Continue
         }
-        Command::SetSettings(settings) => {
+        Command::SetSettings(settings, epoch) => {
             if let Some(current) = active {
-                current.auto_splitter.set_settings_map(settings);
+                current.auto_splitter.set_settings_map(settings.clone());
+                // The new map is known already, so it isn't reported.
+                current.settings = settings;
+                current.epoch = epoch;
             }
             // The same auto splitter keeps running, still attached.
+            return Flow::Continue;
+        }
+        Command::ApplyEdits(edits) => {
+            if let Some(current) = active {
+                apply_edits(&current.auto_splitter, &edits);
+                current.report_settings(events);
+            }
             return Flow::Continue;
         }
         Command::Unload => {
@@ -184,6 +238,30 @@ fn apply(command: Command, active: &mut Option<Active>, events: &EventSink) -> F
         events.send(RunnerEvent::GameDetached);
     }
     flow
+}
+
+/// Writes `edits` into the auto splitter's settings map, keeping every other
+/// value. The map is replaced only if nothing changed it in the meantime,
+/// trying again otherwise, as LiveSplit does for each edit.
+fn apply_edits(
+    auto_splitter: &AutoSplitter<BridgeTimer>,
+    edits: &[(Arc<str>, Option<settings::Value>)],
+) {
+    loop {
+        let old = auto_splitter.settings_map();
+        let mut new = old.clone();
+        for (key, value) in edits {
+            match value {
+                Some(value) => new.insert(key.clone(), value.clone()),
+                None => {
+                    new.remove(key);
+                }
+            }
+        }
+        if auto_splitter.set_settings_map_if_unchanged(&old, new) {
+            return;
+        }
+    }
 }
 
 /// When to tick next: one tick rate after the previous tick, or now if that

@@ -9,6 +9,10 @@
 //! connection = false
 //! app = false
 //!
+//! [developer]
+//! enabled = true
+//! auto_splitter_filter = false
+//!
 //! [window]
 //! remember = true
 //! width = 800.0
@@ -36,6 +40,9 @@ const AUTO_SPLITTER: &str = "auto_splitter";
 const CONNECTION: &str = "connection";
 const APP: &str = "app";
 const WINDOW: &str = "window";
+const DEVELOPER: &str = "developer";
+const ENABLED: &str = "enabled";
+const AUTO_SPLITTER_FILTER: &str = "auto_splitter_filter";
 const REMEMBER: &str = "remember";
 const WIDTH: &str = "width";
 const HEIGHT: &str = "height";
@@ -181,22 +188,60 @@ impl AppSettings {
         }
     }
 
+    /// Whether developer mode is on (spec §6.7): off unless it is saved as
+    /// on.
+    pub fn developer_mode(&self) -> bool {
+        self.developer()
+            .and_then(|developer| developer.get(ENABLED))
+            .and_then(Value::as_bool)
+            == Some(true)
+    }
+
+    /// Sets whether developer mode is on.
+    pub fn set_developer_mode(&mut self, enabled: bool) {
+        self.table_mut(DEVELOPER)
+            .insert(ENABLED.to_owned(), Value::Boolean(enabled));
+    }
+
+    /// Whether the Log tab showed the auto splitter's lines before developer
+    /// mode was turned on, to put the filter back when it is turned off. Off
+    /// if it isn't saved.
+    pub fn auto_splitter_filter_before_developer_mode(&self) -> bool {
+        self.developer()
+            .and_then(|developer| developer.get(AUTO_SPLITTER_FILTER))
+            .and_then(Value::as_bool)
+            == Some(true)
+    }
+
+    /// Sets what the Log tab's auto splitter filter was before developer
+    /// mode was turned on.
+    pub fn set_auto_splitter_filter_before_developer_mode(&mut self, shown: bool) {
+        self.table_mut(DEVELOPER)
+            .insert(AUTO_SPLITTER_FILTER.to_owned(), Value::Boolean(shown));
+    }
+
     fn window(&self) -> Option<&Table> {
         self.table.get(WINDOW).and_then(Value::as_table)
     }
 
-    /// The `[window]` table, replacing a `window` key that isn't one.
+    fn developer(&self) -> Option<&Table> {
+        self.table.get(DEVELOPER).and_then(Value::as_table)
+    }
+
     fn window_mut(&mut self) -> &mut Table {
-        let window = self
+        self.table_mut(WINDOW)
+    }
+
+    /// The table under `key`, replacing a value there that isn't a table.
+    fn table_mut(&mut self, key: &str) -> &mut Table {
+        let table = self
             .table
-            .entry(WINDOW)
+            .entry(key)
             .or_insert_with(|| Value::Table(Table::new()));
-        if !window.is_table() {
-            *window = Value::Table(Table::new());
+        if !table.is_table() {
+            *table = Value::Table(Table::new());
         }
-        window
-            .as_table_mut()
-            .expect("the window key was made a table")
+        table.as_table_mut().expect("the key was made a table")
     }
 }
 
@@ -414,5 +459,35 @@ mod tests {
         fs::write(config.dir().join("app.toml"), "port = ").unwrap();
         let error = AppSettings::load(&config).unwrap_err();
         assert!(error.contains("app.toml"), "{error}");
+    }
+
+    #[test]
+    fn developer_mode_is_off_until_turned_on_and_is_remembered() {
+        let (_dir, config) = config();
+        let mut settings = AppSettings::load(&config).unwrap();
+        assert!(!settings.developer_mode());
+        assert!(!settings.auto_splitter_filter_before_developer_mode());
+
+        settings.set_developer_mode(true);
+        settings.set_auto_splitter_filter_before_developer_mode(true);
+        settings.save(&config).unwrap();
+        let saved = AppSettings::load(&config).unwrap();
+        assert!(saved.developer_mode());
+        assert!(saved.auto_splitter_filter_before_developer_mode());
+        assert_eq!(
+            fs::read_to_string(config.app_file()).unwrap(),
+            "[developer]\nenabled = true\nauto_splitter_filter = true\n"
+        );
+    }
+
+    #[test]
+    fn a_developer_key_that_is_not_a_table_is_replaced() {
+        let (_dir, config) = config();
+        fs::create_dir_all(config.dir()).unwrap();
+        fs::write(config.app_file(), "developer = 1\n").unwrap();
+        let mut settings = AppSettings::load(&config).unwrap();
+        assert!(!settings.developer_mode());
+        settings.set_developer_mode(true);
+        assert!(settings.developer_mode());
     }
 }

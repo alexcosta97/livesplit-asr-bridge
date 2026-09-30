@@ -6,7 +6,12 @@
 //! actions, the game being attached) is reported as a [`RunnerEvent`].
 //!
 //! Each auto splitter starts with the settings it is given, which are the
-//! saved settings of its game (spec §7.2).
+//! saved settings of its game (spec §7.2). The runtime's settings map is the
+//! truth from then on: edits are written into it key by key, and every change
+//! to it, including values the auto splitter stores itself, is reported with
+//! the epoch of the map it belongs to, so a report about an earlier map (a
+//! previous auto splitter, or the previous game's settings) can be told
+//! apart.
 //!
 //! A hung auto splitter never blocks the caller: loading compiles on a
 //! background thread, and reload, unload and dropping the [`Runner`]
@@ -62,6 +67,9 @@ struct Control {
     /// Counts load and unload requests, so a slow load that finishes after a
     /// newer request is discarded.
     latest_request: u64,
+    /// Counts the settings maps given to auto splitters, by loading one or
+    /// by [`Runner::set_settings`]: the epoch of the map in force.
+    settings_epoch: u64,
     shut_down: bool,
 }
 
@@ -138,10 +146,32 @@ impl Runner {
         }
     }
 
-    /// Gives the running auto splitter new settings, between two ticks. An
-    /// auto splitter still loading keeps the settings it was loaded with.
+    /// Gives the running auto splitter new settings, between two ticks, for
+    /// example another game's. An auto splitter still loading keeps the
+    /// settings it was loaded with. Changes reported about the replaced map
+    /// keep its epoch.
     pub fn set_settings(&self, settings: settings::Map) {
-        let _ = self.shared.commands.send(Command::SetSettings(settings));
+        let mut control = self.shared.control();
+        control.settings_epoch += 1;
+        let epoch = control.settings_epoch;
+        let _ = self
+            .shared
+            .commands
+            .send(Command::SetSettings(settings, epoch));
+    }
+
+    /// Writes `edits` into the running auto splitter's settings map, between
+    /// two ticks: each key gets its new value, or is removed with `None`.
+    /// Every other value in the map, including ones the auto splitter stored
+    /// itself, is kept, as LiveSplit does.
+    pub fn apply_edits(&self, edits: Vec<(Arc<str>, Option<settings::Value>)>) {
+        let _ = self.shared.commands.send(Command::ApplyEdits(edits));
+    }
+
+    /// The epoch of the settings map in force: reports of changes to an
+    /// earlier map carry an earlier epoch.
+    pub fn settings_epoch(&self) -> u64 {
+        self.shared.control().settings_epoch
     }
 
     /// Stops and unloads the running auto splitter, interrupting it if it
@@ -195,6 +225,8 @@ impl Shared {
     /// Runs on a loader thread: compiles the auto splitter, then hands it to
     /// the Runner thread unless a newer request arrived in the meantime.
     fn finish_load(&self, path: PathBuf, settings: settings::Map, request: u64) {
+        // What the auto splitter was given, to tell when its map changes.
+        let given = settings.clone();
         let result = self.instantiate(&path, settings);
 
         let mut control = self.control();
@@ -210,11 +242,13 @@ impl Shared {
                     path: path.clone(),
                     tick_rate: auto_splitter.tick_rate(),
                 });
-                if self
-                    .commands
-                    .send(Command::Replace(Box::new(auto_splitter)))
-                    .is_err()
-                {
+                control.settings_epoch += 1;
+                let replace = Command::Replace {
+                    auto_splitter: Box::new(auto_splitter),
+                    settings: given,
+                    epoch: control.settings_epoch,
+                };
+                if self.commands.send(replace).is_err() {
                     return;
                 }
                 // Sent first, so the Runner thread finds the replacement

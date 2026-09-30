@@ -18,7 +18,11 @@ streaming PC showing the timer.
 ## What it will do
 
 - Load any local `.wasm` auto splitter, for any game.
-- Show the auto splitter's settings, saved per game.
+- Show every kind of setting an auto splitter can have (built with the `asr`
+  crate, SplitScript or by hand), saved per game, including values the auto
+  splitter stores itself, as LiveSplit does.
+- A developer mode that shows the auto splitter's whole settings map and its
+  log messages, for writing and debugging auto splitters.
 - Show the address to paste into LiveSplit One's **Connect to Server**.
 - Forward every timer action the auto splitter takes, including game time and
   load removal.

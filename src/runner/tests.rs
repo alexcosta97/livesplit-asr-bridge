@@ -25,6 +25,7 @@ const TRAP: &str = include_str!("test_auto_splitters/trap.wat");
 const ATTACH: &str = include_str!("test_auto_splitters/attach.wat");
 const SETTING: &str = include_str!("test_auto_splitters/setting.wat");
 const WIDGETS: &str = include_str!("test_auto_splitters/widgets.wat");
+const EVERY_KIND: &str = include_str!("test_auto_splitters/every_kind.wat");
 
 /// Long enough for a slow CI machine to compile an auto splitter.
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -666,4 +667,136 @@ fn reports_every_kind_of_widget_in_order_with_its_tooltip() {
         widgets.0[1].tooltip.as_deref(),
         Some("Split when the mission is passed")
     );
+}
+
+/// The settings map an event reports, if it reports one.
+fn changed_settings(event: &RunnerEvent) -> Option<(&Map, u64)> {
+    match event {
+        RunnerEvent::SettingsChanged { settings, epoch } => Some((settings, *epoch)),
+        _ => None,
+    }
+}
+
+#[test]
+fn reports_every_filter_of_a_file_selection_in_order() {
+    use livesplit_auto_splitting::settings::{FileFilter, WidgetKind};
+
+    let harness = Harness::new();
+    let path = harness.write("every_kind.wasm", EVERY_KIND);
+    harness.load(&path);
+    let events = harness.wait_for(|event| matches!(event, RunnerEvent::SettingsWidgets(_)));
+    let Some(RunnerEvent::SettingsWidgets(widgets)) = events.last() else {
+        unreachable!()
+    };
+    let route = widgets.0.iter().find(|widget| &*widget.key == "route");
+    let Some(WidgetKind::FileSelect { filters }) = route.map(|widget| &widget.kind) else {
+        panic!("no file selection in {widgets:?}");
+    };
+    let name = |description: Option<&str>, pattern: &str| FileFilter::Name {
+        description: description.map(Into::into),
+        pattern: pattern.into(),
+    };
+    assert!(
+        **filters
+            == [
+                name(Some("Images"), "*.png *.jpg"),
+                name(None, "*.json"),
+                name(Some("Rust"), "*.rs Cargo.*"),
+                FileFilter::MimeType("image/*".into()),
+                FileFilter::MimeType("text/plain".into()),
+            ]
+    );
+    let levels: Vec<_> = widgets
+        .0
+        .iter()
+        .filter_map(|widget| match widget.kind {
+            WidgetKind::Title { heading_level } => Some(heading_level),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(levels, [0, 1, 2, 3]);
+}
+
+#[test]
+fn reports_the_values_the_auto_splitter_stores_itself() {
+    let harness = Harness::new();
+    let path = harness.write("every_kind.wasm", EVERY_KIND);
+    let mut given = Map::new();
+    given.insert("other_splitter".into(), Value::I64(3));
+    harness.runner.load(path, given);
+    let events = harness.wait_for(|event| changed_settings(event).is_some());
+    let (settings, epoch) = changed_settings(events.last().unwrap()).unwrap();
+    assert_eq!(epoch, harness.runner.settings_epoch());
+    // What it was given is kept, with what it stored.
+    assert_eq!(settings.get("other_splitter"), Some(&Value::I64(3)));
+    assert_eq!(settings.get("best_route_version"), Some(&Value::I64(7)));
+    assert_eq!(settings.get("igt_offset"), Some(&Value::F64(1.25)));
+    assert_eq!(
+        settings
+            .get("level")
+            .and_then(Value::as_string)
+            .map(|s| &**s),
+        Some("chapter_2")
+    );
+    let Some(Value::List(list)) = settings.get("completed_missions") else {
+        panic!("no list in {settings:?}");
+    };
+    assert_eq!(list.len(), 2);
+    let Some(Value::Map(last_run)) = settings.get("last_run") else {
+        panic!("no map in {settings:?}");
+    };
+    assert_eq!(last_run.get("splits"), Some(&Value::I64(42)));
+
+    // Reported once, not on every tick.
+    let later = harness.collect_for(Duration::from_millis(100));
+    assert!(
+        !later.iter().any(|event| changed_settings(event).is_some()),
+        "{later:#?}"
+    );
+}
+
+#[test]
+fn edits_are_written_into_the_map_keeping_what_the_auto_splitter_stored() {
+    let harness = Harness::new();
+    let path = harness.write("every_kind.wasm", EVERY_KIND);
+    harness.load(&path);
+    harness.wait_for(|event| changed_settings(event).is_some());
+
+    harness.runner.apply_edits(vec![
+        ("gym".into(), Some(Value::Bool(false))),
+        ("level".into(), None),
+    ]);
+    let events = harness.wait_for(|event| changed_settings(event).is_some());
+    let (settings, _) = changed_settings(events.last().unwrap()).unwrap();
+    assert_eq!(settings.get("gym"), Some(&Value::Bool(false)));
+    assert_eq!(settings.get("level"), None);
+    assert_eq!(settings.get("best_route_version"), Some(&Value::I64(7)));
+}
+
+#[test]
+fn new_settings_start_a_new_epoch_and_are_not_reported_back() {
+    let harness = Harness::new();
+    let path = harness.write("every_kind.wasm", EVERY_KIND);
+    harness.load(&path);
+    let events = harness.wait_for(|event| changed_settings(event).is_some());
+    let (_, first) = changed_settings(events.last().unwrap()).unwrap();
+
+    harness.runner.set_settings(gym(true));
+    let second = harness.runner.settings_epoch();
+    assert!(second > first);
+    let later = harness.collect_for(Duration::from_millis(100));
+    assert!(
+        !later.iter().any(|event| changed_settings(event).is_some()),
+        "{later:#?}"
+    );
+
+    harness
+        .runner
+        .apply_edits(vec![("gym".into(), Some(Value::Bool(false)))]);
+    let events = harness.wait_for(|event| changed_settings(event).is_some());
+    let (settings, epoch) = changed_settings(events.last().unwrap()).unwrap();
+    assert_eq!(epoch, second);
+    // The new map, not the one the auto splitter stored into.
+    assert_eq!(settings.get("best_route_version"), None);
+    assert_eq!(settings.get("gym"), Some(&Value::Bool(false)));
 }
