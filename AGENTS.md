@@ -44,3 +44,15 @@ push them to the pull request. The build being tested must be what the pull
 request contains, since a pull request that tests well gets merged. If
 anything is left out of the pull request, say so plainly when handing the
 build over.
+
+Git worktrees go outside the repository folder, beside it, for example
+`../livesplit-asr-bridge-wt/<name>`. Don't use agent tools that create
+worktrees inside the repository on their own; create the worktree and give
+the agent its path. Remove a worktree once its work is merged.
+
+## Keeping rules
+
+Rules for agents are recorded in the repository, in this file or in
+`CONTRIBUTING.md`, never only in an agent's local memory. Work runs on several
+devices and in cloud sessions, and only the repository reaches all of them.
+When a new rule comes up, add it here in a pull request.
