@@ -1,6 +1,6 @@
-//! The Settings tab (spec §6.4): a fixed toolbar, and below it the loaded
-//! auto splitter's settings, which scroll, followed in developer mode by its
-//! whole settings map.
+//! The Splitter settings tab (spec §6.4): a fixed toolbar, and below it the
+//! loaded auto splitter's settings, which scroll, followed in developer mode
+//! by its whole settings map.
 
 use std::time::Instant;
 
@@ -21,7 +21,7 @@ const MAX_INDENT_LEVELS: u32 = 3;
 /// The height of a checkbox's row.
 const CHECKBOX_ROW: f32 = 24.0;
 
-/// What the Settings tab asks the app to do.
+/// What the Splitter settings tab asks the app to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingsAction {
     /// Save the draft.
@@ -32,10 +32,10 @@ pub enum SettingsAction {
     Browse(String),
 }
 
-/// The Settings tab. `loaded` is whether an auto splitter is loaded. In
-/// developer mode, `settings_map` is whether the settings map is shown, and
-/// the section to show or hide it follows the settings. Revert to defaults
-/// and edits change the edits directly.
+/// The Splitter settings tab. `loaded` is whether an auto splitter is
+/// loaded. In developer mode, `settings_map` is whether the settings map is
+/// shown, and the section to show or hide it follows the settings. Revert to
+/// defaults and edits change the edits directly.
 pub fn settings_tab(
     ui: &mut Ui,
     editor: &mut SettingsEditor,
@@ -243,7 +243,7 @@ mod tests {
         disabled: bool,
     }
 
-    /// The Settings tab drawn without a window, with the app's fonts.
+    /// The Splitter settings tab drawn without a window, with the app's fonts.
     struct Screen {
         ctx: Context,
         /// In developer mode, whether the settings map is shown.

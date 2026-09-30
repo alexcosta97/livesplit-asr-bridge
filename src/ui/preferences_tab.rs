@@ -52,8 +52,8 @@ pub fn preferences_tab(
         components::section_label(ui, "Auto splitter development");
         ui.add_space(LABEL_GAP);
         let checkbox = Checkbox::new(developer_mode, "Developer mode").note(
-            "Shows the auto splitter's settings map in Settings, and its messages in Log. \
-             For writing or debugging auto splitters.",
+            "Shows the auto splitter's settings map in Splitter settings, and its messages \
+             in Log. For writing or debugging auto splitters.",
         );
         if ui.add(checkbox).changed() {
             action = Some(PreferencesAction::DeveloperModeChanged);
