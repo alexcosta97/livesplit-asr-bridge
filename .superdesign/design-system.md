@@ -30,8 +30,11 @@ Jobs to be done:
   6. **Last action** card: the most recent timer action, big and readable, e.g.
      "SPLIT" + "Los Santos — Gym Moves" + time `19:31:01`. Other actions: START, RESET,
      GAME TIME 1:23:45.600, PAUSE GAME TIME.
-- **Right content area**: a tab strip — SETTINGS, CONNECTION, LOG, PREFERENCES — and the tab
-  content below it. A `•` on the SETTINGS tab label when there are unsaved settings.
+- **Right content area**: a tab strip — SPLITTER SETTINGS, CONNECTION, LOG, PREFERENCES — and
+  the tab content below it. A `•` on the SPLITTER SETTINGS tab label when there are unsaved
+  settings. The smallest window is 960 px wide (half of a 1080p screen): a 300 px status
+  column and a 660 px tab area, which the tab strip fits, as it does the compact tab view
+  down to 480 px.
 - **Compact state**: when the window is narrower than ~640 px, the content area is hidden
   and the status column fills the window. The status cards grow to use the width and the
   status words get bigger. Nothing else changes: same cards, same order. A small
@@ -152,7 +155,7 @@ The Copy confirmation. Nothing else animates.
 
 - Splitter: `gta_sa_de_autosplitter.wasm`, game "GTA San Andreas — Definitive Edition",
   process `SanAndreas.exe`, tick rate 20 Hz.
-- Settings (Settings tab, from the auto splitter): heading "Start & reset"
+- Settings (Splitter settings tab, from the auto splitter): heading "Start & reset"
   (Start on new game ✓, Reset on main menu ✗); heading "Splits" (Split on mission passed ✓,
   Split on 100% stat increase ✗, choice "Collectible splits: Off / Every item / Every 10";
   heading "Collectibles": Tags ✓, Snapshots ✗, Horseshoes ✗, Oysters ✗); heading
@@ -228,8 +231,8 @@ Every mockup must stay consistent with these rules.
   picker.
 
 ### Tabs
-- **Settings:** fixed toolbar (Save, Revert to defaults, status text: "● Unsaved changes"
-  amber / "✓ Saved" green for a few seconds / nothing). Scrollable list of the splitter's
+- **Splitter settings:** fixed toolbar (Save, Revert to defaults, status text: "● Unsaved
+  changes" amber / "✓ Saved" green for a few seconds / nothing). Scrollable list of the splitter's
   widgets in order: headings (level 1 in Space Mono 11 px uppercase, level 2 in Inter 600 13 px
   secondary; each level indents 16 px, at most 3 levels), checkboxes, choices (dropdown),
   **text inputs** (Setting text, with "Default: … · Use default" while changed), **file
@@ -255,6 +258,6 @@ Every mockup must stay consistent with these rules.
 - **Preferences:** checkbox "Remember window size and position" (on) with the note "Turn this
   off with a tiling window manager, so the window manager decides the size."; under the
   section label "Auto splitter development", checkbox "Developer mode" (off) with the note
-  "Shows the auto splitter's settings map in Settings, and its messages in Log. For writing or
-  debugging auto splitters." Turning it on ticks the Log tab's Auto splitter filter; turning
-  it off puts that filter back.
+  "Shows the auto splitter's settings map in Splitter settings, and its messages in Log. For
+  writing or debugging auto splitters." Turning it on ticks the Log tab's Auto splitter filter;
+  turning it off puts that filter back.

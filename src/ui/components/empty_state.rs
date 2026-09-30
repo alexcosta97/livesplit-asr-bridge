@@ -1,4 +1,5 @@
-//! Empty state: what the Settings tab shows with no auto splitter loaded.
+//! Empty state: what the Splitter settings tab shows with no auto splitter
+//! loaded.
 
 use eframe::egui::{Label, RichText, Ui};
 

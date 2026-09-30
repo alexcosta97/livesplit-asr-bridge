@@ -205,46 +205,49 @@ Wide layout: a status column on the left, always visible, and the tab area on
 the right.
 
 ```
-┌──────────────────────────────────┬────────────────────────────────────────────┐
-│ LIVESPLIT ONE ASR BRIDGE         │ SETTINGS •  CONNECTION  LOG  PREFERENCES   │
-│ 0.1.0                            │ ══════════                                 │
-│┌ ERROR ─────────────────────────┐├────────────────────────────────────────────┤
-││ Couldn't load foo.wasm: not a  ││ (tab content)                              │
-││ valid WebAssembly module. The  ││                                            │
-││ previous auto splitter is      ││                                            │
-││ still running.                 ││                                            │
-││ [Show in log] [Dismiss]        ││                                            │
-│└────────────────────────────────┘│                                            │
-│┌ AUTO SPLITTER ─────────────────┐│                                            │
-││ gta_sa_de_autosplitter.wasm    ││                                            │
-││ GTA San Andreas — DE           ││                                            │
-││ [Change]                       ││                                            │
-││ [Open…] [Reload]               ││                                            │
-│└────────────────────────────────┘│                                            │
-│┌ GAME ──────────────────────────┐│                                            │
-││ ● ATTACHED                     ││                                            │
-││ SanAndreas.exe · 20 Hz         ││                                            │
-│└────────────────────────────────┘│                                            │
-│┌ TIMER ─────────────────────────┐│                                            │
-││ ○ NOT CONNECTED                ││                                            │
-││ How do I connect?              ││                                            │
-││ ws://192.168.1.20:16834 [Copy] ││                                            │
-││ ws://100.101.7.3:16834  [Copy] ││                                            │
-│└────────────────────────────────┘│                                            │
-│┌ LAST ACTION ─────────  19:31:01┐│                                            │
-││ SPLIT                          ││                                            │
-││ Los Santos — Gym Moves         ││                                            │
-││ 19:02:44  START                ││                                            │
-││ 19:02:40  RESET                ││                                            │
-│└────────────────────────────────┘│                                            │
-└──────────────────────────────────┴────────────────────────────────────────────┘
+┌──────────────────────────────────┬────────────────────────────────────────────────────┐
+│ LIVESPLIT ONE ASR BRIDGE         │ SPLITTER SETTINGS •  CONNECTION  LOG  PREFERENCES  │
+│ 0.1.0                            │ ═══════════════════                                │
+│┌ ERROR ─────────────────────────┐├────────────────────────────────────────────────────┤
+││ Couldn't load foo.wasm: not a  ││ (tab content)                                      │
+││ valid WebAssembly module. The  ││                                                    │
+││ previous auto splitter is      ││                                                    │
+││ still running.                 ││                                                    │
+││ [Show in log] [Dismiss]        ││                                                    │
+│└────────────────────────────────┘│                                                    │
+│┌ AUTO SPLITTER ─────────────────┐│                                                    │
+││ gta_sa_de_autosplitter.wasm    ││                                                    │
+││ GTA San Andreas — DE           ││                                                    │
+││ [Change]                       ││                                                    │
+││ [Open…] [Reload]               ││                                                    │
+│└────────────────────────────────┘│                                                    │
+│┌ GAME ──────────────────────────┐│                                                    │
+││ ● ATTACHED                     ││                                                    │
+││ SanAndreas.exe · 20 Hz         ││                                                    │
+│└────────────────────────────────┘│                                                    │
+│┌ TIMER ─────────────────────────┐│                                                    │
+││ ○ NOT CONNECTED                ││                                                    │
+││ How do I connect?              ││                                                    │
+││ ws://192.168.1.20:16834 [Copy] ││                                                    │
+││ ws://100.101.7.3:16834  [Copy] ││                                                    │
+│└────────────────────────────────┘│                                                    │
+│┌ LAST ACTION ─────────  19:31:01┐│                                                    │
+││ SPLIT                          ││                                                    │
+││ Los Santos — Gym Moves         ││                                                    │
+││ 19:02:44  START                ││                                                    │
+││ 19:02:40  RESET                ││                                                    │
+│└────────────────────────────────┘│                                                    │
+└──────────────────────────────────┴────────────────────────────────────────────────────┘
 ```
 
 - The status column is about 300 px wide. Its cards are described in
   section 6.2.
-- The tab area holds the Settings, Connection, Log and Preferences tabs
-  (sections 6.4 to 6.7). The active tab is underlined in orange; a `•` on the
-  Settings tab label marks unsaved settings.
+- The tab area holds the Splitter settings, Connection, Log and Preferences
+  tabs (sections 6.4 to 6.7). The active tab is underlined in orange; a `•`
+  on the Splitter settings tab label marks unsaved settings.
+- The smallest window supported is 960 px wide, half of a 1080p screen. The
+  tab strip fits the tab area there, and in the compact state's tab view
+  down to 480 px wide.
 - Below about 640 px of window width the window switches to the compact
   state (section 6.3).
 
@@ -376,7 +379,7 @@ notifications.
 - Buttons that open a tab (**Show in log**, **Open Connection**, "How do I
   connect?") show the tab view the same way.
 
-### 6.4 Settings tab
+### 6.4 Splitter settings tab
 
 - A fixed toolbar with **Save** and **Revert to defaults**, and a status text.
   Only the settings list below it scrolls.
@@ -518,11 +521,12 @@ builds, so they read the same:
   of tiling window managers may want it off. When off, the app does not set a
   window size or position and leaves it to the window manager.
 - **Developer mode**, under "Auto splitter development", off by default, with
-  the note "Shows the auto splitter's settings map in Settings, and its
-  messages in Log. For writing or debugging auto splitters." It shows the
-  settings map section in the Settings tab (section 6.4) and ticks the Log
-  tab's **Auto splitter** filter (section 6.6). It never makes anything
-  editable, and the running auto splitter behaves the same either way.
+  the note "Shows the auto splitter's settings map in Splitter settings, and
+  its messages in Log. For writing or debugging auto splitters." It shows the
+  settings map section in the Splitter settings tab (section 6.4) and ticks
+  the Log tab's **Auto splitter** filter (section 6.6). It never makes
+  anything editable, and the running auto splitter behaves the same either
+  way.
 - **About**: the version, and the config folder and log folder, each with
   **Open**.
 
@@ -600,12 +604,12 @@ and their exact values are in `.superdesign/design-system.md`.
 | **Timer card** | connected, not connected (with addresses), server stopped; wide or compact | status column |
 | **Last action card** | an action with its two previous ones, not sent, empty; wide or compact | status column |
 | **Tab strip** | active tab, unsaved `•` | tab area |
-| **Settings toolbar** | unsaved, saved, nothing to save | Settings tab |
-| **Setting heading** | level 1 or 2 (runtime level 0, and 1 or deeper), indented up to three levels | Settings tab |
-| **Setting choice** and **Setting file** | a dropdown; a path, or "No file selected", with ✕ (while a file is picked) and **Browse…**, and the filter names under it | Settings tab |
-| **Setting text** | default, focused, emptied (hint "Empty"), longer than the field; "Default: …" with **Use default** while the text differs from the default | Settings tab |
-| **Settings map** | shown or hidden; rows of every value type, lists and maps folded or open, a value just changed | Settings tab, developer mode |
-| **Empty state** | no auto splitter loaded | Settings tab |
+| **Settings toolbar** | unsaved, saved, nothing to save | Splitter settings tab |
+| **Setting heading** | level 1 or 2 (runtime level 0, and 1 or deeper), indented up to three levels | Splitter settings tab |
+| **Setting choice** and **Setting file** | a dropdown; a path, or "No file selected", with ✕ (while a file is picked) and **Browse…**, and the filter names under it | Splitter settings tab |
+| **Setting text** | default, focused, emptied (hint "Empty"), longer than the field; "Default: …" with **Use default** while the text differs from the default | Splitter settings tab |
+| **Settings map** | shown or hidden; rows of every value type, lists and maps folded or open, a value just changed | Splitter settings tab, developer mode |
+| **Empty state** | no auto splitter loaded | Splitter settings tab |
 | **Server section** | port, edited, port in use | Connection tab |
 | **Timer row** | address, tracked state, **PRIMARY** | Connection tab |
 | **How to connect** | expanded, collapsed, or expanded and collapsible | Connection tab |
@@ -778,8 +782,9 @@ Automated:
 - **Settings:** a test auto splitter publishes every widget kind and every
   kind of file filter, then stores values of every type itself. Runner tests
   check what it publishes and stores and that saved edits keep its values;
-  the file filter rules of section 6.4.1 are unit tested; the Settings tab,
-  Preferences tab and each new component state are tested headless; an
+  the file filter rules of section 6.4.1 are unit tested; the Splitter
+  settings tab, Preferences tab and each new component state are tested
+  headless, and so is the tab strip fitting the smallest window; an
   integration test runs the whole app with the real Runner and clicks
   through its window: every kind shows, an edit is saved, and every value
   survives in the game's file and a reload.
@@ -929,7 +934,7 @@ First version:
    interrupt on unload.
 6. Game association (`splitters.toml`) and per-game settings storage with the
    merge rules (section 7).
-7. Settings tab: drafts, Save, Revert to defaults, unsaved-changes prompts.
+7. Splitter settings tab: drafts, Save, Revert to defaults, unsaved-changes prompts.
 8. WebSocket server: connection URLs, port setting, Restart server.
 9. Timer bridging: forward every timer action; drop and log commands when no
    timer is connected.

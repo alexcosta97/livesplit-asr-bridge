@@ -1,4 +1,4 @@
-//! The Settings tab's state: the loaded auto splitter's widgets, its
+//! The Splitter settings tab's state: the loaded auto splitter's widgets, its
 //! settings map as the runtime has it, and the edits not saved yet (spec
 //! §6.4, §7.2).
 //!

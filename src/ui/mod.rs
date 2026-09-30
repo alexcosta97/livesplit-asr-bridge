@@ -187,7 +187,8 @@ pub struct BridgeApp {
     remember_window: bool,
     /// Whether developer mode is on, as shown in the Preferences tab.
     developer_mode: bool,
-    /// In developer mode, whether the Settings tab shows the settings map.
+    /// In developer mode, whether the Splitter settings tab shows the settings
+    /// map.
     settings_map_shown: bool,
     /// The window's size and position as last seen, saved when the app
     /// closes.
@@ -384,7 +385,7 @@ impl BridgeApp {
             RunnerEvent::SettingsWidgets(widgets) => {
                 self.settings
                     .set_widgets(widgets.0.iter().map(Setting::from).collect());
-                // Shown in the Settings tab, not worth a message.
+                // Shown in the Splitter settings tab, not worth a message.
                 return;
             }
             RunnerEvent::SettingsChanged { settings, epoch } => {
@@ -769,7 +770,11 @@ impl BridgeApp {
         components::tab_strip(
             ui,
             &[
-                (Tab::Settings, "Settings", self.settings.is_unsaved()),
+                (
+                    Tab::Settings,
+                    "Splitter settings",
+                    self.settings.is_unsaved(),
+                ),
                 (Tab::Connection, "Connection", false),
                 (Tab::Log, "Log", false),
                 (Tab::Preferences, "Preferences", false),
@@ -796,7 +801,7 @@ impl BridgeApp {
             });
     }
 
-    /// The Settings tab, and what it asks for.
+    /// The Splitter settings tab, and what it asks for.
     fn settings_tab(&mut self, ui: &mut egui::Ui) {
         let loaded = self.runner.loaded_path().is_some();
         let settings_map = self.developer_mode.then_some(&mut self.settings_map_shown);
@@ -1841,6 +1846,116 @@ mod tests {
         });
         // Nothing draws the frame, so its textures are dropped.
         output.textures_delta.clear();
+    }
+
+    /// The tab strip's labels, in the order the tabs are drawn.
+    const TAB_LABELS: [&str; 4] = ["Splitter settings", "Connection", "Log", "Preferences"];
+
+    /// Draws one frame of the app in a window `width` × 600 with `events`,
+    /// returning where each tab of the tab strip is, by its label.
+    fn draw_tabs(
+        app: &mut BridgeApp,
+        width: f32,
+        events: Vec<egui::Event>,
+    ) -> Vec<(String, egui::Rect)> {
+        let ctx = app.ctx.clone();
+        theme::install(&ctx);
+        ctx.enable_accesskit();
+        let input = RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 600.0),
+            )),
+            events,
+            ..RawInput::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            let mut frame = eframe::Frame::_new_kittest();
+            eframe::App::ui(app, ui, &mut frame);
+        });
+        // Nothing draws the frame, so its textures are dropped.
+        output.textures_delta.clear();
+        output
+            .platform_output
+            .accesskit_update
+            .map(|update| update.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(_, node)| {
+                let label = node.label()?;
+                if !TAB_LABELS.contains(&label) {
+                    return None;
+                }
+                let bounds = node.bounds()?;
+                let rect = egui::Rect::from_min_max(
+                    egui::pos2(bounds.x0 as f32, bounds.y0 as f32),
+                    egui::pos2(bounds.x1 as f32, bounds.y1 as f32),
+                );
+                Some((label.to_owned(), rect))
+            })
+            .collect()
+    }
+
+    /// Checks every tab is drawn once, fully between `left` and `right`.
+    fn assert_tabs_fit(tabs: &[(String, egui::Rect)], left: f32, right: f32) {
+        for label in TAB_LABELS {
+            let found: Vec<_> = tabs.iter().filter(|(text, _)| text == label).collect();
+            assert_eq!(found.len(), 1, "{label:?} in {tabs:?}");
+            let rect = found[0].1;
+            assert!(
+                rect.left() >= left && rect.right() <= right,
+                "{label:?} at {rect:?} is outside {left}..{right}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_tab_strip_fits_the_smallest_wide_window_with_unsaved_settings() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        assert!(app.settings.is_unsaved());
+        draw_tabs(&mut app, 960.0, Vec::new());
+        let tabs = draw_tabs(&mut app, 960.0, Vec::new());
+        assert!(!app.tab_view);
+        assert_tabs_fit(&tabs, COLUMN_WIDTH, 960.0);
+    }
+
+    #[test]
+    fn the_tab_strip_fits_the_compact_tab_view_with_unsaved_settings() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        assert!(app.settings.is_unsaved());
+        app.open_tab(Tab::Settings, Width::Compact);
+        draw_tabs(&mut app, 480.0, Vec::new());
+        let tabs = draw_tabs(&mut app, 480.0, Vec::new());
+        assert!(app.tab_view);
+        assert_tabs_fit(&tabs, 0.0, 480.0);
+    }
+
+    #[test]
+    fn clicking_splitter_settings_opens_the_tab() {
+        for (width, layout) in [(960.0, Width::Wide), (480.0, Width::Compact)] {
+            let (_dir, mut app) = app_with_unsaved_edit();
+            app.open_tab(Tab::Log, layout);
+            draw_tabs(&mut app, width, Vec::new());
+            let tabs = draw_tabs(&mut app, width, Vec::new());
+            let (_, rect) = tabs
+                .iter()
+                .find(|(label, _)| label == "Splitter settings")
+                .unwrap_or_else(|| panic!("no Splitter settings tab in {tabs:?}"));
+            let position = rect.center();
+            let button = |pressed| egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            draw_tabs(
+                &mut app,
+                width,
+                vec![egui::Event::PointerMoved(position), button(true)],
+            );
+            draw_tabs(&mut app, width, vec![button(false)]);
+            assert_eq!(app.tab, Tab::Settings, "at {width} px");
+        }
     }
 
     #[test]
