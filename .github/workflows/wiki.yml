@@ -1,0 +1,49 @@
+name: Wiki
+
+# Publishes docs/wiki/ to the repository's wiki (spec §15.1). Path-filtered,
+# so like release-scripts.yml it is not a required check.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - docs/wiki/**
+      - scripts/wiki/**
+      - .github/workflows/wiki.yml
+  push:
+    branches: [main]
+    paths:
+      - docs/wiki/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: wiki-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: shellcheck scripts/wiki/*.sh
+      - run: scripts/wiki/test-wiki-scripts.sh
+      - run: scripts/wiki/check.sh docs/wiki
+
+  publish:
+    name: publish wiki
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: wiki
+    steps:
+      - uses: actions/checkout@v7
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/wiki/publish.sh docs/wiki \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" \
+            "$GITHUB_SHA"
