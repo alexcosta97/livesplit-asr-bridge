@@ -23,4 +23,5 @@ Closes #
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`,
       `cargo build --locked` and `cargo test --locked` pass locally.
 - [ ] Changes to the design are reflected in the design spec.
-- [ ] User-facing changes are reflected in the README or documentation.
+- [ ] Changes users can see are documented in `docs/wiki/` (or on Upcoming
+      Changes), and any screenshots to retake are listed.
