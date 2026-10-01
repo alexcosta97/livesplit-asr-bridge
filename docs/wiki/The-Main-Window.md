@@ -7,7 +7,7 @@ The window has two parts. The status column on the left is always visible. It sh
 <!-- screenshot: S1 main-window.png -->
 The main window with an auto splitter loaded, the Game card showing ATTACHED, the Timer card showing CONNECTED and a split in Last action.
 
-Status words are colour-coded: green for working, amber for waiting, red for errors. They're drawn in capitals.
+Status words are colour-coded: green for working, grey for waiting, red for errors. They're drawn in capitals.
 
 The smallest supported window is 960 px wide. Below about 640 px, the window switches to the [compact window](#compact-window).
 
