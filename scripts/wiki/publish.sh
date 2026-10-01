@@ -14,8 +14,11 @@ src=$1 remote=$2 sha=$3
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-if ! git clone -q --depth 1 "$remote" "$tmp" 2>/dev/null; then
+if ! clone_error=$(git clone -q --depth 1 "$remote" "$tmp" 2>&1); then
   echo "The wiki repository doesn't exist yet: create the first wiki page on GitHub, then run this again."
+  echo "If it does exist, git said:"
+  # Keep an access token in the URL out of the log.
+  sed -E 's/x-access-token:[^@]*@/x-access-token:***@/g' <<< "$clone_error"
   exit 1
 fi
 

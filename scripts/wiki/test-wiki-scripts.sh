@@ -129,6 +129,14 @@ else
   fail "publish: missing remote: exit $status, output '$output'"
 fi
 
+status=0
+output=$("$root/scripts/wiki/publish.sh" "$src" "$tmp/x-access-token:SECRET@nope.git" "$sha" 2>&1) || status=$?
+if [[ $status -ne 0 && "$output" != *SECRET* && "$output" == *"git said"* ]]; then
+  pass "publish: a failed clone shows git's error without the token"
+else
+  fail "publish: token test: exit $status, output '$output'"
+fi
+
 # upcoming.sh
 expect_upcoming() { # description, expected output, file
   local description=$1 expected=$2 file=$3 output status=0
