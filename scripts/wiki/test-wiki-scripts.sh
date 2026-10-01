@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests check.sh and publish.sh against temporary directories and a local bare
+# Tests check.sh, publish.sh and upcoming.sh against temporary directories and a local bare
 # repository standing in for the wiki. Needs git and rsync.
 set -euo pipefail
 
@@ -128,6 +128,29 @@ if [[ $status -ne 0 && "$output" == *"create the first wiki page"* ]]; then
 else
   fail "publish: missing remote: exit $status, output '$output'"
 fi
+
+# upcoming.sh
+expect_upcoming() { # description, expected output, file
+  local description=$1 expected=$2 file=$3 output status=0
+  output=$("$root/scripts/wiki/upcoming.sh" "$file" 2>&1) || status=$?
+  if [[ $status -eq 0 && "$output" == "$expected" ]]; then
+    pass "$description"
+  else
+    fail "$description: exit $status, output '$output', expected '$expected'"
+  fi
+}
+
+printf '# Upcoming Changes\n\nNothing yet.\n' > "$tmp/none.md"
+expect_upcoming "upcoming: no entries prints nothing" "" "$tmp/none.md"
+
+printf '# Upcoming Changes\n\n## Connecting LiveSplit One\n\ntext\n\n## Logs and Files\n\ntext\n' > "$tmp/two.md"
+expect_upcoming "upcoming: prints each heading in order" $'Connecting LiveSplit One\nLogs and Files' "$tmp/two.md"
+
+# shellcheck disable=SC2016 # the backticks are literal markdown
+printf '# Upcoming Changes\n\n```\n## Not a heading\n```\n\n## Real\n' > "$tmp/fenced.md"
+expect_upcoming "upcoming: a heading inside a code fence is not counted" "Real" "$tmp/fenced.md"
+
+expect_upcoming "upcoming: a missing file prints nothing" "" "$tmp/absent.md"
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures failure(s)"
