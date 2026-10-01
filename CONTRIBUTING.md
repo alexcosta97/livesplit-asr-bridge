@@ -40,6 +40,27 @@ development environment and the conventions every change follows.
    `scripts/release/test-release-scripts.sh` and `actionlint`. The same tests
    run on pull requests that change release files.
 
+## User documentation
+
+The user documentation is the
+[wiki](https://github.com/alexcosta97/livesplit-asr-bridge/wiki). Its pages
+are written in `docs/wiki/` and published automatically when a pull request
+merges; don't edit the wiki directly, since the next merge replaces it.
+
+- A pull request that changes something users can see updates the
+  documentation in the same pull request.
+- The wiki describes the latest full release. Until the first full release
+  exists, the pages describe `main` and Upcoming Changes is not used.
+  Documentation for a change that isn't released yet goes on
+  `docs/wiki/Upcoming-Changes.md`, under a heading naming the page it
+  belongs on. When a full release is published, an issue is opened to move
+  those entries into their pages.
+- Link pages by name (`[Troubleshooting](Troubleshooting)`) and put images in
+  `docs/wiki/images/`. `scripts/wiki/check.sh` checks links and images, and
+  runs on pull requests that change the wiki.
+- If a screen in a screenshot changes, say in the pull request which
+  screenshots need retaking. The rules for screenshots are in spec §15.4.
+
 ## Commits
 
 ### Conventional Commits

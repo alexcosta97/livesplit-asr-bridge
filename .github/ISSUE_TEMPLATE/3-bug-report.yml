@@ -77,10 +77,7 @@ body:
     attributes:
       label: Logs
       description: |
-        Attach or paste the relevant log. In the app, open the Log tab, tick the relevant categories and use **Save log…**, or attach the day's file from the log folder:
-        - Linux: `~/.local/state/livesplit-asr-bridge/logs/`
-        - macOS: `~/Library/Logs/livesplit-asr-bridge/`
-        - Windows: `%LOCALAPPDATA%\livesplit-asr-bridge\logs\`
+        Attach or paste the relevant log. In the app, open the Log tab, tick the relevant categories and use **Save log…**, or attach the day's file from the log folder. [Logs and Files](https://github.com/alexcosta97/livesplit-asr-bridge/wiki/Logs-and-Files) says where it is.
       render: text
     validations:
       required: false

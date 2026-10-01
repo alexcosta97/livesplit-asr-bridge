@@ -45,6 +45,13 @@ request contains, since a pull request that tests well gets merged. If
 anything is left out of the pull request, say so plainly when handing the
 build over.
 
+Every change users can see is documented in the same branch as the change.
+The user documentation is the wiki, written in `docs/wiki/` (spec §15):
+update the pages it affects, or add an entry to `docs/wiki/Upcoming-Changes.md`
+once a full release exists (§15.3). If a screen in a screenshot changes, say
+in the pull request which screenshots need retaking. A pull request with a
+change users can see and no documentation is not ready for review.
+
 Git worktrees go outside the repository folder, beside it, for example
 `../livesplit-asr-bridge-wt/<name>`. Don't use agent tools that create
 worktrees inside the repository on their own; create the worktree and give
