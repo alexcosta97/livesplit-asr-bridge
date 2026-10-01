@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 220" width="720" height="220" role="img" aria-label="The game PC runs LiveSplit One ASR Bridge and sends timer commands over ws://…:16834 to LiveSplit One in Chrome on the timer PC.">
+  <style>text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}</style>
+  <rect width="720" height="220" fill="#0B0B0C"/>
+  <rect x="24.5" y="40.5" width="230" height="140" rx="4" fill="#151517" stroke="#2A2A2E"/>
+  <circle cx="60" cy="76" r="14" fill="#F5F5F4"/>
+  <text x="84" y="82" font-size="20" font-weight="700" fill="#F5F5F4">Game PC</text>
+  <text x="44" y="126" font-size="14" fill="#F5F5F4">LiveSplit One ASR Bridge</text>
+  <text x="44" y="148" font-size="14" fill="#A1A1AA">runs the auto splitter</text>
+  <rect x="465.5" y="40.5" width="230" height="140" rx="4" fill="#151517" stroke="#2A2A2E"/>
+  <circle cx="501" cy="76" r="14" fill="#FF4D00"/>
+  <text x="525" y="82" font-size="20" font-weight="700" fill="#FF4D00">Timer PC</text>
+  <text x="485" y="126" font-size="14" fill="#FF4D00">LiveSplit One in Chrome</text>
+  <text x="485" y="148" font-size="14" fill="#A1A1AA">shows the timer</text>
+  <line x1="262" y1="110" x2="448" y2="110" stroke="#F5F5F4" stroke-width="4" stroke-linecap="round"/>
+  <path d="M440 98 L458 110 L440 122 Z" fill="#F5F5F4"/>
+  <text x="360" y="92" font-size="14" text-anchor="middle" fill="#F5F5F4">ws://…:16834</text>
+  <text x="360" y="136" font-size="13" text-anchor="middle" fill="#A1A1AA">start, split, reset</text>
+</svg>
