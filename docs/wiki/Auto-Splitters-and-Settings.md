@@ -68,6 +68,8 @@ In **Splitter settings**, a "Settings map" section appears under the settings. I
 
 In **Log**, the **Auto splitter** filter is ticked. See [Logs and Files](Logs-and-Files).
 
+Turning Developer mode off puts the **Auto splitter** filter back as it was.
+
 Developer mode doesn't change how the auto splitter runs.
 
 ## Next

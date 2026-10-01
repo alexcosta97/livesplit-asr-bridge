@@ -53,6 +53,6 @@ The app keeps its settings in one folder:
 - `splitters.toml`: which game each auto splitter file is for.
 - `games/`: one file per game, with its name and the saved settings of its auto splitters.
 
-You can back these files up or copy them to another PC. To start over, close the app and delete the folder. The next launch looks like the first one, and the app asks for your games again.
+You can back these files up. Don't copy them to another PC and expect them to work: `splitters.toml` holds file paths, so on the new PC you would open each auto splitter again from its new location. To start over, close the app and delete the folder. The next launch looks like the first one, and the app asks for your games again.
 
 Updating the app keeps these files. See [Installing](Installing).

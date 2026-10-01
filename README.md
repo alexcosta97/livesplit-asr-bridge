@@ -3,7 +3,7 @@
 Run a LiveSplit auto splitter on the machine your game runs on, and control
 **LiveSplit One** on another machine.
 
-livesplit-asr-bridge loads a `.wasm` auto splitter (made for LiveSplit's Auto
+LiveSplit One ASR Bridge loads a `.wasm` auto splitter (made for LiveSplit's Auto
 Splitting Runtime) and runs it against your game. LiveSplit One connects to the
 bridge with its built-in **Connect to Server** option, and the bridge sends it
 start, split, reset and game time commands as the auto splitter decides. It is
@@ -50,7 +50,7 @@ covers each OS and opening the app the first time.
    ([Installing](https://github.com/alexcosta97/livesplit-asr-bridge/wiki/Installing)).
 2. Click **Open…**, pick your `.wasm` auto splitter and name its game.
 3. Copy an address from the Timer card.
-4. In LiveSplit One, open Connect to Server and paste it.
+4. In LiveSplit One, open **Connect to Server** and paste it.
 5. When Chrome asks, allow local network access.
 
 ## Documentation

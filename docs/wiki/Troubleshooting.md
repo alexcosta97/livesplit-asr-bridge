@@ -16,12 +16,13 @@
 
 ## The Game card stays on WAITING FOR GAME…
 
-**What you see:** The game is running, but the Game card says **WAITING FOR GAME…**.
+**What you see:** The Game card says **WAITING FOR GAME…**.
 
-**Why:** The game isn't the one the auto splitter is for, or the app isn't allowed to read its memory.
+**Why:** The game isn't running, isn't the one the auto splitter is for, or the app isn't allowed to read its memory.
 
 **What to do:**
 
+- Start the game, and check it's really running.
 - Check the loaded file is the auto splitter for your game and version.
 - On Linux, check `ptrace_scope`. See [Platform Notes](Platform-Notes).
 - On macOS, reading a game needs extra permissions. See [Platform Notes](Platform-Notes).
@@ -30,9 +31,9 @@
 
 **What you see:** Actions show under **Last action** with the note "Not sent: no timer connected".
 
-**Why:** The auto splitter works. No LiveSplit One is connected, so the commands were dropped.
+**Why:** No LiveSplit One is connected, so the commands were dropped.
 
-**What to do:** Connect LiveSplit One. See [Connecting LiveSplit One](Connecting-LiveSplit-One).
+**What to do:** Connect LiveSplit One. [The Main Window](The-Main-Window) has the detail, and [Connecting LiveSplit One](Connecting-LiveSplit-One) has the steps.
 
 <!-- screenshot: S9 not-sent.png -->
 The Last action card showing SPLIT with the amber note "Not sent: no timer connected".

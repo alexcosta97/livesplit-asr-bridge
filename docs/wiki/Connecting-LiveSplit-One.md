@@ -17,7 +17,7 @@ The **Connection** tab shows the steps under **How to connect**:
 3. When Chrome asks, allow local network access.
 
 <!-- screenshot: T1 lso-connect-to-server.png -->
-LiveSplit One's Connect to Server dialog with the address pasted in.
+LiveSplit One's **Connect to Server** dialog with the address pasted in.
 
 The first time, Chrome asks whether LiveSplit One may access devices on your local network. Click **Allow**. Without it, the connection can't be made.
 

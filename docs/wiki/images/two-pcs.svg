@@ -8,8 +8,8 @@
   <text x="44" y="148" font-size="14" fill="#A1A1AA">runs the auto splitter</text>
   <rect x="465.5" y="40.5" width="230" height="140" rx="4" fill="#151517" stroke="#2A2A2E"/>
   <circle cx="501" cy="76" r="14" fill="#FF4D00"/>
-  <text x="525" y="82" font-size="20" font-weight="700" fill="#FF4D00">Timer PC</text>
-  <text x="485" y="126" font-size="14" fill="#FF4D00">LiveSplit One in Chrome</text>
+  <text x="525" y="82" font-size="20" font-weight="700" fill="#F5F5F4">Timer PC</text>
+  <text x="485" y="126" font-size="14" fill="#F5F5F4">LiveSplit One in Chrome</text>
   <text x="485" y="148" font-size="14" fill="#A1A1AA">shows the timer</text>
   <line x1="262" y1="110" x2="448" y2="110" stroke="#F5F5F4" stroke-width="4" stroke-linecap="round"/>
   <path d="M440 98 L458 110 L440 122 Z" fill="#F5F5F4"/>

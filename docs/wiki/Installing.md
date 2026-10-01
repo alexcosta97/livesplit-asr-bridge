@@ -19,10 +19,10 @@ Releases marked **Pre-release** are release candidates for testing. The latest f
 
 Releases aren't code-signed yet, so the first launch shows a warning.
 
-**macOS:** unzip the download and open `livesplit-asr-bridge.app`. macOS says it can't verify the developer. Click **Done**, then go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to the message about livesplit-asr-bridge. After that, the app opens normally.
+**macOS:** unzip the download and open `livesplit-asr-bridge.app`. macOS says it can't verify the developer. Click **Done**, then go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to the message about the app. After that, the app opens normally.
 
 <!-- screenshot: T3 macos-open-anyway.png -->
-The Privacy & Security page in macOS System Settings, with the Open Anyway button next to the message about livesplit-asr-bridge.
+The Privacy & Security page in macOS System Settings, with the Open Anyway button next to the message about the app.
 
 **Windows:** if SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**.
 
