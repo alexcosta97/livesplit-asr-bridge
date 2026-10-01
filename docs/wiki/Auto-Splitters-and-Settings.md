@@ -1,5 +1,3 @@
-# Auto Splitters and Settings
-
 ## Getting an auto splitter
 
 LiveSplit One ASR Bridge runs `.wasm` auto splitters, the kind built for LiveSplit's Auto Splitting Runtime. It can't run the older script-based `.asl` files.

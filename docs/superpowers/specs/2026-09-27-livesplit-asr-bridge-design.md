@@ -993,6 +993,25 @@ Upcoming Changes is not used.
   screenshots need retaking. Until a screenshot exists, its page describes
   the screen in text.
 
+| ID | File | Shows |
+|---|---|---|
+| S1 | `main-window.png` | Loaded, attached, connected, last action, Splitter settings tab |
+| S2 | `first-launch.png` | First launch on Connection with the setup steps |
+| S3 | `game-dialog.png` | The "Which game is this auto splitter for?" dialog |
+| S4 | `splitter-settings.png` | Settings with unsaved changes |
+| S5 | `connection-tab.png` | A connected PRIMARY timer |
+| S6 | `compact-window.png` | Compact state |
+| S7 | `log-tab.png` | Filters and a Show in log highlight |
+| S8 | `port-in-use.png` | Port-in-use error card and SERVER STOPPED, crop |
+| S9 | `not-sent.png` | A "Not sent" last action, crop |
+| T1 | `lso-connect-to-server.png` | LiveSplit One's Connect to Server |
+| T2 | `chrome-local-network.png` | Chrome's local network access prompt |
+| T2b | `chrome-site-settings.png` | Chrome site settings, local network access allowed |
+| T3 | `macos-open-anyway.png` | macOS Open Anyway |
+| T4 | `windows-smartscreen.png` | SmartScreen Run anyway |
+
+Pages mark a missing screenshot with `<!-- screenshot: <ID> <file> -->`.
+
 ## 16. Backlog
 
 Tracked as GitHub issues, created in this order.

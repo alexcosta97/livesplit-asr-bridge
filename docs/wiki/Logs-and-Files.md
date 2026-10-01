@@ -1,5 +1,3 @@
-# Logs and Files
-
 ## The Log tab
 
 The app logs what it does, in categories. The **Log** tab shows the most recent lines.
@@ -11,7 +9,7 @@ The app logs what it does, in categories. The **Log** tab shows the most recent 
 | **Connection** | Timers connecting and disconnecting, commands sent, replies from LiveSplit One, commands that were dropped. |
 | **App & runtime** | The game attaching and detaching, tick rate changes, saved settings, server restarts, reloads. |
 
-Errors are always shown. The other three are filters under **Show**, and only errors are ticked by default. Tick a category to debug. Filters change what you see, not what's recorded, so ticking one later shows its earlier lines. The app remembers your choices.
+Errors are always shown. The other three are filters under **Show**, and none of them is ticked by default, so only errors show until you tick one. Tick a category to debug. Filters change what you see, not what's recorded, so ticking one later shows its earlier lines. The app remembers your choices.
 
 <!-- screenshot: S7 log-tab.png -->
 The Log tab with Auto splitter and Connection ticked, the buttons Copy, Save log…, Clear and Open log folder, and a few log lines.

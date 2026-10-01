@@ -1,5 +1,3 @@
-# Getting Started
-
 ## What you need
 
 - The game PC: the PC your game runs on, with LiveSplit One ASR Bridge [installed](Installing).
@@ -21,7 +19,7 @@
    <!-- screenshot: S3 game-dialog.png -->
    The dialog "Which game is this auto splitter for?" with a name field, the list of games already set up, and the Use this game and Cancel buttons.
 
-4. **Connect LiveSplit One.** On the Timer card, or in the **Connection** tab, click **Copy** next to an address. In LiveSplit One, open **Connect to Server** and paste it. When Chrome asks, allow local network access. [Connecting LiveSplit One](Connecting-LiveSplit-One) has the details.
+4. **Connect LiveSplit One.** On the Timer card, or in the **Connection** tab, click **Copy** next to an address. In LiveSplit One, open **Settings → Connect to Server** and paste it. When Chrome asks, allow local network access. [Connecting LiveSplit One](Connecting-LiveSplit-One) has the details.
 
    <!-- screenshot: T1 lso-connect-to-server.png -->
    LiveSplit One's **Connect to Server** dialog with the address pasted in.

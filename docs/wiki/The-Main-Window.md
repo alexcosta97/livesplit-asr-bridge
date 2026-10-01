@@ -1,5 +1,3 @@
-# The Main Window
-
 ## Layout
 
 The window has two parts. The status column on the left is always visible. It shows the app name and version, then cards for the Auto splitter, the Game, the Timer and the Last action. On the right are four tabs: **Splitter settings**, **Connection**, **Log** and **Preferences**.

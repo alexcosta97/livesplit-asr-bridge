@@ -2,7 +2,7 @@
 
 Run auto splitters here, control LiveSplit One anywhere.
 
-LiveSplit One ASR Bridge runs a LiveSplit auto splitter (a `.wasm` file made for LiveSplit's Auto Splitting Runtime) on the PC your game runs on. LiveSplit One connects to it with its built-in **Connect to Server** option, and the app sends it start, split, reset and game time commands as the auto splitter decides.
+LiveSplit One ASR Bridge runs a LiveSplit auto splitter (a `.wasm` file made for LiveSplit's Auto Splitting Runtime) on the PC your game runs on. LiveSplit One connects to it with its built-in **Settings → Connect to Server** option, and the app sends it start, split, reset and game time commands as the auto splitter decides.
 
 It is made for two-PC setups: a gaming PC running the game, and a streaming PC showing the timer. It works with LiveSplit One in a Chrome-based browser. The original Windows LiveSplit isn't supported yet.
 

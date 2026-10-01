@@ -1,5 +1,3 @@
-# Connecting LiveSplit One
-
 ## Which address to use
 
 The app lists one address for each network address of the game PC, each labelled **LAN** or **VPN**, for example `ws://192.168.1.20:16834`. Use the one the timer PC can reach: a LAN address when both PCs are on the same network, a VPN address when they're on the same VPN. The port, `16834` by default, is part of the address.
@@ -48,4 +46,4 @@ In the **Connection** tab, type a new number in **Port** (1 to 65535). The app s
 
 ## Who can connect
 
-The app listens on every network interface, so another machine can reach it. Anyone on the same network, or the same VPN, who has the address can connect and receive the timer commands. The commands hold nothing sensitive, and a connected timer can only change what the app thinks the timer's state is, not anything on your PC.
+The app listens on every network interface, so another machine can reach it. Anyone on the same network, or the same VPN, who has the address can connect and receive the timer commands. The commands hold nothing sensitive, and a connected timer can only change what the app thinks the timer's state is, not anything on your PC. The app only reads the game's memory and never writes to other processes.

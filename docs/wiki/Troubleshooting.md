@@ -1,5 +1,3 @@
-# Troubleshooting
-
 ## LiveSplit One won't connect
 
 **What you see:** LiveSplit One can't connect, and the Timer card says **NOT CONNECTED**.
@@ -57,13 +55,13 @@ The Error card with the port-in-use message and the Open Connection and Dismiss 
 
 **What to do:** Click **Show in log** to read what it printed before it stopped. Click **Reload** to start it again. If it keeps happening, report it to the auto splitter's author with the log lines.
 
-## "Couldn't load … not a valid WebAssembly module"
+## "Couldn't load …"
 
-**What you see:** The Error card says "Couldn't load foo.wasm: not a valid WebAssembly module." If an auto splitter was running, it keeps running.
+**What you see:** The Error card says "Couldn't load foo.wasm: failed loading the WebAssembly module." or "Couldn't load foo.wasm: couldn't read the file." If an auto splitter was running, the card adds "The previous auto splitter is still running."
 
-**Why:** The file isn't a `.wasm` auto splitter. It may be an older `.asl` script, or a download that broke.
+**Why:** "Failed loading the WebAssembly module" means the file isn't a valid `.wasm` auto splitter. It may be an older `.asl` script, or a download that broke. "Couldn't read the file" means the file is missing or the app can't read it.
 
-**What to do:** Get a `.wasm` auto splitter for the Auto Splitting Runtime, and download it again if needed. See [Auto Splitters and Settings](Auto-Splitters-and-Settings). **Show in log** has more detail.
+**What to do:** For the first message, get a `.wasm` auto splitter for the Auto Splitting Runtime, and download it again if needed. For the second, check that the file is still there and that you can open it. See [Auto Splitters and Settings](Auto-Splitters-and-Settings). **Show in log** has more detail.
 
 ## The timer doesn't split, but actions show
 
@@ -84,6 +82,6 @@ The Error card with the port-in-use message and the Open Connection and Dismiss 
 ## Reporting a bug
 
 1. Open **Preferences** and note the version under **About**.
-2. In the **Log** tab, tick every category and reproduce the problem.
+2. Reproduce the problem. Every category is written to the log file whatever the **Log** tab filters show, so you don't need to tick anything for the report.
 3. Find the day's log file. [Logs and Files](Logs-and-Files) says where.
 4. Open an issue on [the project's GitHub page](https://github.com/alexcosta97/livesplit-asr-bridge/issues/new/choose) with the Bug report form. Attach the log file and say what you expected.

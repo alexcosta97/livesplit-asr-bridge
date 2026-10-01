@@ -51,10 +51,10 @@ merges; don't edit the wiki directly, since the next merge replaces it.
   documentation in the same pull request.
 - The wiki describes the latest full release. Until the first full release
   exists, the pages describe `main` and Upcoming Changes is not used.
-  Documentation for a change that
-  isn't released yet goes on `docs/wiki/Upcoming-Changes.md`, under a heading
-  naming the page it belongs on. When a full release is published, an issue
-  is opened to move those entries into their pages.
+  Documentation for a change that isn't released yet goes on
+  `docs/wiki/Upcoming-Changes.md`, under a heading naming the page it
+  belongs on. When a full release is published, an issue is opened to move
+  those entries into their pages.
 - Link pages by name (`[Troubleshooting](Troubleshooting)`) and put images in
   `docs/wiki/images/`. `scripts/wiki/check.sh` checks links and images, and
   runs on pull requests that change the wiki.

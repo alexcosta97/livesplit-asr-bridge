@@ -1,5 +1,3 @@
-# Platform Notes
-
 ## Linux
 
 The app reads the game's memory. Linux can block that with a security setting called `ptrace_scope`. Check it:
@@ -9,7 +7,8 @@ cat /proc/sys/kernel/yama/ptrace_scope
 ```
 
 - `0`: nothing to do.
-- `1` or higher: the app may not be able to attach to the game. The Game card stays on **WAITING FOR GAME…** while the game runs. Use one of the options below.
+- `1` or `2`: the app may not be able to attach to the game. The Game card stays on **WAITING FOR GAME…** while the game runs. Use one of the options below.
+- `3`: attaching is blocked entirely, and the value can't be lowered without a reboot. Neither option below works until you set it lower in a file in `/etc/sysctl.d/` and reboot.
 
 Games running under Proton or Wine are read like any other program. The same fix applies.
 
@@ -52,4 +51,4 @@ No setup is needed for reading the game. The first launch shows a SmartScreen wa
 
 ## Browser
 
-LiveSplit One must run in a Chrome-based browser (Chrome, Edge, Brave and the like). Chrome asks for local network access the first time. Allow it. [Connecting LiveSplit One](Connecting-LiveSplit-One) has the steps.
+LiveSplit One must run in a Chrome-based browser (Chrome, Edge, Brave and the like). Chrome asks for local network access the first time. Allow it. [Connecting LiveSplit One](Connecting-LiveSplit-One) has the steps. A future Chrome version may require encrypted `wss://` connections, which the app doesn't support yet.
