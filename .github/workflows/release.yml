@@ -94,6 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -112,3 +113,19 @@ jobs:
           scripts/release/notes.sh full > notes.md
           gh release create "$TAG" dist/* --latest --target "$GITHUB_SHA" \
             --title "$TAG" --notes-file notes.md
+      - name: Ask to move upcoming documentation into the wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          entries=$(scripts/wiki/upcoming.sh)
+          if [[ -n "$entries" ]]; then
+            {
+              echo "$TAG is released, so move its documentation from Upcoming Changes into the wiki pages (spec §15.3), then empty Upcoming Changes."
+              echo
+              echo "Entries:"
+              while IFS= read -r entry; do echo "- $entry"; done <<< "$entries"
+            } > body.md
+            gh issue create --title "Move upcoming documentation into the wiki for $TAG" \
+              --label task --body-file body.md
+          fi

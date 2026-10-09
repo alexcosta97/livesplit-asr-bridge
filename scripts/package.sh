@@ -17,7 +17,7 @@ case "$target" in
     cp "$bin_dir/$name" README.md LICENSE-MIT LICENSE-APACHE \
       "assets/linux/$name.desktop" "$stage/$name/"
     # The icons in the hicolor theme layout, ready to copy into
-    # ~/.local/share/icons (see the README).
+    # ~/.local/share/icons (see the wiki's Installing page).
     for size in 16 24 32 48 64 128 256 512; do
       dir="$stage/$name/icons/hicolor/${size}x${size}/apps"
       mkdir -p "$dir"
