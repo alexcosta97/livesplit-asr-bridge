@@ -3,19 +3,20 @@
 Run a LiveSplit auto splitter on the machine your game runs on, and control
 **LiveSplit One** on another machine.
 
-livesplit-asr-bridge loads a `.wasm` auto splitter (made for LiveSplit's Auto
+LiveSplit One ASR Bridge loads a `.wasm` auto splitter (made for LiveSplit's Auto
 Splitting Runtime) and runs it against your game. LiveSplit One connects to the
 bridge with its built-in **Connect to Server** option, and the bridge sends it
 start, split, reset and game time commands as the auto splitter decides. It is
 made for two-PC setups, for example a gaming PC running the game and a
 streaming PC showing the timer.
 
-> **Status: in early development.** There is no release yet. The design is in
+> **Status: in early development.** Releases so far are pre-releases for
+> testing. The design is in
 > [the design spec](docs/superpowers/specs/2026-09-27-livesplit-asr-bridge-design.md),
 > and planned work is tracked in the
 > [issues](https://github.com/alexcosta97/livesplit-asr-bridge/issues).
 
-## What it will do
+## What it does
 
 - Load any local `.wasm` auto splitter, for any game.
 - Show every kind of setting an auto splitter can have (built with the `asr`
@@ -38,66 +39,25 @@ streaming PC showing the timer.
 
 ## Download
 
-Once released, the latest version will be available from
+Get the latest version from
 [the latest release](https://github.com/alexcosta97/livesplit-asr-bridge/releases/latest).
-Releases marked **Pre-release** are release candidates for testing.
+[Installing](https://github.com/alexcosta97/livesplit-asr-bridge/wiki/Installing)
+covers each OS and opening the app the first time.
 
-### Opening the app
+## Quick start
 
-Releases are not code-signed yet, so the first launch shows a warning.
+1. Download and open the app
+   ([Installing](https://github.com/alexcosta97/livesplit-asr-bridge/wiki/Installing)).
+2. Click **Open…**, pick your `.wasm` auto splitter and name its game.
+3. Copy an address from the Timer card.
+4. In LiveSplit One, open **Settings → Connect to Server** and paste it.
+5. When Chrome asks, allow local network access.
 
-- **macOS:** unzip the download and open `livesplit-asr-bridge.app`. macOS
-  says it can't verify the developer. Click **Done**, then go to **System
-  Settings → Privacy & Security**, scroll down and click **Open Anyway** next
-  to the message about livesplit-asr-bridge. After that, the app opens
-  normally.
-- **Windows:** if SmartScreen says "Windows protected your PC", click **More
-  info**, then **Run anyway**.
+## Documentation
 
-### Installing on Linux
-
-The Linux download is a `.tar.gz` that can be unpacked anywhere. To run the
-app from your desktop's app launcher, copy the program, its launcher entry and
-its icons into your home folder:
-
-```sh
-tar -xzf livesplit-asr-bridge-*-x86_64-linux.tar.gz
-cd livesplit-asr-bridge
-install -Dm755 livesplit-asr-bridge ~/.local/bin/livesplit-asr-bridge
-install -Dm644 livesplit-asr-bridge.desktop ~/.local/share/applications/livesplit-asr-bridge.desktop
-mkdir -p ~/.local/share/icons
-cp -r icons/hicolor ~/.local/share/icons/
-```
-
-`~/.local/bin` must be on your `PATH`; most distributions add it when the
-folder exists, after you log out and back in. **LiveSplit One ASR Bridge**
-then appears in the launcher. If the icon doesn't show straight away, log out
-and back in.
-
-To uninstall, delete the same files:
-
-```sh
-rm ~/.local/bin/livesplit-asr-bridge
-rm ~/.local/share/applications/livesplit-asr-bridge.desktop
-rm ~/.local/share/icons/hicolor/*/apps/livesplit-asr-bridge.png
-```
-
-## Logs
-
-The app keeps a log of what it does, by category: errors, the auto
-splitter's messages and actions, the connection to LiveSplit One, and the app
-itself. The **Log** tab shows the most recent lines; errors are always shown,
-and the other categories when ticked. Every category is also written to disk,
-one file per day, kept for 7 days, in:
-
-| OS | Log folder |
-|---|---|
-| Linux | `$XDG_STATE_HOME/livesplit-asr-bridge/logs/` (default `~/.local/state/livesplit-asr-bridge/logs/`) |
-| macOS | `~/Library/Logs/livesplit-asr-bridge/` |
-| Windows | `%LOCALAPPDATA%\livesplit-asr-bridge\logs\` |
-
-A day's file stops at 50 MB, after which only errors are added to it.
-**Open log folder** in the Log tab opens it.
+The [wiki](https://github.com/alexcosta97/livesplit-asr-bridge/wiki) has the
+full guide. If something doesn't work, start with
+[Troubleshooting](https://github.com/alexcosta97/livesplit-asr-bridge/wiki/Troubleshooting).
 
 ## Contributing
 

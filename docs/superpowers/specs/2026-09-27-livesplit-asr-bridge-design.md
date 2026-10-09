@@ -722,7 +722,7 @@ The in-app view keeps the most recent 10,000 lines.
 | macOS | `~/Library/Logs/livesplit-asr-bridge/` |
 | Windows | `%LOCALAPPDATA%\livesplit-asr-bridge\logs\` |
 
-These locations are documented in all user-facing documentation.
+These locations are documented in the wiki's Logs and Files page (section 15.2).
 
 ## 9. Error handling
 
@@ -835,6 +835,8 @@ Manual, before each public release:
   `fix(deps)` and produce a release; Actions and tools are `ci(deps)` and
   `chore(deps)`. Renovate never merges; these pull requests are exempt from
   the linked-issue rule.
+- **Wiki:** on merge to `main`, a workflow publishes `docs/wiki/` to the
+  repository's wiki (section 15.1).
 - **Tool versions** (git-cliff, shellcheck, actionlint) are defined only in
   `mise.toml`, used both locally and by the workflows.
 - These conventions, the development setup and how releases work are
@@ -876,14 +878,16 @@ Example, starting from the full release `0.3.0`:
    and Windows (x86-64 `.exe` in a `.zip`) with that version embedded.
    The Linux `.tar.gz` also contains a `livesplit-asr-bridge.desktop` entry
    and the app icons in the `hicolor` theme layout, so the app appears in
-   desktop launchers once installed (see the README).
+   desktop launchers once installed (see the wiki's Installing page).
 3. Tag the commit `vX.Y.Z-rc.N` and publish a public **pre-release** with the
    builds and release notes.
 4. A publish job waits for approval in a GitHub environment named `release`,
    with the maintainer as required reviewer. The waiting job is not sent to a
    runner and uses no minutes.
 5. On approval: rebuild from the same commit with the final version, tag the
-   commit `vX.Y.Z`, and publish a full release marked **Latest**.
+   commit `vX.Y.Z`, and publish a full release marked **Latest**. If the
+   wiki's Upcoming Changes page has entries, open an issue to move them into
+   their pages (section 15.3).
 6. Release candidate pre-releases are kept, so the history shows how many
    candidates each version needed.
 7. A newer merge cancels any release candidate still waiting for approval, so
@@ -907,13 +911,106 @@ to the newest full release.
 
 ## 15. Documentation
 
-- README: what the app does (naming LiveSplit One in the first line), download
-  link to `/releases/latest`, quick start, and links to the wiki.
+- README: what the app does (naming LiveSplit One in the first line),
+  requirements, download link to `/releases/latest`, a quick start of a few
+  steps, and links to the wiki. Details (installing on each OS, opening
+  unsigned builds, log folders) live only in the wiki, so each fact is written
+  once.
 - CONTRIBUTING: development setup, commit, branch and pull request
   conventions, merge requirements, and how releases work.
-- Wiki (its own backlog issue): setup, connecting LiveSplit One, settings and
-  game association, log locations per OS, platform notes (section 11), and
-  troubleshooting.
+- Wiki: the user documentation, in the repository's GitHub wiki
+  (section 15.1 to 15.4).
+
+### 15.1 Wiki source and publishing
+
+- The wiki's pages and images are written in `docs/wiki/` in the main
+  repository and changed through pull requests like any other change. The
+  wiki is never edited directly; wiki editing is restricted to collaborators.
+- `.github/workflows/wiki.yml` publishes them. On every push to `main` that
+  changes `docs/wiki/`, and on manual dispatch, it checks out the wiki
+  repository (`livesplit-asr-bridge.wiki`) with `GITHUB_TOKEN`, mirrors
+  `docs/wiki/` into it (deleting pages that no longer exist), and commits as
+  `github-actions[bot]` with the message "Sync from <short sha>". Nothing is
+  pushed when nothing changed.
+- GitHub creates the wiki repository only once its first page exists, so the
+  first page is created by hand once, and the first sync replaces it.
+- File names follow the wiki's conventions: `Home.md`, `_Sidebar.md`,
+  `_Footer.md`, and one file per page with hyphens for spaces
+  (`Getting-Started.md` is the page "Getting Started"). Links between pages
+  use page names (`[Troubleshooting](Troubleshooting)`), and images are in
+  `docs/wiki/images/`.
+
+### 15.2 Pages
+
+In sidebar order:
+
+| Page | Kind | Contents |
+|---|---|---|
+| Home | Landing | What the app does, a diagram of the two machines, where to start, links to every page |
+| Installing | Task | Which download to pick, opening unsigned builds on macOS and Windows (section 11), installing and uninstalling on Linux, updating, full releases and release candidates |
+| Getting Started | Tutorial | First launch through the first split: open an auto splitter, name the game, connect LiveSplit One, start the game |
+| Connecting LiveSplit One | Task | Choosing an address, the Chrome-based browser requirement, Connect to Server, local network access, several timers and PRIMARY, the port and Restart server, who can connect (section 10) |
+| Auto Splitters and Settings | Task | Open and Reload, game association and Change, drafts, Save and Revert to defaults, the unsaved-changes dialog, settings shared per game (section 7.2), developer mode |
+| The Main Window | Reference | Every status card and state (section 6.2), the compact state, the Preferences tab |
+| Logs and Files | Reference | Log categories and filters, Show in log, the log and config folders for every OS (sections 7.1 and 8.2), retention and the size cap |
+| Platform Notes | Reference | Section 11 |
+| Troubleshooting | Task | By symptom (what you see, why, what to do), ending with how to report a bug with the version and the day's log file |
+| Upcoming Changes | Staging | Section 15.3 |
+
+- Button, tab and status names are written as the app shows them, in bold.
+- Each fact lives on one page; other pages link to it.
+- The writing follows the voice in `assets/brand/BRAND.md`, and the app is
+  always named "LiveSplit One ASR Bridge".
+
+### 15.3 Upcoming changes
+
+The wiki describes the latest full release, the one `/releases/latest` points
+to. Until the first full release exists, the pages describe `main` and
+Upcoming Changes is not used.
+
+- A pull request that changes what users see adds its documentation to the
+  Upcoming Changes page, under a heading naming the page it belongs on,
+  instead of changing that page. Fixes to the documentation of released
+  behaviour change the page directly.
+- When a full release is promoted (section 14.2), the release job opens an
+  issue "Move upcoming documentation into the wiki for vX.Y.Z" if the
+  Upcoming Changes page has any entries. Its pull request moves each entry
+  into its page and empties Upcoming Changes.
+- With no entries, the page says the documentation matches the latest
+  release.
+
+### 15.4 Screenshots
+
+- PNG, of the window only: no desktop, wallpaper or shadow. Wide shots at
+  1000 × 700 logical pixels, compact shots at 420 × 700, crops of one or more
+  cards with about 16 px of window background around them. Captured at 2×
+  where possible, and shown with `<img width=…>` at their logical size.
+- Every shot uses the same real auto splitter and game, from one app version.
+- Named `<subject>.png` after what they show (for example
+  `connection-tab.png`), so a change to a component shows which shots to
+  retake.
+- A pull request that changes a screen that is in a screenshot says which
+  screenshots need retaking. Until a screenshot exists, its page describes
+  the screen in text.
+
+| ID | File | Shows |
+|---|---|---|
+| S1 | `main-window.png` | Loaded, attached, connected, last action, Splitter settings tab |
+| S2 | `first-launch.png` | First launch on Connection with the setup steps |
+| S3 | `game-dialog.png` | The "Which game is this auto splitter for?" dialog |
+| S4 | `splitter-settings.png` | Settings with unsaved changes |
+| S5 | `connection-tab.png` | A connected PRIMARY timer |
+| S6 | `compact-window.png` | Compact state |
+| S7 | `log-tab.png` | Filters and a Show in log highlight |
+| S8 | `port-in-use.png` | Port-in-use error card and SERVER STOPPED, crop |
+| S9 | `not-sent.png` | A "Not sent" last action, crop |
+| T1 | `lso-connect-to-server.png` | LiveSplit One's Connect to Server |
+| T2 | `chrome-local-network.png` | Chrome's local network access prompt |
+| T2b | `chrome-site-settings.png` | Chrome site settings, local network access allowed |
+| T3 | `macos-open-anyway.png` | macOS Open Anyway |
+| T4 | `windows-smartscreen.png` | SmartScreen Run anyway |
+
+Pages mark a missing screenshot with `<!-- screenshot: <ID> <file> -->`.
 
 ## 16. Backlog
 
