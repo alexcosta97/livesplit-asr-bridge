@@ -17,7 +17,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["sink
 if-addrs = "0.15.0"
 # The upstream runtime, from the livesplit-core repository by git rev: its only
 # crates.io release (0.1.0) is from 2022. Renovate keeps the rev up to date.
-livesplit-auto-splitting = { git = "https://github.com/LiveSplit/livesplit-core", rev = "a065a8d66c2c5151769cc7625f760724b5ea2413" }
+livesplit-auto-splitting = { git = "https://github.com/LiveSplit/livesplit-core", rev = "7ce9729042cf9acc429ac796ae7470a614c57d97" }
 # Names and extensions of MIME type file filters, as LiveSplit finds them.
 mime_guess = "2.0.5"
 pollster = "1.0.0"
