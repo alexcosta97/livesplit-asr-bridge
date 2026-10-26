@@ -779,7 +779,8 @@ A file from before categories, with a `[settings]` table at the top level,
 is read as a category "Default" (key `default`) holding that map, made the
 last category used if none is recorded. If the file also has categories,
 for example from editing it by hand, the old map is added as another
-category named "Default" by the same naming rules, so no settings are lost.
+category, named "Default", or "Default 2", "Default 3"… if a category has
+that name, so no settings are lost.
 The file is written in the new form the next time it is written.
 
 ## 8. Logging
