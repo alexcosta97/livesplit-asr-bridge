@@ -2415,7 +2415,7 @@ dependencies = [
 [[package]]
 name = "livesplit-auto-splitting"
 version = "0.1.0"
-source = "git+https://github.com/LiveSplit/livesplit-core?rev=7ce9729042cf9acc429ac796ae7470a614c57d97#7ce9729042cf9acc429ac796ae7470a614c57d97"
+source = "git+https://github.com/LiveSplit/livesplit-core?rev=2759e3fb41f48686d87fa55e6966fa88c91b67e5#2759e3fb41f48686d87fa55e6966fa88c91b67e5"
 dependencies = [
  "arc-swap",
  "async-trait",
