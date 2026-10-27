@@ -352,7 +352,8 @@ Task 4. Superdesign is the design source of truth.
   for its lifetime (also across `refresh`), and creates a fresh `Suggest`
   when a name field opens. Feed list keys before the field like
   `game_dialog::list_keys`. The drop-down is an `Area` at `Order::Tooltip`
-  under the field, styled as the Game dialog's (`RAISED`, `BORDER_STRONG`,
+  under the field (below the level checkbox when it shows, so the checkbox
+  stays clickable while the list is open), styled as the Game dialog's (`RAISED`, `BORDER_STRONG`,
   shadow), rows 32 px, 5 shown; SET UP in mono 11 `TEXT_SECONDARY` at the
   right; dimmed rows in `TEXT_MUTED` with `Sense::hover()`; the
   "Type to search" row muted and not clickable. The linked line and the

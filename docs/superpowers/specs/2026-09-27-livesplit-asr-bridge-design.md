@@ -603,7 +603,9 @@ the window dimmed behind them.
     (**+ New category**, **Rename** and "Name this category") also offers
     the game's categories from speedrun.com (section 7.5.1), working like
     the Game dialog's name field. While the field has focus, a list drops
-    down from it over what is under it, five rows that scroll for more,
+    down under it over what is under it, below the **Include level
+    categories** checkbox when there is one, so the checkbox stays usable
+    while the list is open. It shows five rows that scroll for more,
     each with a variant's name and SET UP on one a category of the game is
     already linked to. Typing narrows it to the variants whose name
     contains what is typed, comparing letters and digits only and ignoring
