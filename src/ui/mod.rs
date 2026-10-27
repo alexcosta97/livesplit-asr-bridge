@@ -964,9 +964,14 @@ impl BridgeApp {
             return;
         };
         let game = self.game.as_ref().map(|game| game.name.as_str());
-        if let Some(action) =
-            components::unsaved_dialog(&self.ctx, pending.trigger(), self.settings.changes(), game)
-        {
+        let category = self.game.as_ref().map(|game| game.category().name.as_str());
+        if let Some(action) = components::unsaved_dialog(
+            &self.ctx,
+            pending.trigger(),
+            self.settings.changes(),
+            game,
+            category,
+        ) {
             self.answer_unsaved(action);
         }
     }

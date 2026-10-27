@@ -1,6 +1,6 @@
 //! Unsaved dialog: "Save your settings changes?" when reloading, opening
-//! another file, changing the game or closing the app with unsaved settings
-//! (spec §6.8).
+//! another file, changing the game or the category, or closing the app with
+//! unsaved settings (spec §6.8).
 
 use eframe::egui::{
     self, Align, Frame, Id, Label, Layout, Margin, Modal, RichText, Stroke, Ui, vec2,
@@ -21,6 +21,12 @@ pub enum UnsavedTrigger {
     Reload,
     Open,
     ChangeGame,
+    /// Switching to another category in the Category dialog.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "used by the Category dialog, added next")
+    )]
+    ChangeCategory,
     Close,
 }
 
@@ -39,6 +45,7 @@ pub fn unsaved_dialog(
     trigger: UnsavedTrigger,
     changes: usize,
     game: Option<&str>,
+    category: Option<&str>,
 ) -> Option<UnsavedAction> {
     let frame = Frame::NONE
         .fill(theme::PANEL)
@@ -48,7 +55,7 @@ pub fn unsaved_dialog(
     let response = Modal::new(Id::new("unsaved dialog"))
         .backdrop_color(BACKDROP)
         .frame(frame)
-        .show(ctx, |ui| contents(ui, trigger, changes, game));
+        .show(ctx, |ui| contents(ui, trigger, changes, game, category));
     if response.should_close() {
         return Some(UnsavedAction::Cancel);
     }
@@ -60,6 +67,7 @@ fn contents(
     trigger: UnsavedTrigger,
     changes: usize,
     game: Option<&str>,
+    category: Option<&str>,
 ) -> Option<UnsavedAction> {
     ui.set_width(WIDTH);
     ui.spacing_mut().item_spacing.y = 0.0;
@@ -74,7 +82,7 @@ fn contents(
     ui.add_space(16.0);
     ui.add(
         Label::new(
-            RichText::new(message(trigger, changes, game))
+            RichText::new(message(trigger, changes, game, category))
                 .font(theme::body(14.0))
                 .line_height(Some(21.0))
                 .color(theme::TEXT),
@@ -102,14 +110,23 @@ fn contents(
     .inner
 }
 
-/// The text naming how many settings of `game` changed, and that `trigger`
-/// discards them. Without a game, it doesn't name one.
-fn message(trigger: UnsavedTrigger, changes: usize, game: Option<&str>) -> String {
+/// The text naming how many settings of `game`, in `category`, changed, and
+/// that `trigger` discards them. Without a game, it names neither.
+fn message(
+    trigger: UnsavedTrigger,
+    changes: usize,
+    game: Option<&str>,
+    category: Option<&str>,
+) -> String {
     let settings = match changes {
         1 => "1 setting".to_owned(),
         n => format!("{n} settings"),
     };
-    let game = game.map(|name| format!(" for {name}")).unwrap_or_default();
+    let game = match (game, category) {
+        (Some(game), Some(category)) => format!(" for {game} ({category})"),
+        (Some(game), None) => format!(" for {game}"),
+        (None, _) => String::new(),
+    };
     let action = action(trigger);
     format!("You changed {settings}{game}. {action} without saving discards them.")
 }
@@ -120,6 +137,7 @@ fn action(trigger: UnsavedTrigger) -> &'static str {
         UnsavedTrigger::Reload => "Reloading the auto splitter",
         UnsavedTrigger::Open => "Opening another auto splitter",
         UnsavedTrigger::ChangeGame => "Changing the game",
+        UnsavedTrigger::ChangeCategory => "Changing the category",
         UnsavedTrigger::Close => "Closing the app",
     }
 }
@@ -128,7 +146,10 @@ fn action(trigger: UnsavedTrigger) -> &'static str {
 fn save_label(trigger: UnsavedTrigger) -> &'static str {
     match trigger {
         UnsavedTrigger::Reload => "Save and reload",
-        UnsavedTrigger::Open | UnsavedTrigger::ChangeGame | UnsavedTrigger::Close => "Save",
+        UnsavedTrigger::Open
+        | UnsavedTrigger::ChangeGame
+        | UnsavedTrigger::ChangeCategory
+        | UnsavedTrigger::Close => "Save",
     }
 }
 
@@ -139,12 +160,12 @@ mod tests {
     #[test]
     fn names_how_many_settings_of_the_game_changed() {
         assert_eq!(
-            message(UnsavedTrigger::Reload, 1, Some("GTA")),
+            message(UnsavedTrigger::Reload, 1, Some("GTA"), None),
             "You changed 1 setting for GTA. Reloading the auto splitter without saving \
              discards them."
         );
         assert_eq!(
-            message(UnsavedTrigger::Reload, 3, Some("GTA")),
+            message(UnsavedTrigger::Reload, 3, Some("GTA"), None),
             "You changed 3 settings for GTA. Reloading the auto splitter without saving \
              discards them."
         );
@@ -153,7 +174,7 @@ mod tests {
     #[test]
     fn names_no_game_without_one() {
         assert_eq!(
-            message(UnsavedTrigger::Close, 2, None),
+            message(UnsavedTrigger::Close, 2, None, None),
             "You changed 2 settings. Closing the app without saving discards them."
         );
     }
@@ -161,23 +182,42 @@ mod tests {
     #[test]
     fn says_what_each_trigger_discards_them_by() {
         assert_eq!(
-            message(UnsavedTrigger::Reload, 2, Some("GTA")),
+            message(UnsavedTrigger::Reload, 2, Some("GTA"), None),
             "You changed 2 settings for GTA. Reloading the auto splitter without saving \
              discards them."
         );
         assert_eq!(
-            message(UnsavedTrigger::Open, 2, Some("GTA")),
+            message(UnsavedTrigger::Open, 2, Some("GTA"), None),
             "You changed 2 settings for GTA. Opening another auto splitter without saving \
              discards them."
         );
         assert_eq!(
-            message(UnsavedTrigger::ChangeGame, 2, Some("GTA")),
+            message(UnsavedTrigger::ChangeGame, 2, Some("GTA"), None),
             "You changed 2 settings for GTA. Changing the game without saving discards them."
         );
         assert_eq!(
-            message(UnsavedTrigger::Close, 2, Some("GTA")),
+            message(UnsavedTrigger::Close, 2, Some("GTA"), None),
             "You changed 2 settings for GTA. Closing the app without saving discards them."
         );
+    }
+
+    #[test]
+    fn names_the_category_after_the_game() {
+        assert_eq!(
+            message(
+                UnsavedTrigger::ChangeCategory,
+                3,
+                Some("GTA San Andreas"),
+                Some("Any%")
+            ),
+            "You changed 3 settings for GTA San Andreas (Any%). Changing the category without \
+             saving discards them."
+        );
+    }
+
+    #[test]
+    fn changing_the_category_saves_with_save() {
+        assert_eq!(save_label(UnsavedTrigger::ChangeCategory), "Save");
     }
 
     #[test]
