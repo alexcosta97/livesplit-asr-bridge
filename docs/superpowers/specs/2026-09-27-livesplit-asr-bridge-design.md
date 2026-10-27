@@ -572,8 +572,11 @@ the window dimmed behind them.
     separately, a speedrun.com link or none. Filling the field from a
     result doesn't change which game already set up is selected, so
     linking a selected game that wasn't linked links that game, whatever
-    its old name. Selecting a game already set up, by clicking it or by
-    typing its name, brings its link with it, if it has one.
+    its old name. With no game selected, filling the field from a result
+    selects a game already set up under that name, as typing it would, so
+    the same game isn't set up twice. Selecting a game already set up, by
+    clicking it or by typing its name, brings its link with it, if it has
+    one.
   - **Use this game** with a link: a result already linked to a game set up
     uses that game. Otherwise the selected game is linked and takes
     speedrun.com's name, or, with no game selected, a new game is set up,
@@ -894,7 +897,9 @@ there (section 16).
   limits requests (HTTP 420, at 100 requests a minute), the list has only
   the last row and the dialog works as without speedrun.com. Nothing is
   shown as an error; the failure is logged (section 8.1) once per dialog.
-- A linked game's name isn't updated later if speedrun.com renames it.
+- A linked game's name isn't refreshed on its own if speedrun.com renames
+  it. Picking the game's result again in the Game dialog takes
+  speedrun.com's current name.
 
 ## 8. Logging
 
