@@ -1,9 +1,13 @@
 //! speedrun.com game suggestions: the games of a search, and how a name is
 //! matched against them (spec §7.5).
 
+mod categories;
 mod matching;
 mod search;
 
+#[allow(unused_imports)]
+// Used by the Category dialog, which comes later.
+pub use categories::{CategoryLink, Variant, parse_variants};
 pub use matching::clear_match;
 pub use search::GameSearch;
 #[cfg(not(test))]
