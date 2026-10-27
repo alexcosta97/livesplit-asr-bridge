@@ -771,7 +771,7 @@ impl BridgeApp {
             }
             CategoryDialogAction::Add(name) => {
                 let name = name.trim().to_owned();
-                match Game::add_category(&config, &slug, &name, self.settings.live()) {
+                match Game::add_category(&config, &slug, &name, self.settings.live(), None) {
                     Ok((game, key)) => (
                         Ok(game),
                         Some(key),
@@ -790,7 +790,7 @@ impl BridgeApp {
                 let name = name.trim().to_owned();
                 let old = self.category_name(&key);
                 (
-                    Game::rename_category(&config, &slug, &key, &name),
+                    Game::rename_category(&config, &slug, &key, &name, None),
                     None,
                     format!("Renamed {old} to {name}"),
                     format!("Couldn't rename {old}"),
@@ -1746,7 +1746,7 @@ mod tests {
     fn app_with_two_categories() -> (tempfile::TempDir, BridgeApp) {
         let (dir, mut app) = app_with_unsaved_edit();
         let config = app.config.clone().unwrap();
-        Game::add_category(&config, "gta", "100%", &table("gym = true")).unwrap();
+        Game::add_category(&config, "gta", "100%", &table("gym = true"), None).unwrap();
         app.game = Some(Game::load(&config, "gta").unwrap());
         (dir, app)
     }

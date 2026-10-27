@@ -625,6 +625,7 @@ mod tests {
             key: key.to_owned(),
             name: name.to_owned(),
             settings: Table::new(),
+            speedrun: None,
         };
         Game {
             slug: "gta".to_owned(),
@@ -737,6 +738,7 @@ mod tests {
             key: "low".to_owned(),
             name: "Low%".to_owned(),
             settings: Table::new(),
+            speedrun: None,
         });
         dialog.refresh(&more, Some("low"));
         assert_eq!(dialog.selected, "low");
