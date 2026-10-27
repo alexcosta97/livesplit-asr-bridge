@@ -35,10 +35,6 @@ mod unsaved_dialog;
 
 pub use about_row::about_folder;
 pub use app_header::{HeaderButton, app_header};
-#[expect(
-    unused_imports,
-    reason = "the app opens the Category dialog in the next task"
-)]
 pub use category_dialog::{CategoryDialog, CategoryDialogAction, category_dialog};
 pub use checkbox::Checkbox;
 pub use empty_state::empty_state;

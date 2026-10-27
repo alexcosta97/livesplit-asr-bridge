@@ -216,7 +216,6 @@ impl Game {
             .ok_or_else(|| format!("there is no category {key}"))
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "the category UI will use this"))]
     /// `name` trimmed, or an error if it is blank or another category than
     /// `except` has it.
     fn check_name(&self, name: &str, except: Option<&str>) -> Result<String, String> {
@@ -274,7 +273,6 @@ impl Game {
         Ok(game)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "the category UI will use this"))]
     /// Adds a category called `name` with `settings` to the game `slug`,
     /// without switching to it. Returns the game and the new category's key.
     pub fn add_category(
@@ -296,7 +294,6 @@ impl Game {
         Ok((game, key))
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "the category UI will use this"))]
     /// Renames the category `key` of the game `slug` to `name`. Its key
     /// stays the same.
     pub fn rename_category(
@@ -313,7 +310,6 @@ impl Game {
         Ok(game)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "the category UI will use this"))]
     /// Deletes the category `key` of the game `slug` and its settings. The
     /// category in use and the last category can't be deleted.
     pub fn delete_category(config: &Config, slug: &str, key: &str) -> Result<Self, String> {
@@ -330,7 +326,6 @@ impl Game {
         Ok(game)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "the category UI will use this"))]
     /// Records the category `key` as the one in use for the game `slug`.
     pub fn use_category(config: &Config, slug: &str, key: &str) -> Result<Self, String> {
         let mut game = Self::load(config, slug)?;

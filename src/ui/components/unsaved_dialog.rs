@@ -22,10 +22,6 @@ pub enum UnsavedTrigger {
     Open,
     ChangeGame,
     /// Switching to another category in the Category dialog.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the Category dialog, added next")
-    )]
     ChangeCategory,
     Close,
 }

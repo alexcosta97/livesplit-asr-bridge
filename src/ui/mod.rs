@@ -38,8 +38,8 @@ use crate::{
     version::VERSION,
 };
 use components::{
-    ErrorAction, GameChoice, GameDialog, GameDialogAction, GameDialogKind, HeaderButton, LogAction,
-    SplitterAction, UnsavedAction, UnsavedTrigger, Width,
+    CategoryDialog, CategoryDialogAction, ErrorAction, GameChoice, GameDialog, GameDialogAction,
+    GameDialogKind, HeaderButton, LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
 use file_pick::{FilePick, PickFor, PickPoll};
@@ -124,6 +124,9 @@ enum Pending {
     /// Change the loaded auto splitter's game: the game's settings replace
     /// the draft.
     ChangeGame,
+    /// Switch to the loaded auto splitter's game's category with this key:
+    /// its settings replace the draft.
+    ChangeCategory(String),
     Close,
 }
 
@@ -133,6 +136,7 @@ impl Pending {
             Self::Reload => UnsavedTrigger::Reload,
             Self::Open => UnsavedTrigger::Open,
             Self::ChangeGame => UnsavedTrigger::ChangeGame,
+            Self::ChangeCategory(_) => UnsavedTrigger::ChangeCategory,
             Self::Close => UnsavedTrigger::Close,
         }
     }
@@ -199,6 +203,8 @@ pub struct BridgeApp {
     game: Option<Game>,
     /// The open Game dialog, and the file it is for.
     dialog: Option<(GameDialog, PathBuf)>,
+    /// The open Category dialog.
+    category_dialog: Option<CategoryDialog>,
     /// The loaded auto splitter's settings, and the edits not saved yet.
     settings: SettingsEditor,
     /// When to write the settings map the auto splitter changed to its
@@ -277,6 +283,7 @@ impl BridgeApp {
             loading: HashMap::new(),
             game: None,
             dialog: None,
+            category_dialog: None,
             settings: SettingsEditor::default(),
             settings_write: None,
             settings_written: None,
@@ -368,6 +375,7 @@ impl BridgeApp {
                 self.settings
                     .reset(as_runtime_has_it(&saved.unwrap_or_default()));
                 self.stored_keys.clear();
+                self.ask_category_name();
             }
             RunnerEvent::LoadFailed { path, .. } => {
                 self.loading.remove(path);
@@ -608,6 +616,7 @@ impl BridgeApp {
                     .reset_keeping_widgets(as_runtime_has_it(game.settings()));
                 self.stored_keys.clear();
                 self.game = Some(game);
+                self.ask_category_name();
             }
         }
     }
@@ -625,6 +634,172 @@ impl BridgeApp {
                 format!("Couldn't remember the game of {}: {error}", file_name(path)),
             );
         }
+    }
+
+    /// Opens the Category dialog for the loaded auto splitter's game. It
+    /// asks about unsaved settings only when another category is used.
+    fn change_category(&mut self) {
+        if let Some(game) = &self.game {
+            self.category_dialog = Some(CategoryDialog::new(game));
+        }
+    }
+
+    /// Opens "Name this category" if the loaded game's settings are from
+    /// before categories (spec §7.4). Called when an auto splitter is loaded
+    /// and when its game is changed.
+    fn ask_category_name(&mut self) {
+        if let Some(game) = &self.game
+            && let Some(key) = &game.unnamed
+        {
+            self.category_dialog = Some(CategoryDialog::naming(game, key));
+        }
+    }
+
+    /// Shows the Category dialog while it is open, and acts on its answer.
+    fn show_category_dialog(&mut self, ctx: &egui::Context) {
+        let Some(dialog) = &mut self.category_dialog else {
+            return;
+        };
+        if let Some(action) = components::category_dialog(ctx, dialog) {
+            self.category_action(action);
+        }
+    }
+
+    /// Acts on what was done in the Category dialog (spec §6.8, §7.4).
+    /// Adding, renaming and deleting are saved straight away; using
+    /// another category closes the dialog and switches to it, once the
+    /// unsaved settings are dealt with.
+    fn category_action(&mut self, action: CategoryDialogAction) {
+        let (Some(config), Some(slug)) = (
+            self.config.clone(),
+            self.game.as_ref().map(|game| game.slug.clone()),
+        ) else {
+            self.category_dialog = None;
+            return;
+        };
+        // The result, the category to select, and what to log on success
+        // and on failure.
+        let (result, select, done, failed) = match action {
+            CategoryDialogAction::Cancel => {
+                self.category_dialog = None;
+                return;
+            }
+            CategoryDialogAction::Use(key) => {
+                self.category_dialog = None;
+                if self.game.as_ref().is_some_and(|game| game.current != key) {
+                    self.ask(Pending::ChangeCategory(key));
+                }
+                return;
+            }
+            CategoryDialogAction::Add(name) => {
+                match Game::add_category(&config, &slug, &name, self.settings.live()) {
+                    Ok((game, key)) => (
+                        Ok(game),
+                        Some(key),
+                        format!("Added the category {name}"),
+                        String::new(),
+                    ),
+                    Err(error) => (
+                        Err(error),
+                        None,
+                        String::new(),
+                        format!("Couldn't add the category {name}"),
+                    ),
+                }
+            }
+            CategoryDialogAction::Rename { key, name } => {
+                let old = self.category_name(&key);
+                (
+                    Game::rename_category(&config, &slug, &key, &name),
+                    None,
+                    format!("Renamed {old} to {name}"),
+                    format!("Couldn't rename {old}"),
+                )
+            }
+            CategoryDialogAction::Delete(key) => {
+                let name = self.category_name(&key);
+                (
+                    Game::delete_category(&config, &slug, &key),
+                    None,
+                    format!("Deleted the category {name}"),
+                    format!("Couldn't delete the category {name}"),
+                )
+            }
+        };
+        match result {
+            Ok(mut game) => {
+                // For example "Renamed 100% to 100% NMG (GTA)".
+                self.log(Category::App, format!("{done} ({})", game.name));
+                // The category in use is the one running.
+                if let Some(running) = &self.game {
+                    game.current.clone_from(&running.current);
+                }
+                // Naming settings from before categories is done once named.
+                if self
+                    .category_dialog
+                    .as_ref()
+                    .is_some_and(CategoryDialog::is_naming)
+                {
+                    self.category_dialog = None;
+                }
+                if let Some(dialog) = &mut self.category_dialog {
+                    dialog.refresh(&game, select.as_deref());
+                }
+                self.game = Some(game);
+            }
+            Err(error) => {
+                self.log(Category::Error, format!("{failed}: {error}"));
+                if let Some(dialog) = &mut self.category_dialog {
+                    dialog.back_to_list();
+                }
+            }
+        }
+    }
+
+    /// The name of the loaded game's category `key`, or the key.
+    fn category_name(&self, key: &str) -> String {
+        self.game
+            .as_ref()
+            .and_then(|game| game.categories.iter().find(|category| category.key == key))
+            .map_or_else(|| key.to_owned(), |category| category.name.clone())
+    }
+
+    /// Switches the running auto splitter to its game's category `key`
+    /// (spec §7.4): what it stored goes to the category it was using, then
+    /// the new category's settings replace its map and the draft.
+    fn switch_category(&mut self, key: &str) {
+        let (Some(config), Some(slug)) = (
+            self.config(),
+            self.game.as_ref().map(|game| game.slug.clone()),
+        ) else {
+            return;
+        };
+        // What it stored so far belongs to the category it was using.
+        self.write_settings();
+        let game = match Game::use_category(&config, &slug, key) {
+            Ok(game) => game,
+            Err(error) => {
+                self.log(
+                    Category::Error,
+                    format!("Couldn't switch the category: {error}"),
+                );
+                return;
+            }
+        };
+        self.runner
+            .set_settings(config::to_runtime(game.settings()));
+        self.log(
+            Category::App,
+            format!(
+                "Using the settings of {} for {}",
+                game.category().name,
+                game.name
+            ),
+        );
+        self.settings
+            .reset_keeping_widgets(as_runtime_has_it(game.settings()));
+        self.stored_keys.clear();
+        self.game = Some(game);
     }
 
     /// Reads the machine's addresses again every few seconds.
@@ -677,8 +852,7 @@ impl BridgeApp {
                 Some(SplitterAction::Open) => self.open(),
                 Some(SplitterAction::Reload) => self.ask(Pending::Reload),
                 Some(SplitterAction::Change) => self.ask(Pending::ChangeGame),
-                // The Category dialog comes next.
-                Some(SplitterAction::ChangeCategory) => {}
+                Some(SplitterAction::ChangeCategory) => self.change_category(),
                 None => {}
             }
 
@@ -953,6 +1127,7 @@ impl BridgeApp {
             Pending::Reload => self.reload(),
             Pending::Open => self.request_pick(PickFor::Open),
             Pending::ChangeGame => self.change_game(),
+            Pending::ChangeCategory(key) => self.switch_category(&key),
             Pending::Close => {
                 self.closing = true;
                 self.ctx.send_viewport_cmd(ViewportCommand::Close);
@@ -1352,6 +1527,7 @@ impl eframe::App for BridgeApp {
         self.check_close();
         self.poll_file_pick();
         self.game_dialog(&ui.ctx().clone());
+        self.show_category_dialog(&ui.ctx().clone());
         self.unsaved_dialog();
         self.refresh_addresses(ui.ctx());
         self.write_settings_when_due(&ui.ctx().clone(), Instant::now());
@@ -1455,6 +1631,194 @@ mod tests {
         assert_eq!(app.pending, Some(Pending::Open));
         app.ask(Pending::ChangeGame);
         assert_eq!(app.pending, Some(Pending::ChangeGame));
+        app.ask(Pending::ChangeCategory("100".to_owned()));
+        assert_eq!(app.pending, Some(Pending::ChangeCategory("100".to_owned())));
+    }
+
+    fn table(text: &str) -> toml::Table {
+        text.parse().unwrap()
+    }
+
+    /// `app_with_unsaved_edit`, with a second category "100%" whose gym is on.
+    fn app_with_two_categories() -> (tempfile::TempDir, BridgeApp) {
+        let (dir, mut app) = app_with_unsaved_edit();
+        let config = app.config.clone().unwrap();
+        Game::add_category(&config, "gta", "100%", &table("gym = true")).unwrap();
+        app.game = Some(Game::load(&config, "gta").unwrap());
+        (dir, app)
+    }
+
+    fn saved_in(app: &BridgeApp, key: &str) -> toml::Table {
+        let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
+        game.categories
+            .into_iter()
+            .find(|category| category.key == key)
+            .unwrap()
+            .settings
+    }
+
+    #[test]
+    fn using_another_category_asks_first_with_unsaved_settings() {
+        let (_dir, mut app) = app_with_two_categories();
+        app.category_action(CategoryDialogAction::Use("100".to_owned()));
+        assert_eq!(app.pending, Some(Pending::ChangeCategory("100".to_owned())));
+        assert_eq!(app.game.as_ref().unwrap().current, "default");
+    }
+
+    #[test]
+    fn using_the_category_in_use_does_nothing() {
+        let (_dir, mut app) = app_with_two_categories();
+        app.category_action(CategoryDialogAction::Use("default".to_owned()));
+        assert_eq!(app.pending, None);
+        assert!(app.settings.is_unsaved());
+    }
+
+    #[test]
+    fn switching_writes_what_was_stored_then_loads_the_other_category() {
+        let (_dir, mut app) = app_with_two_categories();
+        app.settings.discard();
+        // The auto splitter stored a value, not written yet.
+        app.settings_changed(table("stored = 1"), Instant::now());
+        app.proceed(Pending::ChangeCategory("100".to_owned()));
+
+        assert_eq!(
+            saved_in(&app, "default").get("stored"),
+            Some(&Value::Integer(1))
+        );
+        assert_eq!(saved_in(&app, "100").get("stored"), None);
+        let game = app.game.as_ref().unwrap();
+        assert_eq!(game.current, "100");
+        assert_eq!(app.settings.live().get("gym"), Some(&Value::Boolean(true)));
+        assert_eq!(
+            Game::load(app.config.as_ref().unwrap(), "gta")
+                .unwrap()
+                .current,
+            "100"
+        );
+    }
+
+    #[test]
+    fn saving_in_the_unsaved_dialog_saves_into_the_category_left() {
+        let (_dir, mut app) = app_with_two_categories();
+        app.category_action(CategoryDialogAction::Use("100".to_owned()));
+        app.answer_unsaved(UnsavedAction::Save);
+        assert_eq!(
+            saved_in(&app, "default").get("gym"),
+            Some(&Value::Boolean(true))
+        );
+        assert_eq!(app.game.as_ref().unwrap().current, "100");
+        assert!(!app.settings.is_unsaved());
+    }
+
+    #[test]
+    fn a_new_category_copies_the_running_settings_not_the_edits() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        let _ = app.settings.set_live(table("level = 2"), Instant::now());
+        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_action(CategoryDialogAction::Add("Low%".to_owned()));
+        let added = saved_in(&app, "low");
+        assert_eq!(added.get("level"), Some(&Value::Integer(2)));
+        // "gym" is an unsaved edit.
+        assert_eq!(added.get("gym"), None);
+        // Adding doesn't switch.
+        assert_eq!(app.game.as_ref().unwrap().current, "default");
+        assert!(app.category_dialog.is_some());
+    }
+
+    #[test]
+    fn renaming_and_deleting_are_saved_straight_away() {
+        let (_dir, mut app) = app_with_two_categories();
+        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_action(CategoryDialogAction::Rename {
+            key: "100".to_owned(),
+            name: "100% NMG".to_owned(),
+        });
+        let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
+        assert!(
+            game.categories
+                .iter()
+                .any(|category| category.name == "100% NMG")
+        );
+
+        app.category_action(CategoryDialogAction::Delete("100".to_owned()));
+        let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
+        assert_eq!(game.categories.len(), 1);
+        assert_eq!(app.game.as_ref().unwrap().categories.len(), 1);
+    }
+
+    /// `app_with_unsaved_edit`, whose game's file is from before categories.
+    fn app_with_an_old_file() -> (tempfile::TempDir, BridgeApp) {
+        let (dir, mut app) = app_with_unsaved_edit();
+        let config = app.config.clone().unwrap();
+        std::fs::write(
+            config.game_file("gta"),
+            "name = \"GTA\"\n\n[settings]\ngym = true\n",
+        )
+        .unwrap();
+        app.game = Some(Game::load(&config, "gta").unwrap());
+        (dir, app)
+    }
+
+    #[test]
+    fn settings_from_before_categories_are_named_when_asked() {
+        let (_dir, mut app) = app_with_an_old_file();
+        app.ask_category_name();
+        assert!(
+            app.category_dialog
+                .as_ref()
+                .is_some_and(CategoryDialog::is_naming)
+        );
+        app.category_action(CategoryDialogAction::Rename {
+            key: "default".to_owned(),
+            name: "Any%".to_owned(),
+        });
+        // Named: the dialog closes rather than showing the list.
+        assert!(app.category_dialog.is_none());
+        let game = app.game.as_ref().unwrap();
+        assert_eq!(game.category().name, "Any%");
+        assert_eq!(game.unnamed, None);
+        assert_eq!(
+            saved_in(&app, "default").get("gym"),
+            Some(&Value::Boolean(true))
+        );
+    }
+
+    #[test]
+    fn not_now_keeps_default_and_leaves_the_file_alone() {
+        let (_dir, mut app) = app_with_an_old_file();
+        let config = app.config.clone().unwrap();
+        let before = std::fs::read_to_string(config.game_file("gta")).unwrap();
+        app.ask_category_name();
+        app.category_action(CategoryDialogAction::Cancel);
+        assert!(app.category_dialog.is_none());
+        assert_eq!(
+            std::fs::read_to_string(config.game_file("gta")).unwrap(),
+            before
+        );
+        // Loading the game again asks again.
+        app.game = Some(Game::load(&config, "gta").unwrap());
+        app.ask_category_name();
+        assert!(
+            app.category_dialog
+                .as_ref()
+                .is_some_and(CategoryDialog::is_naming)
+        );
+    }
+
+    #[test]
+    fn a_game_in_the_new_form_is_not_asked_about() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.ask_category_name();
+        assert!(app.category_dialog.is_none());
+    }
+
+    #[test]
+    fn the_category_in_use_is_not_deleted() {
+        let (_dir, mut app) = app_with_two_categories();
+        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_action(CategoryDialogAction::Delete("default".to_owned()));
+        let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
+        assert_eq!(game.categories.len(), 2);
     }
 
     #[test]
