@@ -81,7 +81,9 @@ struct GameFile {
 /// A category in a game's file.
 #[derive(Debug, Serialize, Deserialize)]
 struct CategoryFile {
-    name: String,
+    /// Missing in a hand-edited file: the key names the category then.
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default)]
     settings: Table,
 }
@@ -148,8 +150,8 @@ impl Game {
                 .categories
                 .into_iter()
                 .map(|(key, category)| RunCategory {
+                    name: category.name.unwrap_or_else(|| key.clone()),
                     key,
-                    name: category.name,
                     settings: category.settings,
                 })
                 .collect(),
@@ -349,7 +351,7 @@ impl Game {
                     (
                         category.key.clone(),
                         CategoryFile {
-                            name: category.name.clone(),
+                            name: Some(category.name.clone()),
                             settings: category.settings.clone(),
                         },
                     )
@@ -429,6 +431,25 @@ mod tests {
             "name = \"GTA San Andreas — DE\"\ncategory = \"default\"\n\n[categories.default]\nname = \"Default\"\n\n[categories.default.settings]\n"
         );
         assert_eq!(Game::load(&config, "gta-san-andreas-de").unwrap(), game);
+    }
+
+    #[test]
+    fn a_category_without_a_name_is_named_after_its_key() {
+        let (_dir, config) = config();
+        fs::create_dir_all(config.dir().join("games")).unwrap();
+        fs::write(
+            config.game_file("gta"),
+            "name = \"GTA\"\n\n[categories.any]\n\n[categories.any.settings]\ngym = true\n",
+        )
+        .unwrap();
+        let mut game = Game::load(&config, "gta").unwrap();
+        assert_eq!(game.categories.len(), 1);
+        assert_eq!(game.categories[0].key, "any");
+        assert_eq!(game.categories[0].name, "any");
+        // Writing always writes a name.
+        game.write(&config).unwrap();
+        let text = fs::read_to_string(config.game_file("gta")).unwrap();
+        assert!(text.contains("name = \"any\""));
     }
 
     #[test]
