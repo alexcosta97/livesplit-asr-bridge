@@ -30,8 +30,10 @@ use std::{
 use crate::ui::APP_NAME;
 
 pub use app::{AppSettings, WindowGeometry};
+#[cfg(test)]
+pub use games::RunCategory;
 pub use games::{Game, GameSummary};
-pub use names::{name_from_file, slug};
+pub use names::{category_key, name_from_file, slug};
 pub use settings::{
     SettingKey, from_runtime, merge_saved, revert_to_defaults, to_runtime, value_to_runtime,
 };
@@ -76,7 +78,7 @@ impl Config {
         self.dir.join("games")
     }
 
-    fn game_file(&self, slug: &str) -> PathBuf {
+    pub(crate) fn game_file(&self, slug: &str) -> PathBuf {
         self.games_dir().join(format!("{slug}.toml"))
     }
 }

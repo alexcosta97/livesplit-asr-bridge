@@ -209,7 +209,20 @@ fn contents(ui: &mut Ui, dialog: &mut GameDialog) -> Option<GameDialogAction> {
             });
     }
 
-    ui.add_space(24.0);
+    ui.add_space(16.0);
+    ui.add(
+        Label::new(
+            RichText::new(
+                "Settings are saved per game and category, so auto splitters for the same \
+                 game share them.",
+            )
+            .font(theme::body(12.0))
+            .color(theme::TEXT_MUTED),
+        )
+        .wrap(),
+    );
+
+    ui.add_space(20.0);
     let choice = dialog.choice();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;

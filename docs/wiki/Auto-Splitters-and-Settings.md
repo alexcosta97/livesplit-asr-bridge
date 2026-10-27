@@ -6,7 +6,7 @@ Get the `.wasm` file from the auto splitter's author, or from LiveSplit's list o
 
 ## Opening and reloading
 
-On the Auto splitter card, click **Open…** and pick the `.wasm` file. The card then shows the file name and the game it's for. The app remembers the file and loads it again the next time it starts.
+On the Auto splitter card, click **Open…** and pick the `.wasm` file. The card then shows the file name, the game it's for and the category whose settings are in use. The app remembers the file and loads it again the next time it starts.
 
 Click **Reload** to load the same file again. Use it after the file was rebuilt, or when the auto splitter stopped because of an error. **Reload** is disabled until a file is loaded.
 
@@ -17,7 +17,27 @@ The first time you open a file, the app asks "Which game is this auto splitter f
 <!-- screenshot: S3 game-dialog.png -->
 The dialog "Which game is this auto splitter for?" with a name field, the list of games already set up, and the Use this game and Cancel buttons.
 
-The app saves your settings for each game, not for each file. It asks once per file and remembers the answer. To change it later, click **Change** on the Auto splitter card. That opens the same dialog, titled "Change game".
+The app saves your settings for each game and category, not for each file. It asks once per file and remembers the answer. To change it later, click **Change** on the Auto splitter card. That opens the same dialog, titled "Change game".
+
+## Categories
+
+Each game has one or more categories, such as Any% and 100%, and each category keeps its own settings. That way the same auto splitter can split on different things for different runs. A new game starts with one category, "Default". If you used the app before categories existed, the app asks "Name this category" when it loads a game with older settings. That happens when you load an auto splitter, when the app starts and when you change its game. The dialog asks which category those settings are for, such as Any%. Click **Save** to name the category after your answer and save it. Choose **Not now** to keep the name "Default"; it asks again next time, until the game's file is next written (for example when you save settings), and you can rename the category later.
+
+The Auto splitter card shows the category in use under the game. To change it, click the **Change** next to the category. The Category dialog lists the game's categories, and the one in use is marked IN USE.
+
+- **Use another category:** select it and click **Use this category**. The auto splitter keeps running with that category's settings. If you have unsaved changes, the app asks about them first.
+- **Add one:** click **+ New category**, type a name and click **Add**. It starts as a copy of the settings in use now, without unsaved changes. The new category is selected, but the app doesn't switch to it. Click **Use this category** to do that.
+- **Rename one:** click **Rename** on its row, type the new name, then press Enter or click **Done**. Escape keeps the old name.
+- **Delete one:** select it, click **Delete**, then **Delete** again. The dialog asks first; click **Keep** to back out. Deleting can't be undone. You can't delete the category in use or a game's last category.
+
+A category name can't be empty, and can't match another category of the same game, ignoring upper and lower case. **Add** and **Done** stay disabled until the name is valid.
+
+Adding, renaming and deleting are saved straight away. **Cancel** only closes the dialog. The app remembers the last category you used for each game and starts with it next time.
+
+<!-- screenshot: S10 category-dialog.png -->
+The Category dialog with three categories, Any% marked IN USE, and the + New category, Delete, Cancel and Use this category buttons.
+
+LiveSplit One doesn't tell the app which category your splits are for, so choose it here.
 
 ## Changing settings
 
@@ -42,7 +62,7 @@ A file setting shows the picked path, a ✕ to clear it, and **Browse…**.
 
 ### Unsaved changes
 
-If you close the app, open another file, click **Reload** or click **Change** while there are unsaved changes, the app asks "Save your settings changes?". It says how many settings changed and what discards them, for example "You changed 3 settings for GTA San Andreas. Reloading the auto splitter without saving discards them."
+If you close the app, open another file, click **Reload**, click **Change** for the game, or use another category while there are unsaved changes, the app asks "Save your settings changes?". It says how many settings changed and what discards them, for example "You changed 3 settings for GTA San Andreas (Any%). Reloading the auto splitter without saving discards them."
 
 - **Cancel**: go back, change nothing.
 - **Discard**: drop the drafts and carry on.
@@ -50,9 +70,9 @@ If you close the app, open another file, click **Reload** or click **Change** wh
 
 When you open another file, this comes before the file picker.
 
-## Settings shared by a game
+## Settings shared by a game and category
 
-All auto splitters for the same game share one set of saved values. If two of them have a setting with the same name, they share its value. Settings with other names are left alone, and saving never removes another auto splitter's values.
+All auto splitters for the same game share one set of saved values for each category. If two of them have a setting with the same name, they share its value. Settings with other names are left alone, and saving never removes another auto splitter's values.
 
 Auto splitters can also store values themselves. The app saves those too, so nothing is lost when you close it.
 

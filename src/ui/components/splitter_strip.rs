@@ -12,10 +12,16 @@ use crate::ui::theme;
 /// The strip's height: the height of its button.
 const HEIGHT: f32 = 24.0;
 
-/// The Splitter strip: the loaded file with Reload, or "No auto splitter
-/// loaded" with Open…. Open… is disabled while `picking`, when the file picker
-/// is already open.
-pub fn splitter_strip(ui: &mut Ui, loaded: Option<&str>, picking: bool) -> Option<SplitterAction> {
+/// The Splitter strip: the loaded file and the category in use, with Reload,
+/// or "No auto splitter loaded" with Open…. The file name is shortened when
+/// space is short, never the category (spec §6.3). Open… is disabled while
+/// `picking`, when the file picker is already open.
+pub fn splitter_strip(
+    ui: &mut Ui,
+    loaded: Option<&str>,
+    category: Option<&str>,
+    picking: bool,
+) -> Option<SplitterAction> {
     let size = vec2(ui.available_width(), HEIGHT);
     ui.allocate_ui_with_layout(size, Layout::right_to_left(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -32,6 +38,18 @@ pub fn splitter_strip(ui: &mut Ui, loaded: Option<&str>, picking: bool) -> Optio
                 .clicked()
                 .then_some(SplitterAction::Open),
         };
+        if let (Some(_), Some(category)) = (loaded, category) {
+            ui.label(
+                RichText::new(category)
+                    .font(theme::mono(12.0))
+                    .color(theme::TEXT),
+            );
+            ui.label(
+                RichText::new("·")
+                    .font(theme::mono(12.0))
+                    .color(theme::TEXT_MUTED),
+            );
+        }
         // A left-to-right child takes the space left of the button, so the
         // text starts at the left edge and is cut short before the button.
         ui.with_layout(Layout::left_to_right(Align::Center), |ui| {

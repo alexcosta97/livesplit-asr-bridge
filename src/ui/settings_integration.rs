@@ -17,7 +17,7 @@ use eframe::egui::{
 use livesplit_auto_splitting::settings::WidgetKind;
 use toml::{Table, Value};
 
-use super::{BridgeApp, Tab, settings};
+use super::{BridgeApp, Pending, Tab, settings};
 use crate::config::{AppSettings, Config, Game, Splitters};
 
 /// Long enough for a slow CI machine to compile the auto splitter.
@@ -50,7 +50,7 @@ impl Harness {
         std::fs::write(&path, wat::parse_str(EVERY_KIND).unwrap()).unwrap();
         let game = Game::create(&config, "GTA").unwrap();
         let saved: Table = "other_splitter = 3\ngym = false\n".parse().unwrap();
-        Game::save_settings(&config, &game.slug, &saved).unwrap();
+        Game::save_settings(&config, &game.slug, &game.current, &saved).unwrap();
         let mut splitters = Splitters::default();
         splitters.associate(&path, &game.slug).unwrap();
         splitters.save(&config).unwrap();
@@ -134,7 +134,7 @@ impl Harness {
     }
 
     fn saved(&self) -> Table {
-        Game::load(&self.config, "gta").unwrap().settings
+        Game::load(&self.config, "gta").unwrap().settings().clone()
     }
 }
 
@@ -317,4 +317,87 @@ fn a_cleared_file_is_removed_from_the_games_file() {
     assert!(!harness.saved().contains_key("route"));
     // Everything else is kept.
     assert_eq!(harness.saved()["best_route_version"].as_integer(), Some(7));
+}
+
+#[test]
+fn switching_category_gives_the_auto_splitter_its_settings_and_remembers_it() {
+    let mut harness = Harness::new();
+    let path = harness.path.clone();
+    harness.app.load(path);
+    harness.until("the settings", ready);
+
+    // The Category dialog adds a category from the running settings.
+    harness.app.change_category();
+    let nodes = harness.frame(Vec::new());
+    for label in ["IN USE", "Default", "+ New category", "Use this category"] {
+        assert!(has(&nodes, label), "no {label:?} in {nodes:#?}");
+    }
+    harness.click("+ New category");
+    // The name field takes the focus on the frame after the click.
+    harness.frame(Vec::new());
+    harness.frame(vec![Event::Text("100%".to_owned())]);
+    harness.click("Add");
+    let game = Game::load(&harness.config, "gta").unwrap();
+    let added = game
+        .categories
+        .iter()
+        .find(|category| category.key == "100")
+        .unwrap();
+    assert_eq!(added.settings["best_route_version"].as_integer(), Some(7));
+
+    // It is selected; using it switches without asking, as nothing is unsaved.
+    Game::save_settings(
+        &harness.config,
+        "gta",
+        "100",
+        &"gym = true".parse().unwrap(),
+    )
+    .unwrap();
+    harness.app.game = Some(Game::load(&harness.config, "gta").unwrap());
+    harness.app.game.as_mut().unwrap().current = "default".to_owned();
+    harness
+        .app
+        .proceed(Pending::ChangeCategory("100".to_owned()));
+    let nodes = harness.until("the category's settings", |_, nodes| {
+        nodes
+            .iter()
+            .any(|node| node.label == "Gym Moves" && node.toggled == Some(true))
+    });
+    assert!(has(&nodes, "100%"), "{nodes:#?}");
+
+    // The category in use is remembered: a reload starts from it.
+    harness.app.reload();
+    let nodes = harness.until("the reloaded settings", ready);
+    assert_eq!(find(&nodes, "Gym Moves").toggled, Some(true));
+    assert_eq!(harness.app.game.as_ref().unwrap().current, "100");
+}
+
+#[test]
+fn loading_settings_from_before_categories_asks_which_category_they_are_for() {
+    let mut harness = Harness::new();
+    std::fs::write(
+        harness.config.game_file("gta"),
+        "name = \"GTA\"\n\n[settings]\ngym = true\n",
+    )
+    .unwrap();
+    let path = harness.path.clone();
+    harness.app.load(path);
+    harness.until("the naming dialog", |_, nodes| {
+        has(nodes, "NAME THIS CATEGORY")
+    });
+    // The name field takes the focus on the frame after it shows.
+    harness.frame(Vec::new());
+    harness.frame(vec![Event::Text("Any%".to_owned())]);
+    // Enter, not a click: the Settings tab behind has its own "Save".
+    harness.frame(vec![Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    }]);
+    let game = Game::load(&harness.config, "gta").unwrap();
+    assert_eq!(game.category().name, "Any%");
+    assert_eq!(game.unnamed, None);
+    assert_eq!(game.settings()["gym"].as_bool(), Some(true));
 }
