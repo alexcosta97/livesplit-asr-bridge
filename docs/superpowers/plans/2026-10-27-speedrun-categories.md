@@ -338,8 +338,12 @@ Task 4. Superdesign is the design source of truth.
     `escape_closes_the_list_before_leaving_the_edit` (Review Focus 4),
     using `Suggest::key` returning `true` for consumed keys.
   - `a_failure_is_reported_once_and_the_list_has_only_the_last_row`.
-  - Keep every existing test passing (update constructors to pass
-    `Box::new(OfflineCategories)`).
+  - `a_typed_name_on_a_linked_game_adds_without_a_link`: typing
+    `"My Route%"` then Enter with no highlight, and picking the last row,
+    both give `Add { name: "My Route%", link: None }`.
+  - Keep every existing test passing, changing only their constructors to
+    pass `Box::new(OfflineCategories)`, never their assertions: they pin
+    the dialog's behaviour for games that aren't linked.
 
 - [ ] **Step 2: Run** `cargo test --locked ui::components` and see them fail.
 
@@ -383,6 +387,10 @@ Task 4. Superdesign is the design source of truth.
   - `changing_the_game_s_link_removes_its_categories_links` through the
     Game dialog's `apply_game_choice`.
   - `the_category_dialog_of_an_unlinked_game_asks_nothing`.
+  - `an_unlinked_game_adds_renames_and_names_as_before`: add, rename,
+    and "Name this category" Save for an unlinked game work as today, and
+    the game's file has no `speedrun_` keys. Existing app tests stay
+    unchanged.
 
 - [ ] **Step 2: Run** `cargo test --locked ui::tests` and see them fail.
 
