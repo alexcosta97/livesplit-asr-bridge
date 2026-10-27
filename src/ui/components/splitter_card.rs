@@ -18,22 +18,27 @@ pub enum SplitterAction {
     Reload,
     /// Change the game the loaded auto splitter is for.
     Change,
+    /// Pick which of the game's categories' settings to use.
+    ChangeCategory,
 }
 
 /// The Auto splitter card: the loaded file and its game with Change, or "NO
 /// AUTO SPLITTER" with help, then Open… and Reload. `game` is the loaded auto
-/// splitter's game, if it has one. Open… is disabled while `picking`, when
+/// splitter's game, if it has one. `category` is the name of the category in
+/// use, shown under the game with its own Change. Open… is disabled while `picking`, when
 /// the file picker is already open.
 pub fn splitter_card(
     ui: &mut Ui,
     loaded: Option<&str>,
     game: Option<&str>,
+    category: Option<&str>,
     picking: bool,
 ) -> Option<SplitterAction> {
     card(ui, None, |ui| {
         section_label(ui, "Auto splitter");
         ui.add_space(12.0);
         let mut change = false;
+        let mut change_category = false;
         match loaded {
             Some(file_name) => {
                 ui.add(
@@ -55,6 +60,30 @@ pub fn splitter_card(
                     .add(Button::secondary("Change").size(ButtonSize::Xs))
                     .on_hover_text("Choose which game this auto splitter is for")
                     .clicked();
+                if let Some(category) = category {
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        ui.label(
+                            RichText::new("CATEGORY")
+                                .font(theme::mono(11.0))
+                                .color(theme::TEXT_MUTED),
+                        );
+                        ui.add(
+                            Label::new(
+                                RichText::new(category)
+                                    .font(theme::body(13.0))
+                                    .color(theme::TEXT),
+                            )
+                            .truncate(),
+                        );
+                    });
+                    ui.add_space(8.0);
+                    change_category = ui
+                        .add(Button::secondary("Change").size(ButtonSize::Xs))
+                        .on_hover_text("Choose which category's settings to use")
+                        .clicked();
+                }
             }
             None => {
                 ui.label(
@@ -77,6 +106,8 @@ pub fn splitter_card(
             let reload = reload_hint(ui.add(Button::secondary("Reload").enabled(loaded.is_some())));
             if change {
                 Some(SplitterAction::Change)
+            } else if change_category {
+                Some(SplitterAction::ChangeCategory)
             } else if open.clicked() {
                 Some(SplitterAction::Open)
             } else if reload.clicked() {

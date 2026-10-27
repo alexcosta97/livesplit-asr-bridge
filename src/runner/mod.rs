@@ -195,6 +195,12 @@ impl Runner {
     pub fn loaded_path(&self) -> Option<PathBuf> {
         self.shared.control().path.clone()
     }
+
+    /// Pretends the auto splitter at `path` is loaded, for UI tests.
+    #[cfg(test)]
+    pub fn set_loaded_for_tests(&self, path: PathBuf) {
+        self.shared.control().path = Some(path);
+    }
 }
 
 impl Drop for Runner {

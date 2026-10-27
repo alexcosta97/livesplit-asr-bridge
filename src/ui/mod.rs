@@ -643,6 +643,7 @@ impl BridgeApp {
         let loaded = self.runner.loaded_path().map(|path| file_name(&path));
         let loaded = loaded.as_deref();
         let game = self.game.as_ref().map(|game| game.name.clone());
+        let category = self.game.as_ref().map(|game| game.category().name.clone());
         let picking = self.file_pick.is_open();
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = CARD_GAP;
@@ -661,13 +662,23 @@ impl BridgeApp {
             }
 
             let action = match width {
-                Width::Wide => components::splitter_card(ui, loaded, game.as_deref(), picking),
-                Width::Compact => components::splitter_strip(ui, loaded, picking),
+                Width::Wide => components::splitter_card(
+                    ui,
+                    loaded,
+                    game.as_deref(),
+                    category.as_deref(),
+                    picking,
+                ),
+                Width::Compact => {
+                    components::splitter_strip(ui, loaded, category.as_deref(), picking)
+                }
             };
             match action {
                 Some(SplitterAction::Open) => self.open(),
                 Some(SplitterAction::Reload) => self.ask(Pending::Reload),
                 Some(SplitterAction::Change) => self.ask(Pending::ChangeGame),
+                // The Category dialog comes next.
+                Some(SplitterAction::ChangeCategory) => {}
                 None => {}
             }
 
@@ -1909,6 +1920,47 @@ mod tests {
                 "{label:?} at {rect:?} is outside {left}..{right}"
             );
         }
+    }
+
+    /// The labels on screen after drawing the whole window `width` wide.
+    fn labels(app: &mut BridgeApp, width: f32) -> Vec<String> {
+        let ctx = app.ctx.clone();
+        theme::install(&ctx);
+        ctx.enable_accesskit();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(width, 800.0),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            let mut frame = eframe::Frame::_new_kittest();
+            eframe::App::ui(app, ui, &mut frame);
+        });
+        output.textures_delta.clear();
+        output
+            .platform_output
+            .accesskit_update
+            .map(|update| update.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(_, node)| node.label().or(node.value()).map(str::to_owned))
+            .collect()
+    }
+
+    #[test]
+    fn the_card_and_the_strip_show_the_category_in_use() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.runner.set_loaded_for_tests("gta.wasm".into());
+        let wide = labels(&mut app, 1280.0);
+        assert!(wide.iter().any(|label| label == "CATEGORY"), "{wide:?}");
+        assert!(wide.iter().any(|label| label == "Default"), "{wide:?}");
+        let compact = labels(&mut app, 420.0);
+        assert!(
+            compact.iter().any(|label| label == "Default"),
+            "{compact:?}"
+        );
     }
 
     #[test]
