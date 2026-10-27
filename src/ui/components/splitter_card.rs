@@ -25,8 +25,8 @@ pub enum SplitterAction {
 /// The Auto splitter card: the loaded file and its game with Change, or "NO
 /// AUTO SPLITTER" with help, then Open… and Reload. `game` is the loaded auto
 /// splitter's game, if it has one. `category` is the name of the category in
-/// use, shown under the game with its own Change. Open… is disabled while `picking`, when
-/// the file picker is already open.
+/// use, shown under the game with its own Change. Open… is disabled while
+/// `picking`, when the file picker is already open.
 pub fn splitter_card(
     ui: &mut Ui,
     loaded: Option<&str>,
