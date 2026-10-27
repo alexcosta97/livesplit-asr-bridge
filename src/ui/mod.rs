@@ -364,7 +364,7 @@ impl BridgeApp {
                 // What the previous auto splitter stored belongs to its game.
                 self.write_settings();
                 self.game = self.loading.remove(path);
-                let saved = self.game.as_ref().map(|game| game.settings.clone());
+                let saved = self.game.as_ref().map(|game| game.settings().clone());
                 self.settings
                     .reset(as_runtime_has_it(&saved.unwrap_or_default()));
                 self.stored_keys.clear();
@@ -445,7 +445,7 @@ impl BridgeApp {
         let (Some(config), Some(game)) = (self.config.clone(), &self.game) else {
             return;
         };
-        match Game::save_settings(&config, &game.slug, self.settings.live()) {
+        match Game::save_settings(&config, &game.slug, &game.current, self.settings.live()) {
             Ok(game) => self.game = Some(game),
             Err(error) => {
                 self.log(
@@ -487,18 +487,14 @@ impl BridgeApp {
     }
 
     /// Reads a game's file. If it can't be read, the error is reported and
-    /// the game has no saved settings.
+    /// the game has only the category "Default", with no saved settings.
     fn game(&mut self, config: &Config, slug: &str) -> Game {
         Game::load(config, slug).unwrap_or_else(|error| {
             self.log(
                 Category::Error,
                 format!("Couldn't read the game's settings: {error}"),
             );
-            Game {
-                slug: slug.to_owned(),
-                name: slug.to_owned(),
-                settings: toml::Table::new(),
-            }
+            Game::empty(slug, slug)
         })
     }
 
@@ -535,7 +531,7 @@ impl BridgeApp {
 
     fn load_with(&mut self, path: PathBuf, game: Game) {
         self.runner
-            .load(path.clone(), config::to_runtime(&game.settings));
+            .load(path.clone(), config::to_runtime(game.settings()));
         self.loading.insert(path, game);
     }
 
@@ -602,13 +598,14 @@ impl BridgeApp {
                 self.write_settings();
                 // The running auto splitter carries on with the new game's
                 // settings.
-                self.runner.set_settings(config::to_runtime(&game.settings));
+                self.runner
+                    .set_settings(config::to_runtime(game.settings()));
                 self.log(
                     Category::App,
                     format!("{} is now for {}", file_name(&path), game.name),
                 );
                 self.settings
-                    .reset_keeping_widgets(as_runtime_has_it(&game.settings));
+                    .reset_keeping_widgets(as_runtime_has_it(game.settings()));
                 self.stored_keys.clear();
                 self.game = Some(game);
             }
@@ -1003,7 +1000,7 @@ impl BridgeApp {
         // With no configuration folder there is no game file: the settings
         // last until the app closes.
         if let (Some(config), Some(game)) = (self.config.clone(), &self.game) {
-            match Game::save_settings(&config, &game.slug, &draft) {
+            match Game::save_settings(&config, &game.slug, &game.current, &draft) {
                 Ok(game) => self.game = Some(game),
                 Err(error) => {
                     self.log(
@@ -1409,7 +1406,7 @@ mod tests {
         let config = Config::at(dir.path().join("config"));
         let mut app = test_app(config.clone());
         let game = Game::create(&config, "GTA").unwrap();
-        app.settings.reset(game.settings.clone());
+        app.settings.reset(game.settings().clone());
         app.game = Some(game);
         let gym = Setting {
             key: "gym".into(),
@@ -1428,7 +1425,7 @@ mod tests {
         let config = app.config.as_ref().unwrap();
         Game::load(config, "gta")
             .unwrap()
-            .settings
+            .settings()
             .get("gym")?
             .as_bool()
     }
@@ -2208,7 +2205,8 @@ mod tests {
     fn saved_settings_of_gta(app: &BridgeApp) -> toml::Table {
         Game::load(app.config.as_ref().unwrap(), "gta")
             .unwrap()
-            .settings
+            .settings()
+            .clone()
     }
 
     /// The messages logged in `category`.
