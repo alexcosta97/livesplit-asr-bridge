@@ -4,11 +4,24 @@
 mod categories;
 mod matching;
 mod search;
+#[cfg(test)]
+mod test_server;
 
+#[cfg(not(test))]
 #[allow(unused_imports)]
 // Used by the Category dialog, which comes later.
-pub use categories::{CategoryLink, Variant, parse_variants};
+pub use categories::live_categories;
+#[allow(unused_imports)]
+// Used by the Category dialog, which comes later.
+pub use categories::{CategoryLink, CategorySource, Variant, parse_variants};
+#[cfg(test)]
+#[allow(unused_imports)]
+// Used by the tests of the Category dialog, which comes later.
+pub use categories::{FakeCategories, OfflineCategories};
 pub use matching::clear_match;
+#[allow(unused_imports)]
+// Used by the Category dialog, which comes later.
+pub use matching::clear_variant;
 pub use search::GameSearch;
 #[cfg(not(test))]
 pub use search::live;

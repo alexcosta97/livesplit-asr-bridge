@@ -89,14 +89,20 @@ impl Drop for SpeedrunSearch {
     }
 }
 
-/// The worker: takes the waiting name, searches for it and sends the answer,
-/// until the search is dropped or nobody listens any more.
-fn work(base_url: &str, shared: &Shared, sender: &Sender<SearchAnswer>) {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+/// The HTTP client the workers use: it gives up after [`TIMEOUT`] and names the
+/// app in its user agent.
+pub(super) fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
         .user_agent(format!("livesplit-asr-bridge/{VERSION}"))
         .build()
-        .into();
+        .into()
+}
+
+/// The worker: takes the waiting name, searches for it and sends the answer,
+/// until the search is dropped or nobody listens any more.
+fn work(base_url: &str, shared: &Shared, sender: &Sender<SearchAnswer>) {
+    let agent = agent();
     let (state, wake) = &**shared;
     loop {
         let name = {
@@ -202,89 +208,14 @@ impl GameSearch for FakeSearch {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{BufRead, BufReader, Write};
-    use std::net::{SocketAddr, TcpListener};
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
     use super::*;
+    use crate::speedrun::test_server::{ok, serve};
     use crate::version::VERSION;
 
     const GAME_JSON: &str = r#"{"data":[{"id":"abc","names":{"international":"Grand Theft Auto: San Andreas"},"abbreviation":"gtasa","released":2004}]}"#;
-
-    /// What a test server received for one request.
-    struct Received {
-        request_line: String,
-        headers: Vec<String>,
-    }
-
-    /// Serves HTTP on 127.0.0.1, one thread per connection. `respond` gets the
-    /// request and the number of the connection (from 0) and returns the whole
-    /// response, or `None` to leave the connection unanswered. Every request is
-    /// also sent on the returned channel.
-    fn serve<F>(respond: F) -> (SocketAddr, mpsc::Receiver<Received>)
-    where
-        F: Fn(&Received, usize) -> Option<String> + Send + Sync + 'static,
-    {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (seen_tx, seen_rx) = mpsc::channel();
-        let respond = Arc::new(respond);
-        std::thread::spawn(move || {
-            for (number, stream) in listener.incoming().enumerate() {
-                let Ok(mut stream) = stream else { continue };
-                let seen_tx = seen_tx.clone();
-                let respond = respond.clone();
-                std::thread::spawn(move || {
-                    let mut reader = BufReader::new(stream.try_clone().unwrap());
-                    let mut request_line = String::new();
-                    if reader.read_line(&mut request_line).unwrap_or(0) == 0 {
-                        return;
-                    }
-                    let mut headers = Vec::new();
-                    loop {
-                        let mut line = String::new();
-                        if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                            return;
-                        }
-                        let line = line.trim_end().to_string();
-                        if line.is_empty() {
-                            break;
-                        }
-                        headers.push(line);
-                    }
-                    let received = Received {
-                        request_line: request_line.trim_end().to_string(),
-                        headers,
-                    };
-                    let response = {
-                        // Report the request before answering, so a test can wait for it.
-                        let _ = seen_tx.send(Received {
-                            request_line: received.request_line.clone(),
-                            headers: received.headers.clone(),
-                        });
-                        respond(&received, number)
-                    };
-                    if let Some(response) = response {
-                        let _ = stream.write_all(response.as_bytes());
-                        let _ = stream.flush();
-                    } else {
-                        // Keep the connection open without answering.
-                        std::thread::sleep(Duration::from_secs(10));
-                    }
-                });
-            }
-        });
-        (addr, seen_rx)
-    }
-
-    /// A 200 response carrying `body`.
-    fn ok(body: &str) -> String {
-        format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-    }
 
     /// Polls `search` until it answers, for at most five seconds.
     fn wait_for_answer(search: &mut SpeedrunSearch) -> SearchAnswer {

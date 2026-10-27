@@ -1,6 +1,6 @@
 //! Matching a game's name against speedrun.com games (spec §7.5).
 
-use super::SpeedrunGame;
+use super::{SpeedrunGame, Variant};
 
 /// The score from which a game counts as a clear match for a name.
 pub const CLEAR_MATCH: f64 = 0.9;
@@ -40,6 +40,20 @@ pub fn clear_match(name: &str, games: &[SpeedrunGame]) -> Option<usize> {
         .iter()
         .enumerate()
         .filter(|(_, game)| score(name, game) >= CLEAR_MATCH)
+        .map(|(index, _)| index);
+    let first = clear.next()?;
+    clear.next().is_none().then_some(first)
+}
+
+/// The index of the one variant whose name clearly matches `name`, or `None`
+/// when no variant or more than one variant matches clearly.
+#[cfg_attr(not(test), allow(dead_code))] // Used by the Category dialog, which comes later.
+pub fn clear_variant(name: &str, variants: &[&Variant]) -> Option<usize> {
+    let name = normalize(name);
+    let mut clear = variants
+        .iter()
+        .enumerate()
+        .filter(|(_, variant)| similarity(&name, &normalize(&variant.name)) >= CLEAR_MATCH)
         .map(|(index, _)| index);
     let first = clear.next()?;
     clear.next().is_none().then_some(first)
@@ -107,5 +121,22 @@ mod tests {
             None
         );
         assert_eq!(clear_match("portal", &[]), None);
+    }
+
+    fn variant(name: &str) -> Variant {
+        Variant {
+            name: name.into(),
+            link: Default::default(),
+        }
+    }
+
+    #[test]
+    fn a_variant_matches_clearly_by_its_name_only() {
+        let pc = variant("Any% (PC)");
+        let n64 = variant("Any% (N64)");
+        let both = [&pc, &n64];
+        assert_eq!(clear_variant("any%(pc)", &both), Some(0));
+        assert_eq!(clear_variant("Any%", &both), None);
+        assert_eq!(clear_variant("!!!", &both), None);
     }
 }

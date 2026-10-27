@@ -5,9 +5,12 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::mpsc::{self, Receiver};
 
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
+
+use super::search::agent;
 
 /// The most variants one category yields; the rest are left out.
 const MAX_VARIANTS_PER_CATEGORY: usize = 1_000;
@@ -39,6 +42,142 @@ impl Variant {
     /// Whether this is a variant of a level rather than of the whole game.
     pub fn is_level(&self) -> bool {
         self.link.level.is_some()
+    }
+}
+
+/// The answer to one request: the game asked for, and its variants or why
+/// they could not be read.
+type Answer = (String, Result<Vec<Variant>, String>);
+
+/// Something that fetches a game's variants without blocking the caller.
+pub trait CategorySource: Send {
+    /// Starts fetching the variants of the speedrun.com game `game_id`.
+    fn request(&mut self, game_id: &str);
+
+    /// The answer, once: the game id asked for and its variants or error.
+    fn poll(&mut self) -> Option<Answer>;
+}
+
+/// Fetches variants from speedrun.com, each request on a thread of its own.
+pub struct SpeedrunCategories {
+    /// The address of the API.
+    base_url: String,
+    /// Where the threads send their answers.
+    sender: mpsc::Sender<Answer>,
+    /// The answers coming back from the threads.
+    answers: Receiver<Answer>,
+}
+
+impl SpeedrunCategories {
+    /// A source that asks the API at `base_url`.
+    pub fn new(base_url: &str) -> Self {
+        let (sender, answers) = mpsc::channel();
+        Self {
+            base_url: base_url.to_string(),
+            sender,
+            answers,
+        }
+    }
+}
+
+impl CategorySource for SpeedrunCategories {
+    fn request(&mut self, game_id: &str) {
+        let base_url = self.base_url.clone();
+        let sender = self.sender.clone();
+        let game_id = game_id.to_string();
+        std::thread::spawn(move || {
+            let variants = fetch(&agent(), &base_url, &game_id);
+            // Nobody listens once the source is dropped; that is fine.
+            let _ = sender.send((game_id, variants));
+        });
+    }
+
+    fn poll(&mut self) -> Option<Answer> {
+        self.answers.try_recv().ok()
+    }
+}
+
+/// Asks the API at `base_url` for the game `game_id` with its levels,
+/// categories and their variables.
+fn fetch(agent: &ureq::Agent, base_url: &str, game_id: &str) -> Result<Vec<Variant>, String> {
+    let mut response = agent
+        .get(format!("{base_url}/games/{game_id}"))
+        .query("embed", "levels.categories.variables,categories.variables")
+        .call()
+        .map_err(|e| e.to_string())?;
+    let body = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| e.to_string())?;
+    parse_variants(&body)
+}
+
+/// Builds the source the app uses: the real speedrun.com.
+#[cfg(not(test))]
+pub fn live_categories() -> Box<dyn CategorySource> {
+    Box::new(SpeedrunCategories::new(super::search::API_BASE))
+}
+
+/// A source that never answers, for tests of the app that must not use the
+/// network.
+#[cfg(test)]
+pub struct OfflineCategories;
+
+#[cfg(test)]
+impl CategorySource for OfflineCategories {
+    fn request(&mut self, _game_id: &str) {}
+
+    fn poll(&mut self) -> Option<Answer> {
+        None
+    }
+}
+
+/// What a [`FakeCategories`] and its clones share.
+#[cfg(test)]
+#[derive(Default)]
+struct FakeState {
+    /// The game ids asked for, in order.
+    requests: Vec<String>,
+    /// The answers to hand out, oldest first.
+    answers: std::collections::VecDeque<Answer>,
+}
+
+/// A source for tests: answers only what the test queued. Clones share their
+/// state, so a test can box one clone and keep another to queue answers and
+/// read requests.
+#[cfg(test)]
+#[derive(Clone, Default)]
+pub struct FakeCategories {
+    /// The state shared by all clones.
+    state: std::sync::Arc<std::sync::Mutex<FakeState>>,
+}
+
+#[cfg(test)]
+impl FakeCategories {
+    /// Queues an answer for `poll` to hand out.
+    pub fn answer(&self, game_id: &str, variants: Result<Vec<Variant>, String>) {
+        let mut state = self.state.lock().unwrap();
+        state.answers.push_back((game_id.to_string(), variants));
+    }
+
+    /// The game ids asked for so far, in order.
+    pub fn requests(&self) -> Vec<String> {
+        self.state.lock().unwrap().requests.clone()
+    }
+}
+
+#[cfg(test)]
+impl CategorySource for FakeCategories {
+    fn request(&mut self, game_id: &str) {
+        self.state
+            .lock()
+            .unwrap()
+            .requests
+            .push(game_id.to_string());
+    }
+
+    fn poll(&mut self) -> Option<Answer> {
+        self.state.lock().unwrap().answers.pop_front()
     }
 }
 
@@ -229,7 +368,11 @@ fn applies(scope: Option<&RawScope>, level: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::*;
+    use crate::speedrun::test_server::{ok, serve};
+    use crate::version::VERSION;
 
     /// A variable of a category, as speedrun.com sends it.
     fn variable(id: &str, subcategory: bool, scope: &str, values: &[(&str, &str)]) -> String {
@@ -394,5 +537,92 @@ mod tests {
     fn an_answer_without_data_is_an_error() {
         assert!(parse_variants(r#"{"status":420}"#).is_err());
         assert!(parse_variants("not json").is_err());
+    }
+
+    const GAME_JSON: &str = r#"{"data":{"categories":{"data":[
+      {"id":"cat","name":"Any%","type":"per-game","variables":{"data":[]}}]},
+      "levels":{"data":[]}}}"#;
+
+    /// Polls `source` until it answers, for at most five seconds.
+    fn wait_for_answer(source: &mut SpeedrunCategories) -> Answer {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if let Some(answer) = source.poll() {
+                return answer;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("no answer within five seconds");
+    }
+
+    #[test]
+    fn asks_for_the_game_with_levels_and_categories_embedded() {
+        let (addr, seen) = serve(|_, _| Some(ok(GAME_JSON)));
+        let mut source = SpeedrunCategories::new(&format!("http://{addr}"));
+        source.request("abc");
+        let (game_id, variants) = wait_for_answer(&mut source);
+        let received = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        let target = received.request_line.split(' ').nth(1).unwrap();
+        let decoded = target
+            .replace("%2C", ",")
+            .replace("%2c", ",")
+            .replace("%2E", ".");
+        assert_eq!(
+            decoded,
+            "/games/abc?embed=levels.categories.variables,categories.variables"
+        );
+        let user_agent = format!("user-agent: livesplit-asr-bridge/{VERSION}");
+        assert!(
+            received
+                .headers
+                .iter()
+                .any(|h| h.eq_ignore_ascii_case(&user_agent)),
+            "{:?}",
+            received.headers
+        );
+        assert_eq!(game_id, "abc");
+        let names: Vec<String> = variants.unwrap().into_iter().map(|v| v.name).collect();
+        assert_eq!(names, ["Any%"]);
+    }
+
+    #[test]
+    fn an_error_status_is_a_failed_answer() {
+        let (addr, _seen) = serve(|_, _| {
+            Some("HTTP/1.1 420 \r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into())
+        });
+        let mut source = SpeedrunCategories::new(&format!("http://{addr}"));
+        source.request("abc");
+        let (game_id, variants) = wait_for_answer(&mut source);
+        assert_eq!(game_id, "abc");
+        assert!(variants.is_err());
+    }
+
+    #[test]
+    fn dropping_the_source_does_not_wait_for_the_worker() {
+        let (addr, seen) = serve(|_, _| None);
+        let mut source = SpeedrunCategories::new(&format!("http://{addr}"));
+        source.request("abc");
+        seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        let started = Instant::now();
+        drop(source);
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
+
+    #[test]
+    fn a_fake_source_answers_what_it_was_given_and_shares_its_state_between_clones() {
+        let fake = FakeCategories::default();
+        let mut boxed: Box<dyn CategorySource> = Box::new(fake.clone());
+        fake.answer("abc", Ok(Vec::new()));
+        boxed.request("abc");
+        assert_eq!(fake.requests(), vec!["abc".to_string()]);
+        assert_eq!(boxed.poll(), Some(("abc".to_string(), Ok(Vec::new()))));
+        assert!(boxed.poll().is_none());
+    }
+
+    #[test]
+    fn the_offline_source_never_answers() {
+        let mut offline = OfflineCategories;
+        offline.request("abc");
+        assert!(offline.poll().is_none());
     }
 }
