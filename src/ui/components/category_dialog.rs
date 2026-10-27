@@ -152,6 +152,20 @@ impl CategoryDialog {
         self.selected != self.game.current && self.game.categories.len() > 1
     }
 
+    /// Whether the rows can be selected and renamed: not while a rename, a
+    /// new name or a delete question is open, so the selection can't change
+    /// under them.
+    fn rows_active(&self) -> bool {
+        self.mode == Mode::List
+    }
+
+    /// The Delete the confirm question returns, or `None` for a category
+    /// that can't be deleted.
+    fn confirmed_delete(&self) -> Option<CategoryDialogAction> {
+        self.can_delete()
+            .then(|| CategoryDialogAction::Delete(self.selected.clone()))
+    }
+
     fn use_action(&self) -> CategoryDialogAction {
         CategoryDialogAction::Use(self.selected.clone())
     }
@@ -279,6 +293,7 @@ fn contents(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogAc
 /// renamed.
 fn list(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogAction> {
     let mut action = None;
+    let active = dialog.rows_active();
     let mut select = None;
     let mut rename = None;
     ScrollArea::vertical()
@@ -302,7 +317,7 @@ fn list(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogAction
                 }
                 let in_use = category.key == dialog.game.current;
                 let selected = category.key == dialog.selected;
-                match row(ui, &category.name, in_use, selected) {
+                match row(ui, &category.name, in_use, selected, active) {
                     Some(RowAction::Select) => select = Some(category.key.clone()),
                     Some(RowAction::Rename) => rename = Some(category.key.clone()),
                     None => {}
@@ -325,10 +340,14 @@ enum RowAction {
 
 /// A category in the list: its name, IN USE for the category in use, and
 /// Rename. The selected row is outlined.
-fn row(ui: &mut Ui, name: &str, in_use: bool, selected: bool) -> Option<RowAction> {
-    let (rect, response) =
-        ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::click());
-    if selected || response.hovered() {
+fn row(ui: &mut Ui, name: &str, in_use: bool, selected: bool, active: bool) -> Option<RowAction> {
+    let sense = if active {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), sense);
+    if selected || (active && response.hovered()) {
         let stroke = if selected {
             Stroke::new(1.0, theme::ACCENT)
         } else {
@@ -350,7 +369,11 @@ fn row(ui: &mut Ui, name: &str, in_use: bool, selected: bool) -> Option<RowActio
                 .layout(Layout::right_to_left(Align::Center)),
             |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                let rename = ui.add(Button::secondary("Rename").size(ButtonSize::Xs));
+                let rename = ui.add(
+                    Button::secondary("Rename")
+                        .size(ButtonSize::Xs)
+                        .enabled(active),
+                );
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     ui.add(
                         Label::new(
@@ -573,9 +596,11 @@ fn confirm_delete(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDi
                 if keep.clicked() {
                     dialog.back_to_list();
                 }
-                delete
-                    .clicked()
-                    .then(|| CategoryDialogAction::Delete(dialog.selected.clone()))
+                if delete.clicked() {
+                    dialog.confirmed_delete()
+                } else {
+                    None
+                }
             })
             .inner
         })
@@ -644,6 +669,24 @@ mod tests {
         one.categories.retain(|category| category.key == "any");
         let dialog = CategoryDialog::new(&one);
         assert!(!dialog.can_delete());
+    }
+
+    #[test]
+    fn rows_are_inactive_and_delete_is_refused_for_the_category_in_use() {
+        let mut dialog = CategoryDialog::new(&game());
+        assert!(dialog.rows_active());
+        dialog.selected = "100".to_owned();
+        dialog.mode = Mode::ConfirmDelete;
+        assert!(!dialog.rows_active());
+        assert_eq!(
+            dialog.confirmed_delete(),
+            Some(CategoryDialogAction::Delete("100".to_owned()))
+        );
+        // Even if the selection reached the category in use, nothing is deleted.
+        dialog.selected = "any".to_owned();
+        assert_eq!(dialog.confirmed_delete(), None);
+        dialog.start_adding();
+        assert!(!dialog.rows_active());
     }
 
     #[test]
