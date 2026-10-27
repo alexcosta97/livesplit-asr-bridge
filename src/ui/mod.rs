@@ -35,7 +35,7 @@ use crate::{
     logging::{self, Category, Filters, Logger},
     runner::{Runner, RunnerEvent, TimerAction, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
-    speedrun::{self, GameSearch, SpeedrunLink},
+    speedrun::{self, CategorySource, GameSearch, SpeedrunLink},
     version::VERSION,
 };
 use components::{
@@ -130,6 +130,20 @@ fn default_search() -> Box<dyn GameSearch> {
     }
 }
 
+/// The source the Category dialog asks for a linked game's speedrun.com
+/// categories: the real one, or none in tests, which make no network
+/// requests.
+fn default_categories() -> Box<dyn CategorySource> {
+    #[cfg(test)]
+    {
+        Box::new(speedrun::OfflineCategories)
+    }
+    #[cfg(not(test))]
+    {
+        speedrun::live_categories()
+    }
+}
+
 /// What waits for an answer in the Unsaved dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Pending {
@@ -218,6 +232,8 @@ pub struct BridgeApp {
     game: Option<Game>,
     /// Makes the search a Game dialog suggests speedrun.com games with.
     new_search: fn() -> Box<dyn GameSearch>,
+    /// Makes the source a Category dialog asks for speedrun.com categories.
+    new_categories: fn() -> Box<dyn CategorySource>,
     /// The open Game dialog, and the file it is for.
     dialog: Option<(GameDialog, PathBuf)>,
     /// The open Category dialog.
@@ -300,6 +316,7 @@ impl BridgeApp {
             loading: HashMap::new(),
             game: None,
             new_search: default_search,
+            new_categories: default_categories,
             dialog: None,
             category_dialog: None,
             settings: SettingsEditor::default(),
@@ -718,7 +735,7 @@ impl BridgeApp {
     /// asks about unsaved settings only when another category is used.
     fn change_category(&mut self) {
         if let Some(game) = &self.game {
-            self.category_dialog = Some(CategoryDialog::new(game));
+            self.category_dialog = Some(CategoryDialog::new(game, (self.new_categories)()));
         }
     }
 
@@ -729,7 +746,7 @@ impl BridgeApp {
         if let Some(game) = &self.game
             && let Some(key) = &game.unnamed
         {
-            self.category_dialog = Some(CategoryDialog::naming(game, key));
+            self.category_dialog = Some(CategoryDialog::naming(game, key, (self.new_categories)()));
         }
     }
 
@@ -769,9 +786,10 @@ impl BridgeApp {
                 }
                 return;
             }
-            CategoryDialogAction::Add(name) => {
+            CategoryDialogAction::Add { name, link } => {
                 let name = name.trim().to_owned();
-                match Game::add_category(&config, &slug, &name, self.settings.live(), None) {
+                let live = self.settings.live();
+                match Game::add_category(&config, &slug, &name, live, link.as_ref()) {
                     Ok((game, key)) => (
                         Ok(game),
                         Some(key),
@@ -786,11 +804,11 @@ impl BridgeApp {
                     ),
                 }
             }
-            CategoryDialogAction::Rename { key, name } => {
+            CategoryDialogAction::Rename { key, name, link } => {
                 let name = name.trim().to_owned();
                 let old = self.category_name(&key);
                 (
-                    Game::rename_category(&config, &slug, &key, &name, None),
+                    Game::rename_category(&config, &slug, &key, &name, link.as_ref()),
                     None,
                     format!("Renamed {old} to {name}"),
                     format!("Couldn't rename {old}"),
@@ -1817,8 +1835,14 @@ mod tests {
     fn a_new_category_copies_the_running_settings_not_the_edits() {
         let (_dir, mut app) = app_with_unsaved_edit();
         let _ = app.settings.set_live(table("level = 2"), Instant::now());
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
-        app.category_action(CategoryDialogAction::Add("Low%".to_owned()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
+        app.category_action(CategoryDialogAction::Add {
+            name: "Low%".to_owned(),
+            link: None,
+        });
         let added = saved_in(&app, "low");
         assert_eq!(added.get("level"), Some(&Value::Integer(2)));
         // "gym" is an unsaved edit.
@@ -1831,10 +1855,14 @@ mod tests {
     #[test]
     fn renaming_and_deleting_are_saved_straight_away() {
         let (_dir, mut app) = app_with_two_categories();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
         app.category_action(CategoryDialogAction::Rename {
             key: "100".to_owned(),
             name: "100% NMG".to_owned(),
+            link: None,
         });
         let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
         assert!(
@@ -1861,8 +1889,14 @@ mod tests {
             "name = \"GTA\"\ncategory = \"100\"\n\n[categories.100]\nname = \"100%\"\n",
         )
         .unwrap();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
-        app.category_action(CategoryDialogAction::Add("Low%".to_owned()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
+        app.category_action(CategoryDialogAction::Add {
+            name: "Low%".to_owned(),
+            link: None,
+        });
         let game = app.game.as_ref().unwrap();
         assert_eq!(game.current, "default");
         assert_eq!(game.category().key, "default");
@@ -1897,6 +1931,7 @@ mod tests {
         app.category_action(CategoryDialogAction::Rename {
             key: "default".to_owned(),
             name: "Any%".to_owned(),
+            link: None,
         });
         // Named: the dialog closes rather than showing the list.
         assert!(app.category_dialog.is_none());
@@ -1941,7 +1976,10 @@ mod tests {
     #[test]
     fn an_open_category_dialog_closes_when_the_auto_splitter_unloads() {
         let (_dir, mut app) = app_with_two_categories();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
         app.runner_event(RunnerEvent::Unloaded);
         assert!(app.category_dialog.is_none());
     }
@@ -1949,8 +1987,14 @@ mod tests {
     #[test]
     fn the_log_has_the_trimmed_category_name() {
         let (_dir, mut app) = app_with_unsaved_edit();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
-        app.category_action(CategoryDialogAction::Add(" Y ".to_owned()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
+        app.category_action(CategoryDialogAction::Add {
+            name: " Y ".to_owned(),
+            link: None,
+        });
         let all = Filters {
             auto_splitter: true,
             connection: true,
@@ -1967,7 +2011,10 @@ mod tests {
     #[test]
     fn the_category_in_use_is_not_deleted() {
         let (_dir, mut app) = app_with_two_categories();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
         app.category_action(CategoryDialogAction::Delete("default".to_owned()));
         let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
         assert_eq!(game.categories.len(), 2);

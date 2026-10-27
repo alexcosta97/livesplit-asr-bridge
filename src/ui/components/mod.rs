@@ -8,6 +8,7 @@ mod app_header;
 mod button;
 mod card;
 mod category_dialog;
+mod category_suggest;
 mod checkbox;
 mod empty_state;
 mod error_card;

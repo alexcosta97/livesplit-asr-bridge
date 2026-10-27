@@ -1,8 +1,6 @@
 //! A speedrun.com game's category variants, read from the answer to the
 //! request for its categories and levels (spec §7.5.1).
 
-#![cfg_attr(not(test), allow(dead_code))] // Used by the Category dialog, which comes later.
-
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::mpsc::{self, Receiver};

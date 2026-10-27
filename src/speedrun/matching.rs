@@ -47,7 +47,6 @@ pub fn clear_match(name: &str, games: &[SpeedrunGame]) -> Option<usize> {
 
 /// The index of the one variant whose name clearly matches `name`, or `None`
 /// when no variant or more than one variant matches clearly.
-#[cfg_attr(not(test), allow(dead_code))] // Used by the Category dialog, which comes later.
 pub fn clear_variant(name: &str, variants: &[&Variant]) -> Option<usize> {
     let name = normalize(name);
     let mut clear = variants
