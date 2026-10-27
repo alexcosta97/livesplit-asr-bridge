@@ -572,7 +572,8 @@ the window dimmed behind them.
     separately, a speedrun.com link or none. Filling the field from a
     result doesn't change which game already set up is selected, so
     linking a selected game that wasn't linked links that game, whatever
-    its old name.
+    its old name. Selecting a game already set up, by clicking it or by
+    typing its name, brings its link with it, if it has one.
   - **Use this game** with a link: a result already linked to a game set up
     uses that game. Otherwise the selected game is linked and takes
     speedrun.com's name, or, with no game selected, a new game is set up,
