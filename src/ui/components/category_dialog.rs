@@ -78,6 +78,15 @@ enum Mode {
     },
 }
 
+/// Who already has a variant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Taken {
+    /// The category with this key, linked to it or with its name.
+    By(String),
+    /// One category is linked to it and another has its name.
+    Both,
+}
+
 /// The Category dialog's state.
 pub struct CategoryDialog {
     /// The game, as last read: its name, its categories and the one in use.
@@ -251,6 +260,20 @@ impl CategoryDialog {
         self.link_on_own();
     }
 
+    /// Whether the list is open and has something to show: the row asking
+    /// to type, variants, or the last row, which shows once something is
+    /// typed.
+    fn list_shown(&self) -> bool {
+        self.linked()
+            && self.suggest.list_open
+            && match self.rows() {
+                Rows::TypeToSearch(_) => true,
+                Rows::Variants(rows) => {
+                    !rows.is_empty() || !self.name().unwrap_or_default().trim().is_empty()
+                }
+            }
+    }
+
     /// What the list shows for the name in the field.
     fn rows(&self) -> Rows {
         Suggest::rows(
@@ -271,28 +294,39 @@ impl CategoryDialog {
         }
     }
 
-    /// The key of another category than `except` that is linked to
-    /// `variant`, or else that has its name, ignoring case and surrounding
-    /// spaces.
-    fn taken_by(&self, variant: &Variant, except: Option<&str>) -> Option<String> {
-        let others = || {
-            self.game
-                .categories
-                .iter()
-                .filter(move |category| Some(category.key.as_str()) != except)
-        };
+    /// Who already has `variant`, apart from the category `except`: a
+    /// category linked to it, or else one with its name, ignoring case and
+    /// surrounding spaces. A variant linked to one category while another has
+    /// its name is [`Taken::Both`].
+    fn taken(&self, variant: &Variant, except: Option<&str>) -> Option<Taken> {
         let name = variant.name.trim().to_lowercase();
-        others()
-            .find(|category| category.speedrun.as_ref() == Some(&variant.link))
-            .or_else(|| others().find(|category| category.name.trim().to_lowercase() == name))
-            .map(|category| category.key.clone())
+        let categories = &self.game.categories;
+        let linked = categories
+            .iter()
+            .find(|category| category.speedrun.as_ref() == Some(&variant.link));
+        let named = categories.iter().find(|category| {
+            Some(category.key.as_str()) != except && category.name.trim().to_lowercase() == name
+        });
+        match (linked, named) {
+            (Some(linked), Some(named)) if linked.key != named.key => Some(Taken::Both),
+            (Some(linked), _) if Some(linked.key.as_str()) != except => {
+                Some(Taken::By(linked.key.clone()))
+            }
+            (_, Some(named)) => Some(Taken::By(named.key.clone())),
+            _ => None,
+        }
     }
 
     /// Whether `variant` can't be picked: while renaming or naming, another
-    /// category has it.
+    /// category has it; and in every mode, one category is linked to it
+    /// while another has its name, so neither could take it.
     fn dimmed(&self, variant: &Variant) -> bool {
-        self.editing_key()
-            .is_some_and(|key| self.taken_by(variant, Some(key)).is_some())
+        let editing = self.editing_key();
+        match self.taken(variant, editing) {
+            None => false,
+            Some(Taken::Both) => true,
+            Some(Taken::By(_)) => editing.is_some(),
+        }
     }
 
     /// Picks the list's variant row `row`. It fills the field with the
@@ -308,7 +342,7 @@ impl CategoryDialog {
             return None;
         }
         if matches!(self.mode, Mode::Adding { .. })
-            && let Some(key) = self.taken_by(&variant, None)
+            && let Some(Taken::By(key)) = self.taken(&variant, None)
         {
             self.selected.clone_from(&key);
             return Some(CategoryDialogAction::Rename {
@@ -735,11 +769,13 @@ fn rename_row(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialog
 /// than leaving the field, and an Enter that picks a row isn't also Add,
 /// Done or Save. Returns what picking the row gave.
 fn list_keys(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogAction> {
-    if !dialog.linked() {
-        return None;
-    }
     let mut action = None;
     for key in [Key::ArrowDown, Key::ArrowUp, Key::Enter, Key::Escape] {
+        // A list with nothing to show isn't drawn, so its keys go to the
+        // field and the dialog.
+        if !dialog.list_shown() {
+            break;
+        }
         let rows = dialog.row_count();
         let highlight = dialog.suggest.highlight;
         let used = ui.input_mut(|input| {
@@ -1552,5 +1588,85 @@ mod tests {
             frame(&ctx, &mut dialog, press(Key::Escape)),
             Some(CategoryDialogAction::Cancel)
         );
+    }
+
+    #[test]
+    fn a_variant_linked_to_one_category_and_named_like_another_is_dimmed_everywhere() {
+        let game = with(linked_game(), "any", "Old", Some(pc().link));
+        let game = with(game, "100", "any% (PC)", None);
+        let (mut dialog, fake) = open(&game);
+        arrive(&mut dialog, &fake, vec![pc(), n64()]);
+        dialog.start_adding();
+        assert!(dialog.dimmed(&pc()));
+        assert_eq!(dialog.pick(0), None);
+        assert_eq!(name(&dialog), "");
+        assert_eq!(dialog.selected, "any");
+        dialog.start_rename("any");
+        assert!(dialog.dimmed(&pc()), "its name is another category's");
+        dialog.start_rename("100");
+        assert!(dialog.dimmed(&pc()), "it is another category's link");
+    }
+
+    /// A linked game's dialog drawn in a context, with a source that never
+    /// answers, as offline.
+    fn offline_on_screen(mut dialog: CategoryDialog) -> (Context, CategoryDialog) {
+        let ctx = Context::default();
+        crate::ui::theme::install(&ctx);
+        assert_eq!(frame(&ctx, &mut dialog, vec![]), None);
+        assert_eq!(frame(&ctx, &mut dialog, vec![]), None);
+        (ctx, dialog)
+    }
+
+    #[test]
+    fn escape_leaves_an_empty_field_at_once_while_nothing_is_listed() {
+        let mut dialog = CategoryDialog::new(&linked_game(), Box::new(OfflineCategories));
+        dialog.start_adding();
+        let (ctx, mut dialog) = offline_on_screen(dialog);
+        assert_eq!(frame(&ctx, &mut dialog, press(Key::Escape)), None);
+        assert_eq!(dialog.mode, Mode::List);
+
+        let dialog = CategoryDialog::naming(&linked_game(), "any", Box::new(OfflineCategories));
+        let (ctx, mut dialog) = offline_on_screen(dialog);
+        assert_eq!(
+            frame(&ctx, &mut dialog, press(Key::Escape)),
+            Some(CategoryDialogAction::Cancel)
+        );
+    }
+
+    fn hundred_pc() -> Variant {
+        variant("100% (PC)", "100", "pc", None)
+    }
+
+    #[test]
+    fn enter_on_a_highlighted_row_picks_it_without_done_while_renaming() {
+        let ctx = Context::default();
+        crate::ui::theme::install(&ctx);
+        let (mut dialog, fake) = open(&linked_game());
+        arrive(&mut dialog, &fake, vec![pc(), hundred_pc()]);
+        dialog.start_rename("100");
+        assert_eq!(frame(&ctx, &mut dialog, vec![]), None);
+        assert_eq!(frame(&ctx, &mut dialog, vec![]), None);
+        assert!(dialog.suggest.list_open);
+        assert_eq!(frame(&ctx, &mut dialog, press(Key::ArrowDown)), None);
+        assert_eq!(frame(&ctx, &mut dialog, press(Key::Enter)), None);
+        assert_eq!(name(&dialog), "100% (PC)");
+        assert_eq!(dialog.suggest.link, Some(hundred_pc().link));
+        assert!(matches!(dialog.mode, Mode::Renaming { .. }));
+    }
+
+    #[test]
+    fn enter_on_a_highlighted_row_picks_it_without_save_while_naming() {
+        let ctx = Context::default();
+        crate::ui::theme::install(&ctx);
+        let fake = FakeCategories::default();
+        let mut dialog = CategoryDialog::naming(&linked_game(), "any", Box::new(fake.clone()));
+        arrive(&mut dialog, &fake, vec![pc(), n64()]);
+        assert_eq!(frame(&ctx, &mut dialog, vec![]), None);
+        assert_eq!(frame(&ctx, &mut dialog, vec![]), None);
+        assert_eq!(frame(&ctx, &mut dialog, press(Key::ArrowDown)), None);
+        assert_eq!(frame(&ctx, &mut dialog, press(Key::Enter)), None);
+        assert_eq!(name(&dialog), "Any% (PC)");
+        assert_eq!(dialog.suggest.link, Some(pc().link));
+        assert!(dialog.is_naming());
     }
 }
