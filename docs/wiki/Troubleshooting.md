@@ -25,13 +25,13 @@
 - On Linux, check `ptrace_scope`. See [Platform Notes](Platform-Notes).
 - On macOS, reading a game needs extra permissions. See [Platform Notes](Platform-Notes).
 
-## The Game dialog shows no speedrun.com suggestions
+## The Game or Category dialog shows no speedrun.com suggestions
 
-**What you see:** You type a game name and no suggestions appear, or the game isn't linked to speedrun.com.
+**What you see:** You type a game name and no suggestions appear, or the game isn't linked to speedrun.com. In the Category dialog, the list has only the "Use "&lt;name&gt;" (not on speedrun.com)" row, or no list at all.
 
 **Why:** The PC is offline, or speedrun.com didn't answer.
 
-**What to do:** Nothing is lost. The dialog works as before: type the name and click **Use this game**, and link the game later with **Change** on the Auto splitter card. The **App & runtime** log notes the problem once. What is sent, and when, is on [Auto Splitters and Settings](Auto-Splitters-and-Settings).
+**What to do:** Nothing is lost. The dialog works as before: type the name and click **Use this game**, and link the game later with **Change** on the Auto splitter card. In the Category dialog, type the category's name; reopen the dialog to try the list again. A game that isn't linked has no category list. The **App & runtime** log notes the problem once for each dialog. What is sent, and when, is on [Auto Splitters and Settings](Auto-Splitters-and-Settings).
 
 ## Last action says "Not sent: no timer connected"
 

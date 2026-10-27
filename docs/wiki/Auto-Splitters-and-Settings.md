@@ -31,7 +31,7 @@ A linked game shows "Linked to speedrun.com" with a **Change** button. **Change*
 
 Linking renames the game to speedrun.com's name. Its settings and categories aren't affected. If you pick a speedrun.com game that another game is already linked to, the app uses that game, so you don't end up with two. The same goes for a game you set up under speedrun.com's name before: the app uses and links it.
 
-**What is sent to speedrun.com.** Only while the Game dialog is open, the names in its field are sent to speedrun.com over HTTPS. No account is needed, and nothing else is sent. If you're offline or speedrun.com doesn't answer, the dialog works as before without suggestions, and the **App & runtime** log notes it once. See [Troubleshooting](Troubleshooting).
+**What is sent to speedrun.com.** Only while the Game dialog is open, the names in its field are sent to speedrun.com over HTTPS. While the Category dialog is open for a linked game, the game's speedrun.com id is sent to ask for its categories ([below](#picking-a-category-from-speedruncom)). No account is needed, and nothing else is sent. If you're offline or speedrun.com doesn't answer, the dialog works as before without suggestions, and the **App & runtime** log notes it once. See [Troubleshooting](Troubleshooting).
 
 ## Categories
 
@@ -52,6 +52,25 @@ Adding, renaming and deleting are saved straight away. **Cancel** only closes th
 The Category dialog with three categories, Any% marked IN USE, and the + New category, Delete, Cancel and Use this category buttons.
 
 LiveSplit One doesn't tell the app which category your splits are for, so choose it here.
+
+### Picking a category from speedrun.com
+
+When the game is linked to speedrun.com (see [above](#linking-a-game-to-speedruncom)), the category name fields offer the game's categories from speedrun.com, so you can link a category to its page instead of retyping its name. The fields are the ones for **+ New category**, **Rename** and "Name this category". A game that isn't linked has no list and works as before.
+
+- **The list.** A list drops down under the field while it has focus. It shows up to five rows and scrolls for more. Each row is a category as speedrun.com has it, with its subcategories in parentheses, such as "Any% (Unrestricted)". **SET UP** marks one a category of this game is already linked to. Typing narrows the list to the rows whose name contains what you typed, ignoring case and anything that isn't a letter or digit. Use the arrow keys to move through the list, **Enter** to pick a row and **Escape** to close it.
+- **A few categories or many.** With 20 or fewer, the empty field lists them all, so you can pick without typing. With more, the list has one muted row, "Type to search &lt;count&gt; categories", and the categories appear once you type.
+- **Level categories.** If the game has categories for single levels, a checkbox **Include level categories** appears under the field. It's unticked unless the category you're renaming is linked to a level. Tick it to add them to the list, with the level's name first, such as "Bob-omb Battlefield: Stage RTA (N64)".
+- **The last row.** Once you've typed something, the last row, "Use "&lt;name&gt;" (not on speedrun.com)", keeps the name you typed with no link. While the categories load, and when you're offline, it's the only row.
+
+Picking a category fills the field with its name and links it. The field shows "Linked to speedrun.com" with a **Change** button. Typing in the field removes the link until you pick a category again. **Change** removes the link and opens the list.
+
+- **Adding.** If you pick a category that another category of the game is already linked to, or one that has its name, the app uses that category instead of adding another. It links it, takes the name from speedrun.com, saves it and selects it.
+- **Renaming and naming.** Those categories can't be picked, and their rows are dimmed, so two categories never share a link or a name. When you add, a row is dimmed if either category would give two the same name or link.
+- **Rename** on a category that isn't linked looks at its name and links it on its own if one category clearly matches. Otherwise the list opens. Names you type, and the empty fields of **+ New category** and "Name this category", are never linked on their own. **Done** keeps the name and the link. If you type a different name instead, the category is unlinked and keeps what you typed.
+
+Linking renames the category to speedrun.com's name. Its settings aren't affected. If you unlink the game, or change it to a different speedrun.com game in the Game dialog, its categories' links are removed, since they pointed to the old game. They keep their names and settings.
+
+Offline, or if speedrun.com doesn't answer, the dialog works as before without the list, and the **App & runtime** log notes it once for that dialog. See [Troubleshooting](Troubleshooting).
 
 ## Changing settings
 
