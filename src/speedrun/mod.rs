@@ -6,8 +6,12 @@
 #![allow(dead_code, unused_imports)]
 
 mod matching;
+mod search;
 
 pub use matching::{CLEAR_MATCH, clear_match, score};
+#[cfg(test)]
+pub use search::FakeSearch;
+pub use search::{API_BASE, GameSearch, Offline, SearchAnswer, SpeedrunSearch, live};
 
 use serde::Deserialize;
 
