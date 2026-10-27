@@ -1,17 +1,15 @@
 //! speedrun.com game suggestions: the games of a search, and how a name is
 //! matched against them (spec §7.5).
 
-// Nothing outside this module uses these items yet: the search worker, the
-// config and the Game dialog added by the next tasks do. Remove this then.
-#![allow(dead_code, unused_imports)]
-
 mod matching;
 mod search;
 
-pub use matching::{CLEAR_MATCH, clear_match, score};
+pub use matching::clear_match;
+pub use search::GameSearch;
+#[cfg(not(test))]
+pub use search::live;
 #[cfg(test)]
-pub use search::FakeSearch;
-pub use search::{API_BASE, GameSearch, Offline, SearchAnswer, SpeedrunSearch, live};
+pub use search::{FakeSearch, Offline};
 
 use serde::Deserialize;
 

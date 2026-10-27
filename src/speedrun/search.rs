@@ -8,6 +8,7 @@ use super::{SpeedrunGame, parse_games};
 use crate::version::VERSION;
 
 /// The address of speedrun.com's API.
+#[cfg_attr(test, allow(dead_code))] // Tests use a local server instead.
 pub const API_BASE: &str = "https://www.speedrun.com/api/v1";
 
 /// How many games one search asks for.
@@ -133,14 +134,17 @@ fn fetch(agent: &ureq::Agent, base_url: &str, name: &str) -> Result<Vec<Speedrun
 }
 
 /// Builds the search the app uses: the real speedrun.com.
+#[cfg_attr(test, allow(dead_code))] // Tests of the app use `Offline` instead.
 pub fn live() -> Box<dyn GameSearch> {
     Box::new(SpeedrunSearch::start(API_BASE))
 }
 
 /// A search that never answers, for tests of the app that must not use the
 /// network.
+#[cfg(test)]
 pub struct Offline;
 
+#[cfg(test)]
 impl GameSearch for Offline {
     fn request(&mut self, _name: &str) {}
 

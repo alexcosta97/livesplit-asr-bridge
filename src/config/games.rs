@@ -353,7 +353,6 @@ impl Game {
     /// link also names the game as speedrun.com does; unlinking keeps the
     /// name. The slug, and so the file, stay the same. The file is read
     /// again first.
-    #[allow(dead_code)] // Used by the Game dialog in a later task; remove then.
     pub fn set_link(
         config: &Config,
         slug: &str,

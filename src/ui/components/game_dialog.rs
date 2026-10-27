@@ -230,7 +230,6 @@ impl GameDialog {
     }
 
     /// The error of the first search that failed, once per dialog.
-    #[allow(dead_code)] // Logged by the app in a later task; remove then.
     pub fn take_failure(&mut self) -> Option<String> {
         let failure = self.failure.take();
         self.failure_taken |= failure.is_some();
