@@ -21,14 +21,16 @@ The app saves your settings for each game and category, not for each file. It as
 
 ## Categories
 
-Each game has one or more categories, such as Any% and 100%, and each category keeps its own settings. That way the same auto splitter can split on different things for different runs. A new game starts with one category, "Default". If you used the app before categories existed, the first time it loads one of your games it asks which category those settings are for, such as Any%, and names the category after your answer. Choose **Not now** to keep the name "Default"; it asks again next time, until the settings are saved, and you can rename the category later.
+Each game has one or more categories, such as Any% and 100%, and each category keeps its own settings. That way the same auto splitter can split on different things for different runs. A new game starts with one category, "Default". If you used the app before categories existed, the app asks "Name this category" when it loads a game with older settings. That happens when you load an auto splitter, when the app starts and when you change its game. The dialog asks which category those settings are for, such as Any%. Click **Save** to name the category after your answer and save it. Choose **Not now** to keep the name "Default"; it asks again next time, until the settings are saved, and you can rename the category later.
 
 The Auto splitter card shows the category in use under the game. To change it, click the **Change** next to the category. The Category dialog lists the game's categories, and the one in use is marked IN USE.
 
 - **Use another category:** select it and click **Use this category**. The auto splitter keeps running with that category's settings. If you have unsaved changes, the app asks about them first.
-- **Add one:** click **+ New category**, type a name and click **Add**. It starts as a copy of the settings in use now, without unsaved changes.
+- **Add one:** click **+ New category**, type a name and click **Add**. It starts as a copy of the settings in use now, without unsaved changes. The new category is selected, but the app doesn't switch to it. Click **Use this category** to do that.
 - **Rename one:** click **Rename** on its row, type the new name, then press Enter or click **Done**. Escape keeps the old name.
-- **Delete one:** select it, click **Delete**, then **Delete** again to confirm. You can't delete the category in use or a game's last category.
+- **Delete one:** select it, click **Delete**, then **Delete** again. The dialog asks first; click **Keep** to back out. Deleting can't be undone. You can't delete the category in use or a game's last category.
+
+A category name can't be empty, and can't match another category of the same game, ignoring upper and lower case. **Add** and **Done** stay disabled until the name is valid.
 
 Adding, renaming and deleting are saved straight away. **Cancel** only closes the dialog. The app remembers the last category you used for each game and starts with it next time.
 
