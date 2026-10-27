@@ -271,7 +271,8 @@ fn contents(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogAc
                 dialog.mode = Mode::ConfirmDelete;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let use_it = ui.add(Button::primary("Use this category"));
+                let use_it =
+                    ui.add(Button::primary("Use this category").enabled(dialog.mode == Mode::List));
                 let cancel = ui.add(Button::secondary("Cancel"));
                 if use_it.clicked() {
                     Some(dialog.use_action())
@@ -471,6 +472,13 @@ fn naming(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogActi
         _ => false,
     };
     let game = dialog.game.name.clone();
+    let note = match &dialog.mode {
+        Mode::Naming { key, .. } => format!(
+            "You can add more categories later. Not now keeps the name \"{}\".",
+            dialog.name_of(key)
+        ),
+        _ => String::new(),
+    };
     let Mode::Naming { key, name, focus } = &mut dialog.mode else {
         return None;
     };
@@ -515,7 +523,7 @@ fn naming(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogActi
     ui.add_space(6.0);
     ui.add(
         Label::new(
-            RichText::new("You can add more categories later. Not now keeps the name \"Default\".")
+            RichText::new(note)
                 .font(theme::body(12.0))
                 .color(theme::TEXT_MUTED),
         )

@@ -576,7 +576,8 @@ the window dimmed behind them.
   "These settings were saved before the bridge kept settings per category.
   Which category are they set up for?", a **Category** name field, empty
   with the placeholder "Any%", and the note "You can add more categories
-  later. Not now keeps the name "Default"." The name follows the Category
+  later. Not now keeps the name "<name>"", where the note names the
+  category's current name, normally "Default". The name follows the Category
   dialog's rules. The buttons, aligned right, are **Not now** and **Save**
   (primary); Enter is **Save** and Escape is **Not now**. **Save** names
   the category and writes the game's file. **Not now** keeps "Default"
