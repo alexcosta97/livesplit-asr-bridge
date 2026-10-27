@@ -9,6 +9,11 @@ use std::fmt;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
+/// The most variants one category yields; the rest are left out.
+const MAX_VARIANTS_PER_CATEGORY: usize = 1_000;
+/// The most variants the whole answer yields; the rest are left out.
+const MAX_VARIANTS: usize = 10_000;
+
 /// The ids that link a category here to a variant on speedrun.com.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CategoryLink {
@@ -78,9 +83,10 @@ struct RawCategory {
 #[derive(Deserialize)]
 struct RawVariable {
     id: String,
-    #[serde(rename = "is-subcategory")]
+    #[serde(rename = "is-subcategory", default)]
     is_subcategory: bool,
-    scope: RawScope,
+    scope: Option<RawScope>,
+    #[serde(default)]
     values: RawValues,
 }
 
@@ -93,13 +99,15 @@ struct RawScope {
 }
 
 /// The values a variable can take.
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct RawValues {
+    #[serde(default)]
     values: Labels,
 }
 
 /// The values of a variable as (value id, label), in the order of the
 /// answer, which a map would lose.
+#[derive(Default)]
 struct Labels(Vec<(String, String)>);
 
 impl<'de> Deserialize<'de> for Labels {
@@ -138,23 +146,25 @@ pub fn parse_variants(json: &str) -> Result<Vec<Variant>, String> {
     let response: Response = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let game = response.data;
     let mut variants = Vec::new();
-    for category in game.categories.into_iter().flat_map(|c| c.data) {
-        if category.kind == "per-game" {
-            push_variants(&mut variants, &category, None, "");
-        }
+    let full_game = game.categories.into_iter().flat_map(|c| c.data);
+    for category in full_game.filter(|c| c.kind == "per-game") {
+        push_variants(&mut variants, &category, None, "");
     }
     for level in game.levels.into_iter().flat_map(|l| l.data) {
         let prefix = format!("{}: ", level.name);
-        for category in level.categories.into_iter().flat_map(|c| c.data) {
+        let categories = level.categories.into_iter().flat_map(|c| c.data);
+        for category in categories.filter(|c| c.kind == "per-level") {
             push_variants(&mut variants, &category, Some(&level.id), &prefix);
         }
     }
+    variants.truncate(MAX_VARIANTS);
     Ok(variants)
 }
 
 /// Adds a variant for each combination of one value of each subcategory of
 /// the category that applies to the whole game (`level` is `None`) or to that
-/// level. The first subcategory changes slowest.
+/// level. The first subcategory changes slowest. Stops at the limits on
+/// variants, without building the combinations that would pass them.
 fn push_variants(
     variants: &mut Vec<Variant>,
     category: &RawCategory,
@@ -165,12 +175,13 @@ fn push_variants(
     let mut combinations: Vec<(BTreeMap<String, String>, Vec<&str>)> =
         vec![(BTreeMap::new(), Vec::new())];
     let variables = category.variables.iter().flat_map(|v| &v.data);
-    for variable in variables.filter(|v| v.is_subcategory && applies(&v.scope, level)) {
+    for variable in variables.filter(|v| v.is_subcategory && applies(v.scope.as_ref(), level)) {
         if variable.values.values.0.is_empty() {
             continue;
         }
         combinations = combinations
             .iter()
+            .take(MAX_VARIANTS_PER_CATEGORY)
             .flat_map(|(chosen, labels)| {
                 variable.values.values.0.iter().map(move |(id, label)| {
                     let mut chosen = chosen.clone();
@@ -180,9 +191,11 @@ fn push_variants(
                     (chosen, labels)
                 })
             })
+            .take(MAX_VARIANTS_PER_CATEGORY)
             .collect();
     }
-    for (values, labels) in combinations {
+    let room = MAX_VARIANTS.saturating_sub(variants.len());
+    for (values, labels) in combinations.into_iter().take(room) {
         let name = if labels.is_empty() {
             format!("{prefix}{}", category.name)
         } else {
@@ -201,7 +214,10 @@ fn push_variants(
 
 /// Whether a variable with this scope applies to the whole game (`level` is
 /// `None`) or to that level.
-fn applies(scope: &RawScope, level: Option<&str>) -> bool {
+fn applies(scope: Option<&RawScope>, level: Option<&str>) -> bool {
+    let Some(scope) = scope else {
+        return false;
+    };
     match (scope.kind.as_str(), level) {
         ("global", _) => true,
         ("full-game", None) => true,
@@ -268,8 +284,9 @@ mod tests {
             "per-level",
             &[platform(), codes, star],
         );
+        let stray = category("stray", "Stray", "per-game", &[]);
         let levels = format!(
-            r#"{{"id":"bob","name":"Bob-omb Battlefield","categories":{{"data":[{stage}]}}}},
+            r#"{{"id":"bob","name":"Bob-omb Battlefield","categories":{{"data":[{stage},{stray}]}}}},
               {{"id":"whomp","name":"Whomp's Fortress","categories":{{"data":[{stage}]}}}}"#
         );
         answer(
@@ -310,6 +327,7 @@ mod tests {
         let bob = "Bob-omb Battlefield: Stage RTA (PC, On)";
         let whomp = "Whomp's Fortress: Stage RTA (PC, On, 1)";
         assert!(names(&variants).contains(&bob));
+        assert!(!variants.iter().any(|v| v.name.contains("Stray")));
         assert!(
             variants
                 .iter()
@@ -340,6 +358,36 @@ mod tests {
         let empty = variable("v", true, GLOBAL, &[]);
         let json = answer("", &[category("c", "Run", "per-game", &[empty])]);
         assert_eq!(names(&parse_variants(&json).unwrap()), ["Run"]);
+        let bare = r#"{"id":"v"}"#.to_string();
+        let json = answer("", &[category("c", "Run", "per-game", &[bare])]);
+        assert_eq!(names(&parse_variants(&json).unwrap()), ["Run"]);
+        let no_scope =
+            r#"{"id":"v","is-subcategory":true,"values":{"values":{"a":{"label":"A"}}}}"#;
+        let json = answer("", &[category("c", "Run", "per-game", &[no_scope.into()])]);
+        assert_eq!(names(&parse_variants(&json).unwrap()), ["Run"]);
+    }
+
+    #[test]
+    fn variants_stop_at_the_caps() {
+        let labels: Vec<(String, String)> = (0..20)
+            .map(|i| (format!("v{i}"), format!("L{i}")))
+            .collect();
+        let labels: Vec<(&str, &str)> = labels
+            .iter()
+            .map(|(a, b)| (a.as_str(), b.as_str()))
+            .collect();
+        let vars: Vec<String> = ["a", "b", "c"]
+            .iter()
+            .map(|id| variable(id, true, GLOBAL, &labels))
+            .collect();
+        let big = category("big", "Big", "per-game", &vars);
+        let variants = parse_variants(&answer("", std::slice::from_ref(&big))).unwrap();
+        assert_eq!(variants.len(), 1_000);
+        assert_eq!(variants[0].name, "Big (L0, L0, L0)");
+        assert_eq!(variants[1].name, "Big (L0, L0, L1)");
+        assert_eq!(variants[999].name, "Big (L2, L9, L19)");
+        let many = vec![big; 11];
+        assert_eq!(parse_variants(&answer("", &many)).unwrap().len(), 10_000);
     }
 
     #[test]
