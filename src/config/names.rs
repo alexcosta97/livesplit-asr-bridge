@@ -1,5 +1,5 @@
-//! Game names: the slug a game's file is named after, and the name the Game
-//! dialog suggests for a new auto splitter.
+//! Game and category names: the slug a game's file is named after, the key of
+//! a category, and the name the Game dialog suggests for a new auto splitter.
 
 /// The longest slug, in characters, so file names stay well within every
 /// OS's limits.
@@ -20,6 +20,31 @@ const WINDOWS_RESERVED: &[&str] = &[
 /// letters and digits, with a single `-` for each run of anything else.
 /// Letters outside ASCII are kept, since every OS allows them in file names.
 pub fn slug(name: &str) -> String {
+    let mut slug = slugify(name);
+    if slug.is_empty() {
+        slug.push_str("game");
+    } else if WINDOWS_RESERVED.contains(&slug.as_str()) {
+        slug.push_str("-game");
+    }
+    slug
+}
+
+/// The key of a category named `name` in its game's file (spec §7.4): the
+/// slug rules, with "category" when nothing is left. Keys aren't file
+/// names, so Windows' reserved names are allowed.
+pub fn category_key(name: &str) -> String {
+    let key = slugify(name);
+    if key.is_empty() {
+        "category".to_owned()
+    } else {
+        key
+    }
+}
+
+/// Lowercase letters and digits of `name`, with a single `-` for each run of
+/// anything else, at most `MAX_SLUG_CHARS` long. Empty if `name` has no
+/// letters or digits.
+fn slugify(name: &str) -> String {
     let mut slug = String::new();
     let mut chars = 0;
     let mut gap = false;
@@ -39,11 +64,6 @@ pub fn slug(name: &str) -> String {
         slug.push(c);
         chars += added;
         gap = false;
-    }
-    if slug.is_empty() {
-        slug.push_str("game");
-    } else if WINDOWS_RESERVED.contains(&slug.as_str()) {
-        slug.push_str("-game");
     }
     slug
 }
@@ -142,5 +162,19 @@ mod tests {
     #[test]
     fn name_from_file_keeps_splitter_words_before_the_end() {
         assert_eq!(name_from_file("auto_racer.wasm"), "auto racer");
+    }
+
+    #[test]
+    fn a_category_key_follows_the_slug_rules() {
+        assert_eq!(category_key("Any%"), "any");
+        assert_eq!(category_key("100%"), "100");
+        assert_eq!(category_key(" All Missions "), "all-missions");
+    }
+
+    #[test]
+    fn a_category_key_has_its_own_fallback_and_no_reserved_names() {
+        assert_eq!(category_key("%%%"), "category");
+        // Keys aren't file names, so Windows' device names are fine.
+        assert_eq!(category_key("con"), "con");
     }
 }

@@ -50,7 +50,7 @@ impl Harness {
         std::fs::write(&path, wat::parse_str(EVERY_KIND).unwrap()).unwrap();
         let game = Game::create(&config, "GTA").unwrap();
         let saved: Table = "other_splitter = 3\ngym = false\n".parse().unwrap();
-        Game::save_settings(&config, &game.slug, &saved).unwrap();
+        Game::save_settings(&config, &game.slug, &game.current, &saved).unwrap();
         let mut splitters = Splitters::default();
         splitters.associate(&path, &game.slug).unwrap();
         splitters.save(&config).unwrap();
@@ -134,7 +134,7 @@ impl Harness {
     }
 
     fn saved(&self) -> Table {
-        Game::load(&self.config, "gta").unwrap().settings
+        Game::load(&self.config, "gta").unwrap().settings().clone()
     }
 }
 
