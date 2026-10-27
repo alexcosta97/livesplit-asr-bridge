@@ -646,7 +646,9 @@ the window dimmed behind them.
     name, saved straight away like a rename, then selected, and the new
     name field closes. While renaming or naming, a variant another category
     is linked to, or whose name another category has, can't be picked; its
-    row is dimmed.
+    row is dimmed. A variant linked to one category whose name another
+    category has is dimmed while adding too, since using either category
+    would give two categories the same name or link.
   - A line above the buttons says each category keeps its own settings and
     the category in use can't be deleted.
   - Buttons: **Delete** on the left; **Cancel** and **Use this category**
