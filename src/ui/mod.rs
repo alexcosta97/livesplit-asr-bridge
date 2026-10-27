@@ -737,9 +737,32 @@ impl BridgeApp {
             Ok(mut game) => {
                 // For example "Renamed 100% to 100% NMG (GTA)".
                 self.log(Category::App, format!("{done} ({})", game.name));
-                // The category in use is the one running.
+                // The category in use is the one running. If the file no
+                // longer has it, for example after a hand edit, it is saved
+                // back first so `current` never names no category.
                 if let Some(running) = &self.game {
-                    game.current.clone_from(&running.current);
+                    if game.categories.iter().any(|c| c.key == running.current) {
+                        game.current.clone_from(&running.current);
+                    } else {
+                        match Game::save_settings(
+                            &config,
+                            &slug,
+                            &running.current,
+                            self.settings.live(),
+                        ) {
+                            Ok(saved) => game = saved,
+                            Err(error) => {
+                                self.log(
+                                    Category::Error,
+                                    format!("Couldn't save the category in use: {error}"),
+                                );
+                                if let Some(dialog) = &mut self.category_dialog {
+                                    dialog.back_to_list();
+                                }
+                                return;
+                            }
+                        }
+                    }
                 }
                 // Naming settings from before categories is done once named.
                 if self
@@ -1746,11 +1769,34 @@ mod tests {
                 .iter()
                 .any(|category| category.name == "100% NMG")
         );
+        assert_eq!(app.game.as_ref().unwrap().current, "default");
 
         app.category_action(CategoryDialogAction::Delete("100".to_owned()));
         let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
         assert_eq!(game.categories.len(), 1);
         assert_eq!(app.game.as_ref().unwrap().categories.len(), 1);
+        assert_eq!(app.game.as_ref().unwrap().current, "default");
+    }
+
+    #[test]
+    fn adding_when_the_category_in_use_was_removed_by_hand_puts_it_back() {
+        let (_dir, mut app) = app_with_two_categories();
+        let config = app.config.clone().unwrap();
+        // Hand edit while running: "default" is gone from the file.
+        std::fs::write(
+            config.game_file("gta"),
+            "name = \"GTA\"\ncategory = \"100\"\n\n[categories.100]\nname = \"100%\"\n",
+        )
+        .unwrap();
+        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_action(CategoryDialogAction::Add("Low%".to_owned()));
+        let game = app.game.as_ref().unwrap();
+        assert_eq!(game.current, "default");
+        assert_eq!(game.category().key, "default");
+        let saved = Game::load(&config, "gta").unwrap();
+        assert!(saved.categories.iter().any(|c| c.key == "default"));
+        assert!(saved.categories.iter().any(|c| c.key == "low"));
+        assert_eq!(saved.current, "default");
     }
 
     /// `app_with_unsaved_edit`, whose game's file is from before categories.
