@@ -1,8 +1,6 @@
 //! Category dialog: picks which of the game's categories' settings to use,
 //! and adds, renames and deletes categories (spec §6.8, §7.4).
 
-#![expect(dead_code, reason = "the app opens this dialog in the next task")]
-
 use eframe::egui::{
     self, Align, Frame, Id, Key, Label, Layout, Margin, Modal, RichText, ScrollArea, Sense, Stroke,
     StrokeKind, TextEdit, Ui, UiBuilder, vec2,
