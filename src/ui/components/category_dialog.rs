@@ -177,7 +177,6 @@ impl CategoryDialog {
     }
 
     /// The error of the request for the variants, once per dialog.
-    #[cfg_attr(not(test), allow(dead_code))] // Logged by the app, which comes later.
     pub fn take_failure(&mut self) -> Option<String> {
         let failure = self.failure.take();
         self.failure_taken |= failure.is_some();
