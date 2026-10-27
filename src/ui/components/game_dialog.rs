@@ -90,7 +90,7 @@ pub struct GameDialog {
     link: Option<SpeedrunLink>,
     /// Looks names up on speedrun.com.
     search: Box<dyn GameSearch>,
-    /// The results of each name searched so far, by trimmed name.
+    /// The results of each name searched so far, by [`key`] of the name.
     results: HashMap<String, Vec<SpeedrunGame>>,
     /// The name to search next, and the time it is sent at.
     due: Option<(String, f64)>,
@@ -107,8 +107,8 @@ pub struct GameDialog {
     /// Whether the name in the field wasn't typed, so a clear match links it
     /// without asking.
     may_link_on_own: bool,
-    /// Names kept unlinked with the list's last row; they aren't linked on
-    /// their own again.
+    /// Names kept unlinked with the list's last row, by [`key`]: they aren't
+    /// linked on their own again, but still open the list.
     declined: HashSet<String>,
     /// The first search error, until it is taken.
     failure: Option<String>,
@@ -303,7 +303,7 @@ impl GameDialog {
         if let Some((name, at)) = self.due.take() {
             if now < at {
                 self.due = Some((name, at));
-            } else if self.results.contains_key(&name) {
+            } else if self.results.contains_key(&key(&name)) {
                 self.arrived(&name, false);
             } else {
                 self.search.request(&name);
@@ -316,7 +316,7 @@ impl GameDialog {
             }
             let failed = match answer.games {
                 Ok(games) => {
-                    self.results.insert(answer.name.clone(), games);
+                    self.results.insert(key(&answer.name), games);
                     false
                 }
                 Err(error) => {
@@ -331,14 +331,15 @@ impl GameDialog {
     }
 
     /// Results, or a failure when `failed`, are in for `name`. For the name
-    /// in the field, unless it is linked or declined, a clear match links on
-    /// its own when it may, and otherwise the list opens.
+    /// in the field, unless it is linked, a clear match links on its own when
+    /// it may and the name wasn't declined, and otherwise the list opens.
     fn arrived(&mut self, name: &str, failed: bool) {
-        if name != self.name.trim() || self.link.is_some() || self.declined.contains(name) {
+        let name_key = key(name);
+        if name_key != key(&self.name) || self.link.is_some() {
             return;
         }
         let games = self.shown();
-        let clear = (self.may_link_on_own && !failed)
+        let clear = (self.may_link_on_own && !failed && !self.declined.contains(&name_key))
             .then(|| clear_match(name, games))
             .flatten();
         match clear {
@@ -354,7 +355,7 @@ impl GameDialog {
     /// none when its search failed.
     fn shown(&self) -> &[SpeedrunGame] {
         self.results
-            .get(self.name.trim())
+            .get(&key(&self.name))
             .map(Vec::as_slice)
             .unwrap_or_default()
     }
@@ -372,7 +373,7 @@ impl GameDialog {
     /// The list's last row: keeps the name typed, unlinked, and doesn't link
     /// it on its own again.
     fn pick_typed(&mut self) {
-        self.declined.insert(self.name.trim().to_owned());
+        self.declined.insert(key(&self.name));
         self.link = None;
         self.close_list();
     }
@@ -383,8 +384,7 @@ impl GameDialog {
         self.link = None;
         self.may_link_on_own = false;
         let name = self.name.trim().to_owned();
-        self.declined.remove(&name);
-        if self.results.contains_key(&name) {
+        if self.results.contains_key(&key(&name)) {
             self.arrived(&name, false);
         } else if !name.is_empty() {
             self.due = Some((name, now));
@@ -430,6 +430,13 @@ impl GameDialog {
             GameDialogKind::Change => "Change game",
         }
     }
+}
+
+/// How results and declined names are keyed: the name trimmed and in lower
+/// case, so a name differing only in case, like one renamed by a link, shares
+/// its results.
+fn key(name: &str) -> String {
+    name.trim().to_lowercase()
 }
 
 /// The speedrun.com link of a game already set up, if it has one. A linked
@@ -993,13 +1000,18 @@ mod tests {
     fn picking_a_result_links_the_selected_game_without_changing_it() {
         let (mut dialog, fake) = new_dialog("x.wasm", vec![game("gta-sa-de", "GTA SA DE", 1)]);
         dialog.select(0);
-        fake.answer("GTA SA DE", Ok(vec![]));
-        dialog.tick(0.0);
-        assert!(dialog.list_open);
         let gta = result("yo1yv1q5", "Grand Theft Auto: San Andreas", "gtasa", 2004);
-        dialog
-            .results
-            .insert("GTA SA DE".to_owned(), vec![gta.clone()]);
+        let remastered = result(
+            "j1nevzx1",
+            "Grand Theft Auto: San Andreas Remastered",
+            "",
+            2013,
+        );
+        fake.answer("GTA SA DE", Ok(vec![gta.clone(), remastered]));
+        dialog.tick(0.0);
+        assert_eq!(fake.requests(), ["GTA SA DE"]);
+        assert!(dialog.list_open, "no result matches clearly");
+        assert_eq!(dialog.link, None);
         dialog.pick(0);
         assert_eq!(dialog.name, "Grand Theft Auto: San Andreas");
         assert!(!dialog.list_open);
@@ -1048,9 +1060,6 @@ mod tests {
         fake.answer("portal", Ok(vec![portal(), portals()]));
         dialog.tick(0.0);
         dialog.change_link(1.0);
-        dialog.tick(1.0);
-        fake.answer("Portal", Ok(vec![portal(), portals()]));
-        dialog.tick(1.1);
         assert!(dialog.list_open);
         dialog.pick_typed();
         assert!(!dialog.list_open);
@@ -1058,8 +1067,27 @@ mod tests {
         assert_eq!(dialog.choice(), new_game("Portal", None));
         dialog.search_now();
         dialog.tick(2.0);
+        assert_eq!(
+            dialog.link, None,
+            "a clear match doesn't link it on its own"
+        );
+        assert!(dialog.list_open);
+    }
+
+    #[test]
+    fn a_declined_name_typed_again_opens_the_list_without_linking() {
+        let (mut dialog, fake) = new_dialog("portal_x.wasm", vec![]);
+        fake.answer("portal x", Ok(vec![portal(), portals()]));
+        dialog.tick(0.0);
+        dialog.pick_typed();
+        type_name(&mut dialog, "portal 2", 1.0);
+        dialog.tick(1.3);
+        type_name(&mut dialog, "Portal X", 2.0);
+        dialog.tick(2.3);
+        assert!(dialog.list_open);
+        assert_eq!(dialog.shown().len(), 2);
         assert_eq!(dialog.link, None);
-        assert!(!dialog.list_open);
+        assert_eq!(fake.requests(), ["portal x", "portal 2"]);
     }
 
     #[test]
@@ -1071,9 +1099,7 @@ mod tests {
         dialog.change_link(1.0);
         assert_eq!(dialog.link, None);
         dialog.tick(1.0);
-        assert_eq!(fake.requests(), ["portal", "Portal"]);
-        fake.answer("Portal", Ok(vec![portal(), portals()]));
-        dialog.tick(1.1);
+        assert_eq!(fake.requests(), ["portal"], "\"Portal\" reuses the results");
         assert!(dialog.list_open);
         assert_eq!(dialog.link, None);
     }
