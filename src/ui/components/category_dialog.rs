@@ -629,6 +629,7 @@ mod tests {
         Game {
             slug: "gta".to_owned(),
             name: "GTA".to_owned(),
+            speedrun_id: None,
             categories: vec![category("100", "100%"), category("any", "Any%")],
             current: "any".to_owned(),
             unnamed: None,

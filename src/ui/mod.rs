@@ -564,6 +564,7 @@ impl BridgeApp {
                 .unwrap_or_else(|| GameSummary {
                     slug: game.slug.clone(),
                     name: game.name.clone(),
+                    speedrun_id: game.speedrun_id.clone(),
                     splitters: splitters.count_for(&game.slug),
                 })
         });

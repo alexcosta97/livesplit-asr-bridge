@@ -290,6 +290,7 @@ mod tests {
         GameSummary {
             slug: slug.to_owned(),
             name: name.to_owned(),
+            speedrun_id: None,
             splitters,
         }
     }
