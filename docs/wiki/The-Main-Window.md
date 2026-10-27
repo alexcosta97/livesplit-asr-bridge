@@ -24,7 +24,7 @@ The Error card shows only while there's an error, at the top of the column. It s
 
 ## Auto splitter card
 
-Shows the file name and its game, with **Change**, **Open…** and **Reload**. With nothing loaded it says "NO AUTO SPLITTER" and "Open a .wasm auto splitter to start.". [Auto Splitters and Settings](Auto-Splitters-and-Settings) covers all of these.
+Shows the file name, its game with **Change**, the category in use with its own **Change**, and **Open…** and **Reload**. With nothing loaded it says "NO AUTO SPLITTER" and "Open a .wasm auto splitter to start.". [Auto Splitters and Settings](Auto-Splitters-and-Settings) covers all of these.
 
 ## Game card
 
@@ -62,7 +62,7 @@ To fix it, see [Connecting LiveSplit One](Connecting-LiveSplit-One).
 
 ## Compact window
 
-Below about 640 px wide, the tabs are hidden and the status column fills the window. The status words get bigger, so you can check the run at a glance. A thin strip replaces the Auto splitter card, with the file name and **Reload**, or "No auto splitter loaded" and **Open…**. The Timer card shows one address while no timer is connected.
+Below about 640 px wide, the tabs are hidden and the status column fills the window. The status words get bigger, so you can check the run at a glance. A thin strip replaces the Auto splitter card, with the file name, the category and **Reload**, or "No auto splitter loaded" and **Open…**. The file name is shortened when space is short, never the category. The Timer card shows one address while no timer is connected.
 
 <!-- screenshot: S6 compact-window.png -->
 The compact window: the app name, the splitter strip, and the Game, Timer and Last action cards.
