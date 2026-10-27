@@ -157,7 +157,7 @@
           "currentVersion": 1
         }
       },
-      "updatedAt": "2026-09-28T12:00:00Z",
+      "updatedAt": "2026-10-26T12:00:00Z",
       "referenceIds": [
         "581f4e0b-b7d5-443d-9bed-3cf5ce8ac7fe"
       ],
@@ -287,6 +287,10 @@
         {
           "name": "UnsavedDialog",
           "id": "dd4c0478-c43e-4aa8-8dd3-3800248b4d21"
+        },
+        {
+          "name": "CategoryDialog",
+          "id": "cece81d6-072d-4e91-a46d-90bf61420ce2"
         }
       ]
     },

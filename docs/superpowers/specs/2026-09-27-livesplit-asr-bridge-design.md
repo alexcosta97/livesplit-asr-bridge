@@ -25,7 +25,7 @@ community.
 ### Goals (first version)
 
 - Load a local `.wasm` auto splitter and run it against the game.
-- Show and edit the auto splitter's settings, saved per game.
+- Show and edit the auto splitter's settings, saved per game and category.
 - Run a WebSocket server that LiveSplit One connects to, and show the URL to
   connect to.
 - Forward every timer action an auto splitter can take to the connected
@@ -219,6 +219,8 @@ the right.
 ││ gta_sa_de_autosplitter.wasm    ││                                                    │
 ││ GTA San Andreas — DE           ││                                                    │
 ││ [Change]                       ││                                                    │
+││ CATEGORY  Any%                 ││                                                    │
+││ [Change]                       ││                                                    │
 ││ [Open…] [Reload]               ││                                                    │
 │└────────────────────────────────┘│                                                    │
 │┌ GAME ──────────────────────────┐│                                                    │
@@ -280,6 +282,9 @@ resort. Cards are never clipped.
 
 - The loaded file name, and the game it is associated with (section 7.3),
   with **Change**, which opens the "Change game" dialog (section 6.8).
+- Under the game, the category whose settings are in use (section 7.4),
+  after a muted CATEGORY label, with its own **Change**, which opens the
+  Category dialog (section 6.8).
 - **Open…** (file picker for `.wasm`) and **Reload** (reloads the same file,
   for picking up a rebuilt auto splitter).
 - With nothing loaded: "NO AUTO SPLITTER", the help text "Open a .wasm auto
@@ -346,7 +351,7 @@ notifications.
 ┌────────────────────────────────────┐
 │ LIVESPLIT ONE ASR BRIDGE 0.1.0     │
 │                    [Show details]  │
-│ gta_sa_de_autosplitter.wasm        │
+│ gta_sa_de_autosplitter.wasm · Any% │
 │                          [Reload]  │
 │┌ GAME ────────────────────────────┐│
 ││ ● ATTACHED                       ││
@@ -367,8 +372,10 @@ notifications.
 
 - Below about 640 px of window width, the tab area is hidden and the status
   column fills the window. The status words are bigger.
-- A thin splitter strip replaces the Auto splitter card: the file name and
-  **Reload**, or "No auto splitter loaded" and **Open…**.
+- A thin splitter strip replaces the Auto splitter card: the file name, "·"
+  and the category, and **Reload**, or "No auto splitter loaded" and
+  **Open…**. When space is short the file name is shortened, never the
+  category, so the category in use can be checked mid-run.
 - The error card, Game, Timer and Last action cards keep their order and
   states. While no timer is connected, the Timer card shows the first
   connection URL with **Copy**, and "How do I connect?". Once a timer is
@@ -412,8 +419,8 @@ notifications.
 - **Revert to defaults** replaces the draft with the auto splitter's default
   values, as unsaved changes, so it still requires **Save** to take effect.
 - Closing the app, opening a different `.wasm`, pressing **Reload** or
-  pressing **Change** (the game) with unsaved changes opens the
-  unsaved-settings dialog (section 6.8).
+  pressing **Change** (the game), or switching category, with unsaved
+  changes opens the unsaved-settings dialog (section 6.8).
 - With no auto splitter loaded, the tab explains how to load one, with
   **Open…**.
 - In developer mode (section 6.7), the **settings map** section follows the
@@ -539,14 +546,51 @@ the window dimmed behind them.
   (section 7.3): a name field pre-filled from the file name, a list of games
   already set up with how many auto splitters use each, and **Use this game**
   and **Cancel**. **Change** on the Auto splitter card opens the same dialog,
-  titled "Change game", with the current game selected.
+  titled "Change game", with the current game selected. A line under the
+  list says settings are saved per game and category.
+- **Category**, from **Change** next to the category on the Auto splitter
+  card (section 7.4). Under the title, the game's name. The game's
+  categories are listed by name, the one in use tagged IN USE and the
+  selected one outlined in orange, each with **Rename**.
+  - **Rename** turns the row into a name field with **Done**. Enter or
+    **Done** keeps the new name, Escape keeps the old one.
+  - **+ New category** shows a name field with **Add**, and the note
+    "Starts as a copy of the settings in use now (<category>)." The new
+    category is added and selected, not yet switched to.
+  - **Delete** acts on the selected category. It is disabled for the
+    category in use and when only one category is left. It asks first, in
+    the dialog: "Delete <category> and its settings? This can't be undone.",
+    with **Keep** and **Delete**.
+  - A name must not be empty or the same as another category's name of
+    the game, ignoring case. While it is, **Add** or **Done** is disabled.
+  - A line above the buttons says each category keeps its own settings and
+    the category in use can't be deleted.
+  - Buttons: **Delete** on the left; **Cancel** and **Use this category**
+    (primary) on the right. Adding, renaming and deleting are saved
+    straight away; **Cancel** only closes the dialog without switching.
+    **Use this category** switches to the selected category, or just
+    closes the dialog if it is the one in use.
+- **"Name this category"**, when a game is loaded whose file has settings
+  from before categories (section 7.4): loading an auto splitter, changing
+  its game or starting the app. Under the title, the game's name, then
+  "These settings were saved before the bridge kept settings per category.
+  Which category are they set up for?", a **Category** name field, empty
+  with the placeholder "Any%", and the note "You can add more categories
+  later. Not now keeps the name "Default"." The name follows the Category
+  dialog's rules. The buttons, aligned right, are **Not now** and **Save**
+  (primary); Enter is **Save** and Escape is **Not now**. **Save** names
+  the category and writes the game's file. **Not now** keeps "Default"
+  without writing the file. The dialog comes after any Game dialog that
+  led to the load.
 - **"Save your settings changes?"**, when the app is closed, a different
   `.wasm` is opened, or **Reload** or **Change** is pressed with unsaved
-  settings. The text names how many settings changed and for which game, and
-  what discards them: "You changed 3 settings for GTA San Andreas. Reloading
-  the auto splitter without saving discards them." The action is "Reloading
-  the auto splitter", "Opening another auto splitter", "Changing the game" or
-  "Closing the app". The buttons, aligned right, are **Cancel**, **Discard**
+  settings, or a category is picked in the Category dialog with unsaved
+  settings. The text names how many settings changed, for which game and
+  category, and what discards them: "You changed 3 settings for GTA San
+  Andreas (Any%). Reloading the auto splitter without saving discards
+  them." The action is "Reloading the auto splitter", "Opening another auto
+  splitter", "Changing the game", "Changing the category" or "Closing the
+  app". The buttons, aligned right, are **Cancel**, **Discard**
   and **Save and reload** (**Save** for the other triggers). For opening a
   `.wasm`, the dialog comes before the file picker, and the file picker opens
   only after **Save** or **Discard**.
@@ -598,8 +642,8 @@ and their exact values are in `.superdesign/design-system.md`.
 | **Checkbox** | checked or not, indented under a heading, tooltip marker, optional note | settings, log filters, preferences (including Developer mode) |
 | **App header** | wordmark and version; compact with **Show details** or **← Status** | status column |
 | **Error card** | crashed, load failed, port in use; wide or compact | status column |
-| **Auto splitter card** | loaded or nothing loaded | status column (wide) |
-| **Splitter strip** | loaded (**Reload**) or nothing loaded (**Open…**) | status column (compact) |
+| **Auto splitter card** | loaded (game and category, each with **Change**) or nothing loaded | status column (wide) |
+| **Splitter strip** | loaded (file name · category, **Reload**) or nothing loaded (**Open…**) | status column (compact) |
 | **Game card** | attached, waiting for game, stopped, nothing loaded; wide or compact | status column |
 | **Timer card** | connected, not connected (with addresses), server stopped; wide or compact | status column |
 | **Last action card** | an action with its two previous ones, not sent, empty; wide or compact | status column |
@@ -615,7 +659,7 @@ and their exact values are in `.superdesign/design-system.md`.
 | **How to connect** | expanded, collapsed, or expanded and collapsible | Connection tab |
 | **Log toolbar** and **Log line** | filter states; line categories, highlighted entry | Log tab |
 | **About row** | a folder with **Open** | Preferences tab |
-| **Game dialog** and **Unsaved dialog** | new file or change; reload, open, change game or close | dialogs |
+| **Game dialog**, **Category dialog** and **Unsaved dialog** | new file or change; picking, renaming, adding, confirming a delete, naming settings from before categories; reload, open, change game, change category or close | dialogs |
 
 ## 7. Configuration and settings storage
 
@@ -631,7 +675,9 @@ for the app:
                       mode
   splitters.toml      maps each known .wasm path to a game
   games/
-    <game-slug>.toml  display name and saved auto splitter settings for a game
+    <game-slug>.toml  a game's display name, its categories with their
+                      saved auto splitter settings, and the last category
+                      used
 ```
 
 - `app.toml` is read at start-up.
@@ -643,14 +689,17 @@ for the app:
 
 ### 7.2 Settings merge rules
 
-A game's settings file holds a single map of setting keys to values, shared by
-every auto splitter associated with that game. The map can hold booleans,
-integers, floats, strings, lists and maps, nested.
+Each category of a game (section 7.4) holds a map of setting keys to
+values, shared by every auto splitter associated with that game while that
+category is in use. The map can hold booleans, integers, floats, strings,
+lists and maps, nested. The rules below apply to the category in use: "the
+game's file" means that category's map in it, and other categories are
+never changed.
 
 As in LiveSplit, the running auto splitter's settings map is the truth, so an
 auto splitter behaves the same through the bridge as in LiveSplit:
 
-- **Loading:** the auto splitter is given the game's whole map. It reads the
+- **Loading:** the auto splitter is given the category's whole map. It reads the
   keys it publishes as widgets, and can read and store any other key.
 - **What the auto splitter stores:** an auto splitter can store values in its
   map itself (`settings_map_store`, `asr`'s `Map::store`), for its own keys
@@ -669,11 +718,13 @@ auto splitter behaves the same through the bridge as in LiveSplit:
   replaces its value, and a value it stores after the edit was saved
   replaces the edit, as in LiveSplit.
 - **Revert to defaults:** only affects the loaded auto splitter's keys.
-- Keys with the same name in different auto splitters share one value.
-- Changing the game, loading another auto splitter, **Reload** and closing
-  the app first write what the auto splitter stored to its current game's
-  file. A change reported for a map that has since been replaced (another
-  game's, or a previous auto splitter's) is ignored.
+- Keys with the same name in different auto splitters share one value
+  within a category.
+- Changing the game or the category, loading another auto splitter,
+  **Reload** and closing the app first write what the auto splitter stored
+  to its current game's file, in the category it was using. A change
+  reported for a map that has since been replaced (another game's or
+  category's, or a previous auto splitter's) is ignored.
 - TOML dates have no runtime value. A date in a game's file is kept when the
   map is written, but the auto splitter never sees it.
 
@@ -687,6 +738,73 @@ auto splitter behaves the same through the bridge as in LiveSplit:
 - The association can be changed with **Change** on the Auto splitter card
   (section 6.2).
 
+### 7.4 Categories
+
+LiveSplit keeps auto splitter settings in the splits file, so each category
+a runner has splits for has its own. The bridge has no splits, and LiveSplit
+One's server protocol doesn't say which game or category the open splits
+are for, so the category is chosen in the bridge.
+
+- Every game has at least one category, and each category has its own
+  complete settings map. A new game starts with one category, "Default",
+  with no settings.
+- Categories are named by the user. Each has a key made from its name with
+  the slug rules of the game file names (with "category" when nothing is
+  left, and `-2`, `-3`… if another category of the game has the key), so
+  renaming changes only the name. Names are unique within a game, ignoring
+  case.
+- The game's file records the key of the last category used. Loading an
+  auto splitter, changing its game and starting the app select it, or the
+  first category by name if it no longer exists.
+- **Switching category** works like changing the game (section 7.2): what
+  the auto splitter stored is written to the category it was using, then
+  the new category's whole map replaces the running auto splitter's map,
+  and the Splitter settings tab shows it. The auto splitter keeps running.
+  The new category is recorded as the last one used.
+- **A new category** starts as a copy of the running auto splitter's map as
+  it is now (saved values and what it stored, not unsaved edits). With no
+  auto splitter loaded the Category dialog can't be opened, since the card
+  has no category line.
+- **Deleting** removes the category and its settings from the file. The
+  category in use and a game's last category can't be deleted.
+
+The file:
+
+```toml
+name = "GTA San Andreas — Definitive Edition"
+category = "any"
+
+[categories.any]
+name = "Any%"
+
+[categories.any.settings]
+start_on_new_game = true
+
+[categories.100]
+name = "100%"
+
+[categories.100.settings]
+start_on_new_game = false
+```
+
+A file from before categories, with a `[settings]` table at the top level,
+is read as a category "Default" (key `default`) holding that map, made the
+last category used if none is recorded. If the file also has categories,
+for example from editing it by hand, the old map is added as another
+category, named "Default", or "Default 2", "Default 3"… if a category has
+that name, so no settings are lost.
+The file is written in the new form the next time it is written.
+
+Those settings were made for a category the bridge doesn't know, so when
+such a game is loaded the "Name this category" dialog asks for its name
+(section 6.8). The settings then live in the category they belong to from
+the start, rather than in a "Default" whose settings the user would have to
+copy into a new category by hand. Naming it is a rename: the key stays, so
+the running auto splitter is unaffected. **Not now** leaves it "Default",
+which can be renamed later in the Category dialog. The dialog comes back on
+the next load only while the file is still in the old form, so not once
+the settings have been saved.
+
 ## 8. Logging
 
 ### 8.1 Categories
@@ -696,7 +814,7 @@ auto splitter behaves the same through the bridge as in LiveSplit:
 | Errors | Load failures, auto splitter crashes, server start failures, connection errors | Always shown, also in the error card (section 6.2) |
 | Auto splitter | Messages printed by the auto splitter, and "Stored settings: …" naming the keys it changed in its settings map | Optional filter, ticked by developer mode |
 | Connection | Timers connecting and disconnecting, commands sent, events and responses received, dropped commands | Optional filter |
-| App & runtime | Process attach and detach, tick rate changes, settings saved, server restarts, reloads | Optional filter |
+| App & runtime | Process attach and detach, tick rate changes, settings saved, game and category changes, categories added, renamed and deleted, server restarts, reloads | Optional filter |
 
 A game time set right after another game time is still sent, but not logged,
 whether it was sent or dropped: only the first of such a run is, so an auto
@@ -778,7 +896,13 @@ Automated:
   (split index, skipped segments, resets, reconnects).
 - **Settings storage:** the rules in section 7.2, and values of every type
   surviving saving and loading; `splitters.toml` lookups for known and new
-  files; slug generation.
+  files; slug generation; categories (section 7.4): reading files from
+  before categories, keys, adding, renaming, deleting and its limits, the
+  last category used, and saving into one category leaving the others
+  unchanged. The Category dialog, switching category with and without
+  unsaved changes, and naming settings from before categories (Save, Not
+  now, and the dialog coming back only for a file still in the old form)
+  are tested headless.
 - **Settings:** a test auto splitter publishes every widget kind and every
   kind of file filter, then stores values of every type itself. Runner tests
   check what it publishes and stores and that saved edits keep its values;
@@ -950,7 +1074,7 @@ In sidebar order:
 | Installing | Task | Which download to pick, opening unsigned builds on macOS and Windows (section 11), installing and uninstalling on Linux, updating, full releases and release candidates |
 | Getting Started | Tutorial | First launch through the first split: open an auto splitter, name the game, connect LiveSplit One, start the game |
 | Connecting LiveSplit One | Task | Choosing an address, the Chrome-based browser requirement, Connect to Server, local network access, several timers and PRIMARY, the port and Restart server, who can connect (section 10) |
-| Auto Splitters and Settings | Task | Open and Reload, game association and Change, drafts, Save and Revert to defaults, the unsaved-changes dialog, settings shared per game (section 7.2), developer mode |
+| Auto Splitters and Settings | Task | Open and Reload, game association and Change, categories and the Category dialog, drafts, Save and Revert to defaults, the unsaved-changes dialog, settings shared per game and category (sections 7.2 and 7.4), developer mode |
 | The Main Window | Reference | Every status card and state (section 6.2), the compact state, the Preferences tab |
 | Logs and Files | Reference | Log categories and filters, Show in log, the log and config folders for every OS (sections 7.1 and 8.2), retention and the size cap |
 | Platform Notes | Reference | Section 11 |
@@ -1004,6 +1128,7 @@ Upcoming Changes is not used.
 | S7 | `log-tab.png` | Filters and a Show in log highlight |
 | S8 | `port-in-use.png` | Port-in-use error card and SERVER STOPPED, crop |
 | S9 | `not-sent.png` | A "Not sent" last action, crop |
+| S10 | `category-dialog.png` | The Category dialog with three categories |
 | T1 | `lso-connect-to-server.png` | LiveSplit One's Connect to Server |
 | T2 | `chrome-local-network.png` | Chrome's local network access prompt |
 | T2b | `chrome-site-settings.png` | Chrome site settings, local network access allowed |
@@ -1055,6 +1180,11 @@ Later:
 20. Detect when the connected timer is already running its own auto splitter,
     and stand down (needs research: the protocol does not expose this).
 21. Run legacy ASL scripts (very bottom of the backlog).
+22. Settings per category (section 7.4).
+23. Suggest game names from speedrun.com in the Game dialog, linking the
+    game to its speedrun.com id.
+24. Offer a game's categories from speedrun.com in the Category dialog,
+    once the game is linked (23). Typing a category stays possible.
 
 ## 17. License
 
