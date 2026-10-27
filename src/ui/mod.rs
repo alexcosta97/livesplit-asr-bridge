@@ -35,11 +35,13 @@ use crate::{
     logging::{self, Category, Filters, Logger},
     runner::{Runner, RunnerEvent, TimerAction, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
+    speedrun::{self, GameSearch, SpeedrunLink},
     version::VERSION,
 };
 use components::{
     CategoryDialog, CategoryDialogAction, ErrorAction, GameChoice, GameDialog, GameDialogAction,
-    GameDialogKind, HeaderButton, LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
+    GameDialogKind, GameTarget, HeaderButton, LogAction, SplitterAction, UnsavedAction,
+    UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
 use file_pick::{FilePick, PickFor, PickPoll};
@@ -113,6 +115,19 @@ enum Tab {
     Connection,
     Log,
     Preferences,
+}
+
+/// The search the Game dialog suggests speedrun.com games with: the real
+/// one, or none in tests, which make no network requests.
+fn default_search() -> Box<dyn GameSearch> {
+    #[cfg(test)]
+    {
+        Box::new(speedrun::Offline)
+    }
+    #[cfg(not(test))]
+    {
+        speedrun::live()
+    }
 }
 
 /// What waits for an answer in the Unsaved dialog.
@@ -201,6 +216,8 @@ pub struct BridgeApp {
     loading: HashMap<PathBuf, Game>,
     /// The loaded auto splitter's game.
     game: Option<Game>,
+    /// Makes the search a Game dialog suggests speedrun.com games with.
+    new_search: fn() -> Box<dyn GameSearch>,
     /// The open Game dialog, and the file it is for.
     dialog: Option<(GameDialog, PathBuf)>,
     /// The open Category dialog.
@@ -282,6 +299,7 @@ impl BridgeApp {
             app_settings,
             loading: HashMap::new(),
             game: None,
+            new_search: default_search,
             dialog: None,
             category_dialog: None,
             settings: SettingsEditor::default(),
@@ -535,7 +553,10 @@ impl BridgeApp {
             }
             None => {
                 let games = self.games(&config, &splitters);
-                self.dialog = Some((GameDialog::new(&file_name(&path), games), path));
+                self.dialog = Some((
+                    GameDialog::new(&file_name(&path), games, (self.new_search)()),
+                    path,
+                ));
             }
         }
     }
@@ -564,12 +585,14 @@ impl BridgeApp {
                 .unwrap_or_else(|| GameSummary {
                     slug: game.slug.clone(),
                     name: game.name.clone(),
+                    speedrun_id: game.speedrun_id.clone(),
                     splitters: splitters.count_for(&game.slug),
                 })
         });
+        let search = (self.new_search)();
         let dialog = match &current {
-            Some(current) => GameDialog::change(&file_name(&path), games, current),
-            None => GameDialog::new(&file_name(&path), games),
+            Some(current) => GameDialog::change(&file_name(&path), games, current, search),
+            None => GameDialog::new(&file_name(&path), games, search),
         };
         self.dialog = Some((dialog, path));
     }
@@ -579,7 +602,15 @@ impl BridgeApp {
         let Some((dialog, _)) = &mut self.dialog else {
             return;
         };
-        let Some(action) = components::game_dialog(ctx, dialog) else {
+        let action = components::game_dialog(ctx, dialog);
+        // Reported once, when the search first fails.
+        if let Some(error) = dialog.take_failure() {
+            self.log(
+                Category::App,
+                format!("Couldn't search speedrun.com: {error}"),
+            );
+        }
+        let Some(action) = action else {
             return;
         };
         let Some((dialog, path)) = self.dialog.take() else {
@@ -588,19 +619,30 @@ impl BridgeApp {
         let GameDialogAction::Use(choice) = action else {
             return;
         };
+        self.apply_game_choice(&dialog, path, choice);
+    }
+
+    /// Sets up the game the Game dialog picked, links it to speedrun.com or
+    /// unlinks it as chosen, and uses it for the auto splitter at `path`.
+    fn apply_game_choice(&mut self, dialog: &GameDialog, path: PathBuf, choice: GameChoice) {
         let Some(config) = self.config() else {
             return;
         };
-        let game = match choice {
-            GameChoice::Existing(slug) => self.game(&config, &slug),
-            GameChoice::New(name) => match Game::create(&config, &name) {
-                Ok(game) => game,
-                Err(error) => {
-                    self.log(Category::Error, format!("Couldn't set up {name}: {error}"));
-                    return;
+        let link = choice.link;
+        let game = match choice.game {
+            GameTarget::Existing(slug) => self.game(&config, &slug),
+            GameTarget::New(name) => {
+                let name = link.as_ref().map_or(name, |link| link.name.clone());
+                match Game::create(&config, &name) {
+                    Ok(game) => game,
+                    Err(error) => {
+                        self.log(Category::Error, format!("Couldn't set up {name}: {error}"));
+                        return;
+                    }
                 }
-            },
+            }
         };
+        let game = self.link_game(&config, game, link.as_ref());
         self.remember_game(&config, &path, &game);
         match dialog.kind() {
             GameDialogKind::New => self.load_with(path, game),
@@ -622,6 +664,37 @@ impl BridgeApp {
                 // The dialog was for the previous game.
                 self.category_dialog = None;
                 self.ask_category_name();
+            }
+        }
+    }
+
+    /// Links `game` to `link` on speedrun.com, or unlinks it with `None`,
+    /// when that changes it. A game that couldn't be saved is used as it
+    /// was.
+    fn link_game(&mut self, config: &Config, game: Game, link: Option<&SpeedrunLink>) -> Game {
+        let current = game.speedrun_id.as_deref();
+        let unchanged = match link {
+            Some(link) => current == Some(link.id.as_str()) && game.name == link.name,
+            None => current.is_none(),
+        };
+        if unchanged {
+            return game;
+        }
+        match Game::set_link(config, &game.slug, link) {
+            Ok(linked) => {
+                let message = match link {
+                    Some(_) => format!("Linked {} to speedrun.com", linked.name),
+                    None => format!("Unlinked {} from speedrun.com", linked.name),
+                };
+                self.log(Category::App, message);
+                linked
+            }
+            Err(error) => {
+                self.log(
+                    Category::Error,
+                    format!("Couldn't update {}: {error}", game.name),
+                );
+                game
             }
         }
     }
@@ -2707,6 +2780,134 @@ mod tests {
             .unwrap()
             .settings()
             .clone()
+    }
+
+    /// The app with its files in a temporary folder.
+    fn app_in_temp_dir() -> (tempfile::TempDir, Config, BridgeApp) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::at(dir.path().join("config"));
+        let app = test_app(config.clone());
+        (dir, config, app)
+    }
+
+    fn link(id: &str, name: &str) -> SpeedrunLink {
+        SpeedrunLink {
+            id: id.to_owned(),
+            name: name.to_owned(),
+        }
+    }
+
+    /// Uses `choice` for the auto splitter `x.wasm` through a new Game dialog.
+    fn use_game(app: &mut BridgeApp, choice: GameChoice) -> PathBuf {
+        let path = PathBuf::from("x.wasm");
+        let dialog = GameDialog::new("x.wasm", Vec::new(), Box::new(speedrun::Offline));
+        app.apply_game_choice(&dialog, path.clone(), choice);
+        path
+    }
+
+    #[test]
+    fn using_a_new_linked_game_sets_it_up_named_and_linked() {
+        let (_dir, config, mut app) = app_in_temp_dir();
+        let path = use_game(
+            &mut app,
+            GameChoice {
+                game: GameTarget::New("portal".to_owned()),
+                link: Some(link("n4d", "Portal")),
+            },
+        );
+        let game = Game::load(&config, "portal").unwrap();
+        assert_eq!(game.name, "Portal");
+        assert_eq!(game.speedrun_id.as_deref(), Some("n4d"));
+        assert_eq!(
+            Splitters::load(&config).unwrap().game_of(&path),
+            Some("portal")
+        );
+    }
+
+    #[test]
+    fn linking_an_existing_game_renames_it_and_logs_it() {
+        let (_dir, config, mut app) = app_in_temp_dir();
+        Game::create(&config, "GTA").unwrap();
+        let path = use_game(
+            &mut app,
+            GameChoice {
+                game: GameTarget::Existing("gta".to_owned()),
+                link: Some(link("sa", "Grand Theft Auto: San Andreas")),
+            },
+        );
+        let game = Game::load(&config, "gta").unwrap();
+        assert_eq!(game.name, "Grand Theft Auto: San Andreas");
+        assert_eq!(game.speedrun_id.as_deref(), Some("sa"));
+        assert_eq!(
+            Splitters::load(&config).unwrap().game_of(&path),
+            Some("gta")
+        );
+        let logged = lines(&app, Category::App);
+        assert!(
+            logged
+                .iter()
+                .any(|line| line == "Linked Grand Theft Auto: San Andreas to speedrun.com"),
+            "{logged:?}"
+        );
+    }
+
+    #[test]
+    fn using_a_linked_game_without_a_link_unlinks_it() {
+        let (_dir, config, mut app) = app_in_temp_dir();
+        Game::create(&config, "GTA").unwrap();
+        Game::set_link(&config, "gta", Some(&link("sa", "GTA SA"))).unwrap();
+        use_game(
+            &mut app,
+            GameChoice {
+                game: GameTarget::Existing("gta".to_owned()),
+                link: None,
+            },
+        );
+        let game = Game::load(&config, "gta").unwrap();
+        assert_eq!(game.speedrun_id, None);
+        assert_eq!(game.name, "GTA SA");
+        let logged = lines(&app, Category::App);
+        assert!(
+            logged
+                .iter()
+                .any(|line| line == "Unlinked GTA SA from speedrun.com"),
+            "{logged:?}"
+        );
+    }
+
+    #[test]
+    fn using_a_game_whose_link_is_unchanged_logs_nothing() {
+        let (_dir, config, mut app) = app_in_temp_dir();
+        Game::create(&config, "GTA").unwrap();
+        Game::set_link(&config, "gta", Some(&link("sa", "GTA SA"))).unwrap();
+        use_game(
+            &mut app,
+            GameChoice {
+                game: GameTarget::Existing("gta".to_owned()),
+                link: Some(link("sa", "GTA SA")),
+            },
+        );
+        assert!(
+            lines(&app, Category::App)
+                .iter()
+                .all(|line| !line.contains("speedrun.com"))
+        );
+    }
+
+    #[test]
+    fn a_failed_search_is_logged_once_in_app() {
+        let (_dir, _config, mut app) = app_in_temp_dir();
+        let fake = speedrun::FakeSearch::default();
+        fake.answer("portal", Err("offline".to_owned()));
+        let dialog = GameDialog::new("portal.wasm", Vec::new(), Box::new(fake));
+        app.dialog = Some((dialog, PathBuf::from("portal.wasm")));
+        draw_app(&mut app, 800.0);
+        draw_app(&mut app, 800.0);
+        let failures: Vec<_> = lines(&app, Category::App)
+            .into_iter()
+            .filter(|line| line.contains("speedrun.com"))
+            .collect();
+        assert_eq!(failures, ["Couldn't search speedrun.com: offline"]);
     }
 
     /// The messages logged in `category`.

@@ -4,6 +4,7 @@ mod end_to_end;
 mod logging;
 mod runner;
 mod server;
+mod speedrun;
 mod ui;
 mod version;
 

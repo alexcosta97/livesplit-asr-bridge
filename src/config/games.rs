@@ -4,6 +4,7 @@
 //!
 //! ```toml
 //! name = "GTA San Andreas — Definitive Edition"
+//! speedrun_id = "yo1yv1q5"
 //! category = "any"
 //!
 //! [categories.any]
@@ -18,6 +19,8 @@ use std::{collections::BTreeMap, fs};
 use serde::{Deserialize, Serialize};
 use toml::Table;
 
+use crate::speedrun::SpeedrunLink;
+
 use super::{Config, Splitters, category_key, merge_saved, read_if_exists, slug, write_replacing};
 
 /// The category a new game starts with, and the name a file from before
@@ -31,6 +34,8 @@ pub struct Game {
     pub slug: String,
     /// The name shown to people.
     pub name: String,
+    /// The game's id on speedrun.com, once linked (spec §7.5).
+    pub speedrun_id: Option<String>,
     /// The game's categories, by name. Never empty.
     pub categories: Vec<RunCategory>,
     /// The key of the category in use, always one of `categories`.
@@ -59,6 +64,8 @@ pub struct RunCategory {
 pub struct GameSummary {
     pub slug: String,
     pub name: String,
+    /// The game's id on speedrun.com, once linked.
+    pub speedrun_id: Option<String>,
     /// How many known auto splitters are for this game.
     pub splitters: usize,
 }
@@ -67,6 +74,9 @@ pub struct GameSummary {
 #[derive(Debug, Serialize, Deserialize)]
 struct GameFile {
     name: String,
+    /// The game's id on speedrun.com, once linked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    speedrun_id: Option<String>,
     /// The key of the category last used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     category: Option<String>,
@@ -95,6 +105,7 @@ impl Game {
         Self {
             slug: slug.to_owned(),
             name: name.to_owned(),
+            speedrun_id: None,
             categories: vec![RunCategory {
                 key: category_key(DEFAULT_CATEGORY),
                 name: DEFAULT_CATEGORY.to_owned(),
@@ -146,6 +157,7 @@ impl Game {
         let mut game = Self {
             slug: slug.to_owned(),
             name: file.name,
+            speedrun_id: file.speedrun_id,
             categories: file
                 .categories
                 .into_iter()
@@ -337,11 +349,30 @@ impl Game {
         Ok(game)
     }
 
+    /// Links the game `slug` to speedrun.com, or unlinks it with `None`. A
+    /// link also names the game as speedrun.com does; unlinking keeps the
+    /// name. The slug, and so the file, stay the same. The file is read
+    /// again first.
+    pub fn set_link(
+        config: &Config,
+        slug: &str,
+        link: Option<&SpeedrunLink>,
+    ) -> Result<Self, String> {
+        let mut game = Self::load(config, slug)?;
+        game.speedrun_id = link.map(|link| link.id.clone());
+        if let Some(link) = link {
+            game.name = link.name.clone();
+        }
+        game.write(config)?;
+        Ok(game)
+    }
+
     /// Writes the game's file in the current form, so nothing is left to
     /// name.
     fn write(&mut self, config: &Config) -> Result<(), String> {
         let file = GameFile {
             name: self.name.clone(),
+            speedrun_id: self.speedrun_id.clone(),
             category: Some(self.current.clone()),
             settings: None,
             categories: self
@@ -396,6 +427,7 @@ impl Game {
                     splitters: splitters.count_for(&game.slug),
                     slug: game.slug,
                     name: game.name,
+                    speedrun_id: game.speedrun_id,
                 }),
                 Err(error) => errors.push(error),
             }
@@ -507,11 +539,13 @@ mod tests {
                 GameSummary {
                     slug: gta.slug,
                     name: "GTA".to_owned(),
+                    speedrun_id: None,
                     splitters: 2
                 },
                 GameSummary {
                     slug: portal.slug,
                     name: "portal".to_owned(),
+                    speedrun_id: None,
                     splitters: 0
                 },
             ]
@@ -714,5 +748,89 @@ mod tests {
         let other = game.categories.iter().find(|c| c.key == "100").unwrap();
         assert_eq!(other.settings, table("gym = false"));
         assert_eq!(game.settings(), &table("gym = true"));
+    }
+
+    #[test]
+    fn a_linked_game_keeps_its_speedrun_id() {
+        let (_dir, config) = config();
+        fs::create_dir_all(config.games_dir()).unwrap();
+        let path = config.game_file("portal");
+        fs::write(&path, "name = \"Portal\"\nspeedrun_id = \"4pd0n31e\"\n").unwrap();
+        let game = Game::load(&config, "portal").unwrap();
+        assert_eq!(game.speedrun_id.as_deref(), Some("4pd0n31e"));
+
+        Game::save_settings(&config, "portal", &game.current, &table("gym = true")).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("name = \"Portal\"\nspeedrun_id = \"4pd0n31e\"\n"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_game_without_a_link_writes_no_speedrun_id() {
+        let (_dir, config) = config();
+        Game::create(&config, "Portal").unwrap();
+        let text = fs::read_to_string(config.game_file("portal")).unwrap();
+        assert!(!text.contains("speedrun_id"), "{text}");
+    }
+
+    #[test]
+    fn linking_names_the_game_as_on_speedrun_com_and_keeps_its_slug() {
+        let (_dir, config) = config();
+        Game::create(&config, "GTA SA DE").unwrap();
+        let link = SpeedrunLink {
+            id: "yo1yv1q5".into(),
+            name: "Grand Theft Auto: San Andreas".into(),
+        };
+        let game = Game::set_link(&config, "gta-sa-de", Some(&link)).unwrap();
+        assert_eq!(
+            (
+                game.slug.as_str(),
+                game.name.as_str(),
+                game.speedrun_id.as_deref()
+            ),
+            (
+                "gta-sa-de",
+                "Grand Theft Auto: San Andreas",
+                Some("yo1yv1q5")
+            )
+        );
+        assert_eq!(Game::load(&config, "gta-sa-de").unwrap(), game);
+    }
+
+    #[test]
+    fn unlinking_removes_the_id_and_keeps_the_name() {
+        let (_dir, config) = config();
+        Game::create(&config, "Portal").unwrap();
+        let link = SpeedrunLink {
+            id: "4pd0n31e".into(),
+            name: "Portal (2007)".into(),
+        };
+        Game::set_link(&config, "portal", Some(&link)).unwrap();
+        let game = Game::set_link(&config, "portal", None).unwrap();
+        assert_eq!(game.speedrun_id, None);
+        assert_eq!(game.name, "Portal (2007)");
+        let text = fs::read_to_string(config.game_file("portal")).unwrap();
+        assert!(!text.contains("speedrun_id"), "{text}");
+    }
+
+    #[test]
+    fn the_list_tells_which_games_are_linked() {
+        let (_dir, config) = config();
+        Game::create(&config, "Portal").unwrap();
+        Game::create(&config, "Doom").unwrap();
+        let link = SpeedrunLink {
+            id: "4pd0n31e".into(),
+            name: "Portal".into(),
+        };
+        Game::set_link(&config, "portal", Some(&link)).unwrap();
+        let (games, errors) = Game::list(&config, &Splitters::default());
+        assert!(errors.is_empty());
+        let ids: Vec<_> = games
+            .iter()
+            .map(|g| (g.slug.as_str(), g.speedrun_id.as_deref()))
+            .collect();
+        assert_eq!(ids, [("doom", None), ("portal", Some("4pd0n31e"))]);
     }
 }

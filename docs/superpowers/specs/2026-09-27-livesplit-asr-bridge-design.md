@@ -548,6 +548,42 @@ the window dimmed behind them.
   and **Cancel**. **Change** on the Auto splitter card opens the same dialog,
   titled "Change game", with the current game selected. A line under the
   list says settings are saved per game and category.
+  - The name field also searches speedrun.com (section 7.5). Under it,
+    either a line "Linked to speedrun.com" with **Change**, while the game
+    is linked, or a list of results dropping
+    down from the field, while it is being searched. The list shows five
+    rows and scrolls for more, each with the game's speedrun.com name and
+    the year it was released, and SET UP on a result linked to a game
+    already set up. The list drops down over what is under the field. Its
+    last row, always there, is "Use
+    "<typed name>" (not on speedrun.com)". With no results, and offline,
+    that row is the whole list.
+  - Picking a result fills the field with speedrun.com's name for the game
+    and links it. Typing in the field again removes the link until a
+    result is picked. **Change** on the linked line removes the link and
+    opens the list for the name in the field. The last row closes the list
+    and keeps the typed name, unlinked, and the dialog doesn't link that
+    name on its own again while it stays open.
+  - Up and Down move through the list, Enter picks the highlighted row,
+    and Escape closes the list (a second Escape cancels the dialog). With
+    no row highlighted, Enter is **Use this game**.
+  - The dialog's choice is a game (one already set up, selected by
+    clicking it in the list or by typing its name, or a new one) and,
+    separately, a speedrun.com link or none. Filling the field from a
+    result doesn't change which game already set up is selected, so
+    linking a selected game that wasn't linked links that game, whatever
+    its old name. With no game selected, filling the field from a result
+    selects a game already set up under that name, as typing it would, so
+    the same game isn't set up twice. Selecting a game already set up, by
+    clicking it or by typing its name, brings its link with it, if it has
+    one.
+  - **Use this game** with a link: a result already linked to a game set up
+    uses that game. Otherwise the selected game is linked and takes
+    speedrun.com's name, or, with no game selected, a new game is set up,
+    named as on speedrun.com and linked. Without a link it works as before:
+    the selected game, or a new game by the typed name. A selected game that
+    was linked and is used without a link (after **Change** and the last
+    row) is unlinked: its `speedrun_id` is removed, and it keeps its name.
 - **Category**, from **Change** next to the category on the Auto splitter
   card (section 7.4). Under the title, the game's name. The game's
   categories are listed by name, the one in use tagged IN USE and the
@@ -660,7 +696,7 @@ and their exact values are in `.superdesign/design-system.md`.
 | **How to connect** | expanded, collapsed, or expanded and collapsible | Connection tab |
 | **Log toolbar** and **Log line** | filter states; line categories, highlighted entry | Log tab |
 | **About row** | a folder with **Open** | Preferences tab |
-| **Game dialog**, **Category dialog** and **Unsaved dialog** | new file or change; picking, renaming, adding, confirming a delete, naming settings from before categories; reload, open, change game, change category or close | dialogs |
+| **Game dialog**, **Category dialog** and **Unsaved dialog** | new file or change, each with a game linked to speedrun.com, being searched (results, no results) or not linked; picking, renaming, adding, confirming a delete, naming settings from before categories; reload, open, change game, change category or close | dialogs |
 
 ## 7. Configuration and settings storage
 
@@ -676,9 +712,9 @@ for the app:
                       mode
   splitters.toml      maps each known .wasm path to a game
   games/
-    <game-slug>.toml  a game's display name, its categories with their
-                      saved auto splitter settings, and the last category
-                      used
+    <game-slug>.toml  a game's display name, its speedrun.com id if it is
+                      linked, its categories with their saved auto
+                      splitter settings, and the last category used
 ```
 
 - `app.toml` is read at start-up.
@@ -738,6 +774,7 @@ auto splitter behaves the same through the bridge as in LiveSplit:
   (section 6.8). The answer is saved to `splitters.toml`.
 - The association can be changed with **Change** on the Auto splitter card
   (section 6.2).
+- The dialog links the game to speedrun.com where it can (section 7.5).
 
 ### 7.4 Categories
 
@@ -806,6 +843,64 @@ which can be renamed later in the Category dialog. The dialog comes back on
 the next load only while the file is still in the old form, so not once
 the settings have been saved.
 
+### 7.5 speedrun.com
+
+Runners name the same game differently ("GTA SA DE", "GTA San Andreas —
+Definitive Edition"), so the Game dialog suggests games from speedrun.com
+and links the game to its speedrun.com game. A linked game is named as on
+speedrun.com, and its id lets later features find the game's categories
+there (section 16).
+
+- **What is linked:** the game's file stores speedrun.com's id for the game,
+  which never changes, as `speedrun_id` next to `name`. Abbreviations can
+  change, so they aren't stored. A file without `speedrun_id` is a game that
+  isn't linked, as every game set up before this feature is.
+
+  ```toml
+  name = "Grand Theft Auto: San Andreas"
+  speedrun_id = "yo1yv1q5"
+  category = "any"
+  ```
+
+- **Searching:** the dialog asks speedrun.com's API for games matching a
+  name, `GET https://www.speedrun.com/api/v1/games?name=<name>&max=20`, which
+  searches game names and abbreviations and returns the closest first. Only
+  the id, international name and release year of each result are used. Each
+  request sends a `User-Agent` naming the app and its version
+  (`livesplit-asr-bridge/<version>`), as speedrun.com asks, and gives up
+  after 5 seconds.
+- **When it searches:** only while the Game dialog is open: when it opens
+  with a name that isn't linked (the name from the file, or in "Change game"
+  a current game that isn't linked), when the selected game already set up
+  isn't linked, and 300 ms after typing stops. Blank names aren't searched.
+  At most one request runs at a time; a newer name replaces a waiting one,
+  and results for a name that is no longer in the field are ignored. Results
+  are kept for each name until the dialog closes, so going back to a name
+  doesn't ask again. A game that is linked is never searched.
+- **Linking on its own:** for a name the user didn't type (the name from the
+  file, or a game already set up), the dialog links the game without asking
+  when one result clearly matches. Names are compared by their letters and
+  digits only, ignoring case, against each result's international name and
+  abbreviation: the same letters and digits match fully, and otherwise the
+  match is how similar the two are (1 minus the edit distance over the
+  longer length). A result matches clearly at 0.9 or more, when no other
+  result does. Otherwise the list opens for the user to choose. Typed names
+  are never linked on their own, so the field doesn't change while the user
+  types.
+- **Naming:** linking fills the field with speedrun.com's name. A game set
+  up before, once linked, takes speedrun.com's name when **Use this game**
+  is pressed; its slug and file stay the same. A link the dialog made on its
+  own looks like one the user picked; **Change** undoes either.
+- **One game per speedrun.com game:** a result linked to a game already set
+  up selects that game, so two spellings don't become two games.
+- **Offline:** when speedrun.com can't be reached, answers with an error, or
+  limits requests (HTTP 420, at 100 requests a minute), the list has only
+  the last row and the dialog works as without speedrun.com. Nothing is
+  shown as an error; the failure is logged (section 8.1) once per dialog.
+- A linked game's name isn't refreshed on its own if speedrun.com renames
+  it. Picking the game's result again in the Game dialog takes
+  speedrun.com's current name.
+
 ## 8. Logging
 
 ### 8.1 Categories
@@ -815,7 +910,7 @@ the settings have been saved.
 | Errors | Load failures, auto splitter crashes, server start failures, connection errors | Always shown, also in the error card (section 6.2) |
 | Auto splitter | Messages printed by the auto splitter, and "Stored settings: …" naming the keys it changed in its settings map | Optional filter, ticked by developer mode |
 | Connection | Timers connecting and disconnecting, commands sent, events and responses received, dropped commands | Optional filter |
-| App & runtime | Process attach and detach, tick rate changes, settings saved, game and category changes, categories added, renamed and deleted, server restarts, reloads | Optional filter |
+| App & runtime | Process attach and detach, tick rate changes, settings saved, game and category changes, categories added, renamed and deleted, games linked to speedrun.com, speedrun.com not answering (once per Game dialog), server restarts, reloads | Optional filter |
 
 A game time set right after another game time is still sent, but not logged,
 whether it was sent or dropped: only the first of such a run is, so an auto
@@ -854,6 +949,7 @@ These locations are documented in the wiki's Logs and Files page (section 15.2).
 | The port is in use | Error card with **Open Connection** and **Dismiss**, the Timer card shows SERVER STOPPED, and the same error inline in the Connection tab, suggesting another port and **Restart server** |
 | A timer disconnects | Logged; with no timers left, tracked state becomes "not running", the Timer card shows NOT CONNECTED and commands are dropped |
 | LiveSplit One rejects a command (for example split with no run in progress) | Logged in the Connection category; not an error |
+| speedrun.com can't be reached, errors or limits requests | The Game dialog works without suggestions (section 7.5); logged in App & runtime; not an error |
 
 Errors are shown in the error card at the top of the status column
 (section 6.2): only the most recent one, until dismissed. Errors that need
@@ -869,6 +965,10 @@ entry highlighted.
   the tracked timer state, not the machine. This is documented.
 - The app reads the memory of the game process through the runtime's sandbox.
   It never writes to other processes.
+- While the Game dialog is open, the names in its field are sent to
+  speedrun.com over HTTPS to search for games (section 7.5). Nothing else is
+  sent, no account is used, and nothing is sent while the dialog is closed.
+  This is documented.
 
 ## 11. Platform notes (for documentation)
 
@@ -904,6 +1004,12 @@ Automated:
   unsaved changes, and naming settings from before categories (Save, Not
   now, and the dialog coming back only for a file still in the old form)
   are tested headless.
+- **speedrun.com (section 7.5):** reading the API's games response, the
+  match scores and when the dialog links on its own, and the Game dialog
+  headless with a fake search: results, picking one, the last row, typing
+  removing a link, Change, keyboard use, a game already linked selected by
+  id, an old game renamed when linked, stale results ignored, and offline.
+  No test calls the real API.
 - **Settings:** a test auto splitter publishes every widget kind and every
   kind of file filter, then stores values of every type itself. Runner tests
   check what it publishes and stores and that saved edits keep its values;
@@ -1075,7 +1181,7 @@ In sidebar order:
 | Installing | Task | Which download to pick, opening unsigned builds on macOS and Windows (section 11), installing and uninstalling on Linux, updating, full releases and release candidates |
 | Getting Started | Tutorial | First launch through the first split: open an auto splitter, name the game, connect LiveSplit One, start the game |
 | Connecting LiveSplit One | Task | Choosing an address, the Chrome-based browser requirement, Connect to Server, local network access, several timers and PRIMARY, the port and Restart server, who can connect (section 10) |
-| Auto Splitters and Settings | Task | Open and Reload, game association and Change, categories and the Category dialog, drafts, Save and Revert to defaults, the unsaved-changes dialog, settings shared per game and category (sections 7.2 and 7.4), developer mode |
+| Auto Splitters and Settings | Task | Open and Reload, game association and Change, categories and the Category dialog, drafts, Save and Revert to defaults, the unsaved-changes dialog, settings shared per game and category (sections 7.2 and 7.4), speedrun.com suggestions and links (sections 7.5 and 10), developer mode |
 | The Main Window | Reference | Every status card and state (section 6.2), the compact state, the Preferences tab |
 | Logs and Files | Reference | Log categories and filters, Show in log, the log and config folders for every OS (sections 7.1 and 8.2), retention and the size cap |
 | Platform Notes | Reference | Section 11 |

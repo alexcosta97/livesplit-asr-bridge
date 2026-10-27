@@ -14,7 +14,7 @@
 
 2. **Click Open…** and pick the `.wasm` auto splitter.
 
-3. **Name the game.** The app asks "Which game is this auto splitter for?" and fills in a name from the file name. Change it if it's wrong, or pick a game from the list, then click **Use this game**. The app remembers the game's settings.
+3. **Name the game.** The app asks "Which game is this auto splitter for?" and fills in a name from the file name. Change it if it's wrong, or pick a game from the list. The app can also link the game to speedrun.com; see [Auto Splitters and Settings](Auto-Splitters-and-Settings). Then click **Use this game**. The app remembers the game's settings.
 
    <!-- screenshot: S3 game-dialog.png -->
    The dialog "Which game is this auto splitter for?" with a name field, the list of games already set up, and the Use this game and Cancel buttons.
