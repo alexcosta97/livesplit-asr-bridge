@@ -3,6 +3,7 @@
 //! game, its name fields also offer the game's categories from speedrun.com
 //! and link a category to one (spec §7.5.1).
 
+use std::cell::RefCell;
 use std::fmt;
 
 use eframe::egui::{
@@ -18,7 +19,7 @@ use super::{
 };
 use crate::{
     config::Game,
-    speedrun::{CategoryLink, CategorySource, Variant, clear_variant},
+    speedrun::{CategoryLink, CategorySource, Variant, clear_variant, valid_id},
     ui::theme,
 };
 
@@ -87,6 +88,10 @@ enum Taken {
     Both,
 }
 
+/// What the list's rows are worked out from: the variants' version, whether
+/// the levels show, and the name typed.
+type RowsKey = (u64, bool, String);
+
 /// The Category dialog's state.
 pub struct CategoryDialog {
     /// The game, as last read: its name, its categories and the one in use.
@@ -103,6 +108,12 @@ pub struct CategoryDialog {
     awaiting: bool,
     /// The game's variants, once they arrive, kept while the dialog is open.
     variants: Vec<Variant>,
+    /// How many times the variants were replaced, so the cached rows know
+    /// when they are stale.
+    variants_version: u64,
+    /// The rows last worked out, with what they were worked out for, so the
+    /// many questions in a frame share one pass over the variants.
+    rows_cache: RefCell<Option<(RowsKey, Rows)>>,
     /// The link and the list of the open name field.
     suggest: Suggest,
     /// The error of the request, until it is taken.
@@ -128,7 +139,8 @@ impl CategoryDialog {
     /// asked for the game's variants when the game is linked.
     pub fn new(game: &Game, source: Box<dyn CategorySource>) -> Self {
         let mut source = source;
-        let asked = game.speedrun_id.clone();
+        // An id that isn't safe in an address is as good as no link.
+        let asked = game.speedrun_id.clone().filter(|id| valid_id(id));
         if let Some(id) = &asked {
             source.request(id);
         }
@@ -140,6 +152,8 @@ impl CategoryDialog {
             awaiting: asked.is_some(),
             asked,
             variants: Vec::new(),
+            variants_version: 0,
+            rows_cache: RefCell::new(None),
             suggest: Suggest::default(),
             failure: None,
             failure_taken: false,
@@ -198,6 +212,10 @@ impl CategoryDialog {
             match answer {
                 Ok(variants) => {
                     self.variants = variants;
+                    self.variants_version += 1;
+                    // The rows change under the highlight, so Enter must not
+                    // pick a row the user didn't see.
+                    self.suggest.highlight = None;
                     self.link_on_own();
                 }
                 Err(error) => {
@@ -275,11 +293,17 @@ impl CategoryDialog {
 
     /// What the list shows for the name in the field.
     fn rows(&self) -> Rows {
-        Suggest::rows(
-            &self.variants,
-            self.suggest.levels,
-            self.name().unwrap_or_default(),
-        )
+        let typed = self.name().unwrap_or_default();
+        let key = (self.variants_version, self.suggest.levels, typed.to_owned());
+        let mut cache = self.rows_cache.borrow_mut();
+        if let Some((cached, rows)) = &*cache
+            && *cached == key
+        {
+            return rows.clone();
+        }
+        let rows = Suggest::rows(&self.variants, self.suggest.levels, typed);
+        *cache = Some((key, rows.clone()));
+        rows
     }
 
     /// The number of rows of the list, counting the last one, which shows once
@@ -1288,6 +1312,19 @@ mod tests {
     }
 
     #[test]
+    fn a_game_with_an_unsafe_id_is_not_linked() {
+        for id in ["", "a/b", "../users", "a?b"] {
+            let game = Game {
+                speedrun_id: Some(id.to_owned()),
+                ..game()
+            };
+            let (dialog, fake) = open(&game);
+            assert!(fake.requests().is_empty(), "{id:?}");
+            assert!(!dialog.linked(), "{id:?}");
+        }
+    }
+
+    #[test]
     fn an_answer_for_another_game_is_ignored() {
         let (mut dialog, fake) = open(&linked_game());
         fake.answer("other", Ok(vec![pc()]));
@@ -1573,6 +1610,30 @@ mod tests {
         assert_eq!(name(&dialog), "Any% (PC)");
         assert_eq!(dialog.suggest.link, Some(pc().link));
         assert!(matches!(dialog.mode, Mode::Adding { .. }));
+    }
+
+    #[test]
+    fn variants_arriving_clear_the_highlight() {
+        let ctx = Context::default();
+        crate::ui::theme::install(&ctx);
+        let (mut dialog, fake) = open(&linked_game());
+        dialog.start_adding();
+        assert_eq!(frame(&ctx, &mut dialog, vec![]), None);
+        assert_eq!(frame(&ctx, &mut dialog, vec![]), None);
+        type_in(&mut dialog, "Any");
+        // Before the variants, the only row is the last one.
+        assert_eq!(frame(&ctx, &mut dialog, press(Key::ArrowDown)), None);
+        assert_eq!(dialog.suggest.highlight, Some(0));
+        arrive(&mut dialog, &fake, vec![pc(), n64()]);
+        assert_eq!(dialog.suggest.highlight, None);
+        // Enter isn't taken by a row, so it adds the name typed, unlinked.
+        assert_eq!(
+            frame(&ctx, &mut dialog, press(Key::Enter)),
+            Some(CategoryDialogAction::Add {
+                name: "Any".to_owned(),
+                link: None,
+            })
+        );
     }
 
     #[test]

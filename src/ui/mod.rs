@@ -3140,6 +3140,33 @@ mod tests {
     }
 
     #[test]
+    fn changing_the_game_closes_the_category_dialog() {
+        let (_dir, mut app) = app_with_a_linked_game(&speedrun::FakeCategories::default());
+        assert!(app.category_dialog.is_some());
+        let current = GameSummary {
+            slug: "gta".to_owned(),
+            name: "GTA".to_owned(),
+            speedrun_id: Some("sa".to_owned()),
+            splitters: 1,
+        };
+        let dialog = GameDialog::change(
+            "x.wasm",
+            vec![current.clone()],
+            &current,
+            Box::new(speedrun::Offline),
+        );
+        app.apply_game_choice(
+            &dialog,
+            PathBuf::from("x.wasm"),
+            GameChoice {
+                game: GameTarget::Existing("gta".to_owned()),
+                link: Some(link("vc", "GTA Vice City")),
+            },
+        );
+        assert!(app.category_dialog.is_none());
+    }
+
+    #[test]
     fn the_category_dialog_of_an_unlinked_game_asks_nothing() {
         let fake = speedrun::FakeCategories::default();
         let (_dir, mut app) = app_with_two_categories();
