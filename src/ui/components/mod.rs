@@ -40,7 +40,7 @@ pub use checkbox::Checkbox;
 pub use empty_state::empty_state;
 pub use error_card::{ErrorAction, error_card};
 pub use game_card::game_card;
-pub use game_dialog::{GameChoice, GameDialog, GameDialogAction, GameDialogKind, game_dialog};
+pub use game_dialog::{GameDialog, GameDialogAction, GameDialogKind, GameTarget, game_dialog};
 pub use how_to_connect::how_to_connect;
 pub use info_marker::info_marker;
 pub use last_action_card::last_action_card;

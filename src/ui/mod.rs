@@ -35,11 +35,13 @@ use crate::{
     logging::{self, Category, Filters, Logger},
     runner::{Runner, RunnerEvent, TimerAction, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
+    speedrun::Offline,
     version::VERSION,
 };
 use components::{
-    CategoryDialog, CategoryDialogAction, ErrorAction, GameChoice, GameDialog, GameDialogAction,
-    GameDialogKind, HeaderButton, LogAction, SplitterAction, UnsavedAction, UnsavedTrigger, Width,
+    CategoryDialog, CategoryDialogAction, ErrorAction, GameDialog, GameDialogAction,
+    GameDialogKind, GameTarget, HeaderButton, LogAction, SplitterAction, UnsavedAction,
+    UnsavedTrigger, Width,
 };
 use connection_tab::ConnectionTab;
 use file_pick::{FilePick, PickFor, PickPoll};
@@ -535,7 +537,10 @@ impl BridgeApp {
             }
             None => {
                 let games = self.games(&config, &splitters);
-                self.dialog = Some((GameDialog::new(&file_name(&path), games), path));
+                self.dialog = Some((
+                    GameDialog::new(&file_name(&path), games, Box::new(Offline)),
+                    path,
+                ));
             }
         }
     }
@@ -569,8 +574,10 @@ impl BridgeApp {
                 })
         });
         let dialog = match &current {
-            Some(current) => GameDialog::change(&file_name(&path), games, current),
-            None => GameDialog::new(&file_name(&path), games),
+            Some(current) => {
+                GameDialog::change(&file_name(&path), games, current, Box::new(Offline))
+            }
+            None => GameDialog::new(&file_name(&path), games, Box::new(Offline)),
         };
         self.dialog = Some((dialog, path));
     }
@@ -592,9 +599,9 @@ impl BridgeApp {
         let Some(config) = self.config() else {
             return;
         };
-        let game = match choice {
-            GameChoice::Existing(slug) => self.game(&config, &slug),
-            GameChoice::New(name) => match Game::create(&config, &name) {
+        let game = match choice.game {
+            GameTarget::Existing(slug) => self.game(&config, &slug),
+            GameTarget::New(name) => match Game::create(&config, &name) {
                 Ok(game) => game,
                 Err(error) => {
                     self.log(Category::Error, format!("Couldn't set up {name}: {error}"));
