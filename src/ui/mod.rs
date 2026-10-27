@@ -375,6 +375,8 @@ impl BridgeApp {
                 self.settings
                     .reset(as_runtime_has_it(&saved.unwrap_or_default()));
                 self.stored_keys.clear();
+                // The dialog was for the previous game.
+                self.category_dialog = None;
                 self.ask_category_name();
             }
             RunnerEvent::LoadFailed { path, .. } => {
@@ -383,6 +385,7 @@ impl BridgeApp {
             RunnerEvent::Unloaded => {
                 self.write_settings();
                 self.game = None;
+                self.category_dialog = None;
                 self.settings.reset(toml::Table::new());
             }
             RunnerEvent::TimerAction { action, .. } => {
@@ -616,6 +619,8 @@ impl BridgeApp {
                     .reset_keeping_widgets(as_runtime_has_it(game.settings()));
                 self.stored_keys.clear();
                 self.game = Some(game);
+                // The dialog was for the previous game.
+                self.category_dialog = None;
                 self.ask_category_name();
             }
         }
@@ -692,6 +697,7 @@ impl BridgeApp {
                 return;
             }
             CategoryDialogAction::Add(name) => {
+                let name = name.trim().to_owned();
                 match Game::add_category(&config, &slug, &name, self.settings.live()) {
                     Ok((game, key)) => (
                         Ok(game),
@@ -708,6 +714,7 @@ impl BridgeApp {
                 }
             }
             CategoryDialogAction::Rename { key, name } => {
+                let name = name.trim().to_owned();
                 let old = self.category_name(&key);
                 (
                     Game::rename_category(&config, &slug, &key, &name),
@@ -1810,6 +1817,32 @@ mod tests {
         let (_dir, mut app) = app_with_unsaved_edit();
         app.ask_category_name();
         assert!(app.category_dialog.is_none());
+    }
+
+    #[test]
+    fn an_open_category_dialog_closes_when_the_auto_splitter_unloads() {
+        let (_dir, mut app) = app_with_two_categories();
+        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.runner_event(RunnerEvent::Unloaded);
+        assert!(app.category_dialog.is_none());
+    }
+
+    #[test]
+    fn the_log_has_the_trimmed_category_name() {
+        let (_dir, mut app) = app_with_unsaved_edit();
+        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_action(CategoryDialogAction::Add(" Y ".to_owned()));
+        let all = Filters {
+            auto_splitter: true,
+            connection: true,
+            app: true,
+        };
+        assert!(
+            app.logger
+                .view()
+                .shown(all)
+                .any(|entry| entry.message == "Added the category Y (GTA)")
+        );
     }
 
     #[test]
