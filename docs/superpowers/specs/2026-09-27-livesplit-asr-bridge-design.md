@@ -599,6 +599,52 @@ the window dimmed behind them.
     with **Keep** and **Delete**.
   - A name must not be empty or the same as another category's name of
     the game, ignoring case. While it is, **Add** or **Done** is disabled.
+  - While the game is linked to speedrun.com, every category name field
+    (**+ New category**, **Rename** and "Name this category") also offers
+    the game's categories from speedrun.com (section 7.5.1), working like
+    the Game dialog's name field. While the field has focus, a list drops
+    down from it over what is under it, five rows that scroll for more,
+    each with a variant's name and SET UP on one a category of the game is
+    already linked to. Typing narrows it to the variants whose name
+    contains what is typed, comparing letters and digits only and ignoring
+    case. How the list starts depends on how many variants there are:
+    - **A few** (20 or fewer): with the field empty the list shows them
+      all, to pick from without typing.
+    - **More than 20**: with the field empty the list has one muted row,
+      "Type to search <count> categories", and the variants appear once
+      something is typed.
+
+    Its last row, once something is typed, is "Use "<typed name>" (not on
+    speedrun.com)". Before the categories arrive, and offline, that row is
+    the whole list. A game that isn't linked has no list.
+  - Under the field, while the game has level categories on speedrun.com,
+    a checkbox **Include level categories**, unticked when the dialog opens
+    unless the category being renamed is linked to a level variant.
+    Ticking it adds the level variants to the list (section 7.5.1), which
+    counts towards the 20, and unticking it removes them.
+  - Picking a variant fills the field with its name and links it: under the
+    field, the line "Linked to speedrun.com" with **Change**. Typing in the
+    field again removes the link until a variant is picked. **Change**
+    removes the link and opens the list. The last row closes the list and
+    keeps the typed name, unlinked, and the dialog doesn't link that name
+    on its own again while it stays open. Up, Down, Enter and Escape work
+    as in the Game dialog: with no row highlighted, Enter is **Add**,
+    **Done** or **Save**, and Escape closes the list before it leaves the
+    field.
+  - **Rename** on a linked category opens with its link and the linked
+    line. On a category that isn't linked, its name wasn't typed, so a
+    variant that clearly matches it (section 7.5) links on its own and
+    fills the field with the variant's name; otherwise the list opens.
+    **Done** keeps the name and the link, or unlinks a category used
+    without one (its link is removed and it keeps the name typed).
+  - One category per variant, as with games: while adding, picking a
+    variant another category of the game is linked to, or one whose name
+    another category has (ignoring case), uses that category instead of
+    adding another. It is linked to the variant and takes its current
+    name, saved straight away like a rename, then selected, and the new
+    name field closes. While renaming or naming, a variant another category
+    is linked to, or whose name another category has, can't be picked; its
+    row is dimmed.
   - A line above the buttons says each category keeps its own settings and
     the category in use can't be deleted.
   - Buttons: **Delete** on the left; **Cancel** and **Use this category**
@@ -696,7 +742,7 @@ and their exact values are in `.superdesign/design-system.md`.
 | **How to connect** | expanded, collapsed, or expanded and collapsible | Connection tab |
 | **Log toolbar** and **Log line** | filter states; line categories, highlighted entry | Log tab |
 | **About row** | a folder with **Open** | Preferences tab |
-| **Game dialog**, **Category dialog** and **Unsaved dialog** | new file or change, each with a game linked to speedrun.com, being searched (results, no results) or not linked; picking, renaming, adding, confirming a delete, naming settings from before categories; reload, open, change game, change category or close | dialogs |
+| **Game dialog**, **Category dialog** and **Unsaved dialog** | new file or change, each with a game linked to speedrun.com, being searched (results, no results) or not linked; picking, renaming, adding, confirming a delete, naming settings from before categories, each name field with speedrun.com's variants listed (a few, type to search, SET UP, dimmed, typed name only, level categories ticked or not) or linked; reload, open, change game, change category or close | dialogs |
 
 ## 7. Configuration and settings storage
 
@@ -714,7 +760,8 @@ for the app:
   games/
     <game-slug>.toml  a game's display name, its speedrun.com id if it is
                       linked, its categories with their saved auto
-                      splitter settings, and the last category used
+                      splitter settings and speedrun.com links, and the
+                      last category used
 ```
 
 - `app.toml` is read at start-up.
@@ -901,6 +948,72 @@ there (section 16).
   it. Picking the game's result again in the Game dialog takes
   speedrun.com's current name.
 
+#### 7.5.1 Categories
+
+Most runners run categories their game's leaderboard already has, so for a
+linked game the Category dialog offers them (section 6.8) and links each
+category to its speedrun.com variant, so a later feature can match it there.
+Typing a category stays possible, and a game that isn't linked works as
+before.
+
+- **Asking:** each time the Category dialog opens for a linked game, it asks
+  once for the game's categories and levels with their variables, in one
+  request,
+  `GET https://www.speedrun.com/api/v1/games/<speedrun_id>?embed=levels.categories.variables,categories.variables`,
+  with the same `User-Agent` and 5-second limit as the game search.
+  speedrun.com has no search for categories, so typing searches this answer
+  in the app, and the number of variants is known from it. Nothing is asked
+  while the dialog is closed, or for a game that isn't linked.
+- **Full-game variants:** the game's categories for full-game runs (`type`
+  `per-game`), miscellaneous ones included. A category's subcategories are
+  its variables marked `is-subcategory` that apply to full-game runs (scope
+  `global` or `full-game`). Each combination of one value of each
+  subcategory is a variant, all of them offered; a category without
+  subcategories is one variant.
+- **Level variants:** offered only while **Include level categories** is
+  ticked (section 6.8). For each level, its categories (the `per-level`
+  categories listed under the level), with the subcategories that apply to
+  that level (scope `global`, `all-levels`, or `single-level` for that
+  level), combined the same way.
+- **Order:** full-game variants first, then level variants by level, all in
+  speedrun.com's order: of levels, of categories, then of each variable's
+  values.
+- **Names:** a variant is named as LiveSplit names a category with
+  subcategories: the category's name, then the values in parentheses,
+  separated by commas: "Any% (Unrestricted)", "100% (PC, Glitchless)". A
+  level variant starts with the level's name and a colon: "Bob-omb
+  Battlefield: Stage RTA (N64)". A linked category takes its variant's name
+  when it is linked. Its name isn't refreshed on its own; picking its
+  variant again takes the current one.
+- **What is linked:** the category stores speedrun.com's id for the category
+  as `speedrun_id`, the id of each subcategory value, by variable id, as
+  `speedrun_values`, omitted for a variant without subcategories, and for a
+  level variant the level's id as `speedrun_level`. A category without
+  `speedrun_id` isn't linked, as every category set up before this feature
+  is.
+
+  ```toml
+  [categories.any]
+  name = "Any% (Unrestricted)"
+  speedrun_id = "jdzg83rk"
+  speedrun_values = { yn2wk42n = "21gzep8l" }
+  ```
+
+- **Linking on its own:** only a category's own name, when **Rename** opens
+  on a category that isn't linked, links on its own, with the rules of
+  section 7.5 against the names of the variants the list offers. Names typed, and the empty fields
+  of **+ New category** and "Name this category", never do.
+- **One category per variant:** a category is linked to a variant by its
+  ids, and a variant shows SET UP when a category of the game has them. A
+  variant is never linked to two categories (section 6.8).
+- **When the game's link changes:** when the Game dialog unlinks a game or
+  links it to another speedrun.com game, its categories' links are removed,
+  since they point to the old game's categories. The categories keep their
+  names and settings.
+- **Offline:** as for the game search: the list has only the last row, the
+  dialog works as without speedrun.com, and the failure is logged once per
+  Category dialog.
+
 ## 8. Logging
 
 ### 8.1 Categories
@@ -910,7 +1023,7 @@ there (section 16).
 | Errors | Load failures, auto splitter crashes, server start failures, connection errors | Always shown, also in the error card (section 6.2) |
 | Auto splitter | Messages printed by the auto splitter, and "Stored settings: …" naming the keys it changed in its settings map | Optional filter, ticked by developer mode |
 | Connection | Timers connecting and disconnecting, commands sent, events and responses received, dropped commands | Optional filter |
-| App & runtime | Process attach and detach, tick rate changes, settings saved, game and category changes, categories added, renamed and deleted, games linked to speedrun.com, speedrun.com not answering (once per Game dialog), server restarts, reloads | Optional filter |
+| App & runtime | Process attach and detach, tick rate changes, settings saved, game and category changes, categories added, renamed and deleted, games and categories linked to speedrun.com, speedrun.com not answering (once per Game or Category dialog), server restarts, reloads | Optional filter |
 
 A game time set right after another game time is still sent, but not logged,
 whether it was sent or dropped: only the first of such a run is, so an auto
@@ -949,7 +1062,7 @@ These locations are documented in the wiki's Logs and Files page (section 15.2).
 | The port is in use | Error card with **Open Connection** and **Dismiss**, the Timer card shows SERVER STOPPED, and the same error inline in the Connection tab, suggesting another port and **Restart server** |
 | A timer disconnects | Logged; with no timers left, tracked state becomes "not running", the Timer card shows NOT CONNECTED and commands are dropped |
 | LiveSplit One rejects a command (for example split with no run in progress) | Logged in the Connection category; not an error |
-| speedrun.com can't be reached, errors or limits requests | The Game dialog works without suggestions (section 7.5); logged in App & runtime; not an error |
+| speedrun.com can't be reached, errors or limits requests | The Game and Category dialogs work without suggestions (sections 7.5 and 7.5.1); logged in App & runtime; not an error |
 
 Errors are shown in the error card at the top of the status column
 (section 6.2): only the most recent one, until dismissed. Errors that need
@@ -968,7 +1081,9 @@ entry highlighted.
 - While the Game dialog is open, the names in its field are sent to
   speedrun.com over HTTPS to search for games (section 7.5). Nothing else is
   sent, no account is used, and nothing is sent while the dialog is closed.
-  This is documented.
+  While the Category dialog is open for a linked game, the game's
+  speedrun.com id is sent to ask for its categories (section 7.5.1). This
+  is documented.
 
 ## 11. Platform notes (for documentation)
 
@@ -1009,7 +1124,16 @@ Automated:
   headless with a fake search: results, picking one, the last row, typing
   removing a link, Change, keyboard use, a game already linked selected by
   id, an old game renamed when linked, stale results ignored, and offline.
-  No test calls the real API.
+  Categories (section 7.5.1): reading the categories response into variants
+  (level variants with only their level's subcategories, variables that
+  aren't subcategories left out, every combination, speedrun.com's order,
+  names), reading and writing a
+  category's link, links removed when the game's link changes, and the
+  Category dialog headless with a fake source: the list in each name field,
+  a few variants and more than 20, level categories ticked and not,
+  narrowing, picking, SET UP while adding and dimmed while renaming, the
+  last row, Change, Rename linking on its own, keys, a game that isn't
+  linked, and offline. No test calls the real API.
 - **Settings:** a test auto splitter publishes every widget kind and every
   kind of file filter, then stores values of every type itself. Runner tests
   check what it publishes and stores and that saved edits keep its values;
@@ -1181,7 +1305,7 @@ In sidebar order:
 | Installing | Task | Which download to pick, opening unsigned builds on macOS and Windows (section 11), installing and uninstalling on Linux, updating, full releases and release candidates |
 | Getting Started | Tutorial | First launch through the first split: open an auto splitter, name the game, connect LiveSplit One, start the game |
 | Connecting LiveSplit One | Task | Choosing an address, the Chrome-based browser requirement, Connect to Server, local network access, several timers and PRIMARY, the port and Restart server, who can connect (section 10) |
-| Auto Splitters and Settings | Task | Open and Reload, game association and Change, categories and the Category dialog, drafts, Save and Revert to defaults, the unsaved-changes dialog, settings shared per game and category (sections 7.2 and 7.4), speedrun.com suggestions and links (sections 7.5 and 10), developer mode |
+| Auto Splitters and Settings | Task | Open and Reload, game association and Change, categories and the Category dialog, drafts, Save and Revert to defaults, the unsaved-changes dialog, settings shared per game and category (sections 7.2 and 7.4), speedrun.com suggestions and links for games and categories (sections 7.5, 7.5.1 and 10), developer mode |
 | The Main Window | Reference | Every status card and state (section 6.2), the compact state, the Preferences tab |
 | Logs and Files | Reference | Log categories and filters, Show in log, the log and config folders for every OS (sections 7.1 and 8.2), retention and the size cap |
 | Platform Notes | Reference | Section 11 |
