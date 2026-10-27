@@ -19,6 +19,20 @@ The dialog "Which game is this auto splitter for?" with a name field, the list o
 
 The app saves your settings for each game and category, not for each file. It asks once per file and remembers the answer. To change it later, click **Change** on the Auto splitter card. That opens the same dialog, titled "Change game".
 
+### Linking a game to speedrun.com
+
+The name field also searches speedrun.com, so you can link the game to its speedrun.com page instead of retyping its name.
+
+- **When the dialog opens**, it looks up the name it filled in from the file. In "Change game" it looks up the current game, if that game isn't linked yet. If exactly one result clearly matches, the app links it on its own. Otherwise the list of suggestions opens for you to choose from. Picking a game under **Games already set up** that isn't linked yet does the same lookup.
+- **While you type**, suggestions appear after a short pause. A name you type is never linked on its own; you pick the row. The list shows up to five rows and scrolls for more. Each row shows the year the game came out, and **SET UP** marks a speedrun.com game already linked to a game you set up. Use the arrow keys to move through the list, **Enter** to pick a row and **Escape** to close it.
+- **The last row**, "Use "&lt;name&gt;" (not on speedrun.com)", keeps the name you typed with no link.
+
+A linked game shows "Linked to speedrun.com" with a **Change** button. **Change** removes the link and reopens the list. Using a game without its link unlinks it, and it keeps its name.
+
+Linking renames the game to speedrun.com's name. Its settings and categories aren't affected. If you pick a speedrun.com game that another game is already linked to, the app uses that game, so you don't end up with two.
+
+**What is sent to speedrun.com.** Only while the Game dialog is open, the names in its field are sent to speedrun.com over HTTPS. No account is needed, and nothing else is sent. If you're offline or speedrun.com doesn't answer, the dialog works as before without suggestions, and the **App & runtime** log notes it once. See [Troubleshooting](Troubleshooting).
+
 ## Categories
 
 Each game has one or more categories, such as Any% and 100%, and each category keeps its own settings. That way the same auto splitter can split on different things for different runs. A new game starts with one category, "Default". If you used the app before categories existed, the app asks "Name this category" when it loads a game with older settings. That happens when you load an auto splitter, when the app starts and when you change its game. The dialog asks which category those settings are for, such as Any%. Click **Save** to name the category after your answer and save it. Choose **Not now** to keep the name "Default"; it asks again next time, until the game's file is next written (for example when you save settings), and you can rename the category later.
