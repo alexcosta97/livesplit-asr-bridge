@@ -620,8 +620,9 @@ the window dimmed behind them.
     speedrun.com)". Before the categories arrive, and offline, that row is
     the whole list. A game that isn't linked has no list.
   - Under the field, while the game has level categories on speedrun.com,
-    a checkbox **Include level categories**, unticked when the dialog opens
-    unless the category being renamed is linked to a level variant.
+    a checkbox **Include level categories**, unticked each time a name
+    field opens unless the category being renamed is linked to a level
+    variant.
     Ticking it adds the level variants to the list (section 7.5.1), which
     counts towards the 20, and unticking it removes them.
   - Picking a variant fills the field with its name and links it: under the
