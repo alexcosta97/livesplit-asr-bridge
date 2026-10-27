@@ -29,7 +29,7 @@ The name field also searches speedrun.com, so you can link the game to its speed
 
 A linked game shows "Linked to speedrun.com" with a **Change** button. **Change** removes the link and reopens the list. Using a game without its link unlinks it, and it keeps its name.
 
-Linking renames the game to speedrun.com's name. Its settings and categories aren't affected. If you pick a speedrun.com game that another game is already linked to, the app uses that game, so you don't end up with two.
+Linking renames the game to speedrun.com's name. Its settings and categories aren't affected. If you pick a speedrun.com game that another game is already linked to, the app uses that game, so you don't end up with two. The same goes for a game you set up under speedrun.com's name before: the app uses and links it.
 
 **What is sent to speedrun.com.** Only while the Game dialog is open, the names in its field are sent to speedrun.com over HTTPS. No account is needed, and nothing else is sent. If you're offline or speedrun.com doesn't answer, the dialog works as before without suggestions, and the **App & runtime** log notes it once. See [Troubleshooting](Troubleshooting).
 

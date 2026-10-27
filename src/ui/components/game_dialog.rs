@@ -360,11 +360,15 @@ impl GameDialog {
     }
 
     /// Links the result at `index` and fills the field with its name. The
-    /// selected game stays selected.
+    /// selected game stays selected; with none selected, a game already set
+    /// up under that name is, as typing it would, so it isn't set up twice.
     fn pick(&mut self, index: usize) {
         let game = self.shown()[index].clone();
         self.link = Some(SpeedrunLink::from(&game));
         self.name = game.name;
+        if self.selected.is_none() {
+            self.follow_name();
+        }
         self.due = None;
         self.close_list();
     }
@@ -452,9 +456,6 @@ fn link_of(game: &GameSummary) -> Option<SpeedrunLink> {
 pub fn game_dialog(ctx: &egui::Context, dialog: &mut GameDialog) -> Option<GameDialogAction> {
     let now = ctx.input(|input| input.time);
     dialog.tick(now);
-    if dialog.due.is_some() || dialog.awaiting.is_some() {
-        ctx.request_repaint_after(POLL_EVERY);
-    }
     let frame = Frame::NONE
         .fill(theme::PANEL)
         .stroke(Stroke::new(1.0, theme::BORDER_STRONG))
@@ -464,6 +465,11 @@ pub fn game_dialog(ctx: &egui::Context, dialog: &mut GameDialog) -> Option<GameD
         .backdrop_color(BACKDROP)
         .frame(frame)
         .show(ctx, |ui| contents(ui, dialog, now));
+    // After the contents, so a search made due this frame, by typing or
+    // Change, is sent without waiting for more input.
+    if dialog.due.is_some() || dialog.awaiting.is_some() {
+        ctx.request_repaint_after(POLL_EVERY);
+    }
     if response.should_close() {
         return Some(GameDialogAction::Cancel);
     }
@@ -1017,6 +1023,46 @@ mod tests {
         assert_eq!(
             dialog.choice(),
             existing("gta-sa-de", Some(SpeedrunLink::from(&gta)))
+        );
+    }
+
+    fn gta_sa() -> SpeedrunGame {
+        result("yo1yv1q5", "Grand Theft Auto: San Andreas", "gtasa", 2004)
+    }
+
+    fn gta_sa_remastered() -> SpeedrunGame {
+        result(
+            "j1nevzx1",
+            "Grand Theft Auto: San Andreas Remastered",
+            "",
+            2013,
+        )
+    }
+
+    #[test]
+    fn picking_a_result_named_like_a_game_set_up_selects_that_game() {
+        let set_up = vec![game("gta-sa", "Grand Theft Auto: San Andreas", 2)];
+        let (mut dialog, fake) = new_dialog("gta_sa_de.wasm", set_up);
+        fake.answer("gta sa de", Ok(vec![gta_sa(), gta_sa_remastered()]));
+        dialog.tick(0.0);
+        assert!(dialog.list_open, "no result matches clearly");
+        dialog.pick(0);
+        assert_eq!(
+            dialog.choice(),
+            existing("gta-sa", Some(SpeedrunLink::from(&gta_sa())))
+        );
+    }
+
+    #[test]
+    fn linking_on_its_own_to_a_name_set_up_selects_that_game() {
+        let set_up = vec![game("gta-sa", "Grand Theft Auto: San Andreas", 2)];
+        let (mut dialog, fake) = new_dialog("gta_sa.wasm", set_up);
+        fake.answer("gta sa", Ok(vec![gta_sa(), gta_sa_remastered()]));
+        dialog.tick(0.0);
+        assert_eq!(dialog.name, "Grand Theft Auto: San Andreas");
+        assert_eq!(
+            dialog.choice(),
+            existing("gta-sa", Some(SpeedrunLink::from(&gta_sa())))
         );
     }
 
