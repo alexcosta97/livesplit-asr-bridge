@@ -98,26 +98,79 @@ struct CategoryFile {
     name: Option<String>,
     /// The category's id on speedrun.com. The keys of its link are declared
     /// before `settings`, so they are written above that table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    speedrun_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Key::is_absent")]
+    speedrun_id: Key<String>,
     /// The variables and values that pick the category's variant.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    speedrun_values: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Key::is_absent")]
+    speedrun_values: Key<BTreeMap<String, String>>,
     /// The level, for a category of a level.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    speedrun_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Key::is_absent")]
+    speedrun_level: Key<String>,
     #[serde(default)]
     settings: Table,
 }
 
+/// A key of a category's link in a game's file. A hand-edited file may give
+/// it the wrong type, which must not fail the whole file.
+#[derive(Debug, Default)]
+enum Key<T> {
+    /// Not in the file.
+    #[default]
+    Absent,
+    /// In the file, with the right type.
+    Value(T),
+    /// In the file, with another type.
+    Wrong,
+}
+
+impl<T> Key<T> {
+    fn is_absent(&self) -> bool {
+        matches!(self, Self::Absent)
+    }
+
+    /// A key to write, or none for `None`.
+    fn of(value: Option<T>) -> Self {
+        value.map_or(Self::Absent, Self::Value)
+    }
+}
+
+impl<T: Serialize> Serialize for Key<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Value(value) => value.serialize(serializer),
+            Self::Absent | Self::Wrong => serializer.serialize_none(),
+        }
+    }
+}
+
+impl<'de, T: serde::de::DeserializeOwned> Deserialize<'de> for Key<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = toml::Value::deserialize(deserializer)?;
+        Ok(value.try_into().map_or(Self::Wrong, Self::Value))
+    }
+}
+
 impl CategoryFile {
     /// The link the file's keys describe. Values or a level without an id are
-    /// not a link.
+    /// not a link, and neither is a link with a key of the wrong type.
     fn link(&self) -> Option<CategoryLink> {
+        let Key::Value(id) = &self.speedrun_id else {
+            return None;
+        };
+        let values = match &self.speedrun_values {
+            Key::Absent => BTreeMap::new(),
+            Key::Value(values) => values.clone(),
+            Key::Wrong => return None,
+        };
+        let level = match &self.speedrun_level {
+            Key::Absent => None,
+            Key::Value(level) => Some(level.clone()),
+            Key::Wrong => return None,
+        };
         Some(CategoryLink {
-            id: self.speedrun_id.clone()?,
-            values: self.speedrun_values.clone(),
-            level: self.speedrun_level.clone(),
+            id: id.clone(),
+            values,
+            level,
         })
     }
 }
@@ -450,16 +503,22 @@ impl Game {
                         category.key.clone(),
                         CategoryFile {
                             name: Some(category.name.clone()),
-                            speedrun_id: category.speedrun.as_ref().map(|link| link.id.clone()),
-                            speedrun_values: category
-                                .speedrun
-                                .as_ref()
-                                .map(|link| link.values.clone())
-                                .unwrap_or_default(),
-                            speedrun_level: category
-                                .speedrun
-                                .as_ref()
-                                .and_then(|link| link.level.clone()),
+                            speedrun_id: Key::of(
+                                category.speedrun.as_ref().map(|link| link.id.clone()),
+                            ),
+                            speedrun_values: Key::of(
+                                category
+                                    .speedrun
+                                    .as_ref()
+                                    .map(|link| link.values.clone())
+                                    .filter(|values| !values.is_empty()),
+                            ),
+                            speedrun_level: Key::of(
+                                category
+                                    .speedrun
+                                    .as_ref()
+                                    .and_then(|link| link.level.clone()),
+                            ),
                             settings: category.settings.clone(),
                         },
                     )
@@ -1038,5 +1097,33 @@ mod tests {
         .unwrap();
         let game = Game::load(&config, "gta").unwrap();
         assert_eq!(game.categories[0].speedrun, None);
+    }
+
+    #[test]
+    fn link_keys_of_the_wrong_type_read_as_not_linked() {
+        let (_dir, config) = config();
+        fs::create_dir_all(config.game_file("gta").parent().unwrap()).unwrap();
+        fs::write(
+            config.game_file("gta"),
+            "name = \"GTA\"\n\
+             [categories.a]\nname = \"A\"\nspeedrun_id = 5\n\
+             [categories.b]\nname = \"B\"\nspeedrun_id = \"x\"\nspeedrun_values = { a = 1 }\n\
+             [categories.c]\nname = \"C\"\nspeedrun_id = \"x\"\nspeedrun_level = [1]\n\
+             [categories.d]\nname = \"D\"\nspeedrun_id = \"x\"\n",
+        )
+        .unwrap();
+        let game = Game::load(&config, "gta").unwrap();
+        let link = |key: &str| {
+            game.categories
+                .iter()
+                .find(|c| c.key == key)
+                .unwrap()
+                .speedrun
+                .clone()
+        };
+        assert_eq!(link("a"), None);
+        assert_eq!(link("b"), None);
+        assert_eq!(link("c"), None);
+        assert_eq!(link("d").map(|l| l.id), Some("x".to_owned()));
     }
 }
