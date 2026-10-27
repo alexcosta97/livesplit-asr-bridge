@@ -7,6 +7,7 @@ mod address_row;
 mod app_header;
 mod button;
 mod card;
+mod category_dialog;
 mod checkbox;
 mod empty_state;
 mod error_card;
@@ -34,6 +35,11 @@ mod unsaved_dialog;
 
 pub use about_row::about_folder;
 pub use app_header::{HeaderButton, app_header};
+#[expect(
+    unused_imports,
+    reason = "the app opens the Category dialog in the next task"
+)]
+pub use category_dialog::{CategoryDialog, CategoryDialogAction, category_dialog};
 pub use checkbox::Checkbox;
 pub use empty_state::empty_state;
 pub use error_card::{ErrorAction, error_card};
