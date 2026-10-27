@@ -4,7 +4,7 @@
 
 **Goal:** Each game has one or more categories, each with its own auto splitter settings map, picked from the Auto splitter card and managed in a new Category dialog (issue #81).
 
-**Architecture:** Categories live inside the game's existing file (`games/<slug>.toml`), so `config::Game` gains a list of `RunCategory` and the key of the one in use. Older files are converted in memory when read. The UI keeps today's flow for changing the game: switching category writes what the auto splitter stored to the old category, hands the runner the new map with `Runner::set_settings`, and resets the settings editor while keeping its widgets.
+**Architecture:** Categories live inside the game's existing file (`games/<slug>.toml`), so `config::Game` gains a list of `RunCategory` and the key of the one in use. Older files are converted in memory when read, and the app asks which category their settings are for. The UI keeps today's flow for changing the game: switching category writes what the auto splitter stored to the old category, hands the runner the new map with `Runner::set_settings`, and resets the settings editor while keeping its widgets.
 
 **Tech Stack:** Rust (stable), eframe/egui 0.36, `toml`/`serde`, `tempfile` in tests.
 
@@ -16,11 +16,12 @@
 - Category keys use the game slug rules (`config::slug`), with `category` when nothing is left (not `game`), and no Windows reserved-name suffix. A key taken by another category of the game gets `-2`, `-3`…
 - Category names are trimmed, non-empty, and unique within a game ignoring case.
 - A file with a top-level `[settings]` table is read as a category `Default` (or `Default 2`, `Default 3`… if that name is taken) holding the map, made the category in use if the file records none. The top-level `settings` is never written back.
+- A game loaded with settings from before categories (`Game::unnamed`) opens the Category dialog in its naming state: "Name this category". **Save** is a rename of that category (its key stays, so the running auto splitter is unaffected) and writes the file; **Not now** (also Escape) keeps "Default" and writes nothing. It is asked on loading an auto splitter (which covers starting the app) and on changing its game, and comes back only while the file is still in the old form.
 - The category in use and a game's last category can't be deleted.
 - A new category copies the running auto splitter's map as it is now (`SettingsEditor::live()`), never unsaved edits.
 - Adding, renaming and deleting are written to the file straight away. Only switching asks about unsaved settings ("Changing the category").
 - The §7.2 rules apply per category: saving and the stored-settings write go to the category in use and never touch the others.
-- Copy (exact strings): `CATEGORY` (card label), `IN USE`, `Rename`, `Done`, `+ New category`, `Add`, `Starts as a copy of the settings in use now ({name}).`, `Delete {name} and its settings? This can't be undone.`, `Keep`, `Delete`, `Cancel`, `Use this category`, `Each category keeps its own settings. The category in use can't be deleted.`, `Changing the category`, `Settings are saved per game and category, so auto splitters for the same game share them.`
+- Copy (exact strings): `CATEGORY` (card label), `IN USE`, `Rename`, `Done`, `+ New category`, `Add`, `Starts as a copy of the settings in use now ({name}).`, `Delete {name} and its settings? This can't be undone.`, `Keep`, `Delete`, `Cancel`, `Use this category`, `Each category keeps its own settings. The category in use can't be deleted.`, `Changing the category`, `Settings are saved per game and category, so auto splitters for the same game share them.`, `NAME THIS CATEGORY` (title), `These settings were saved before the bridge kept settings per category. Which category are they set up for?`, `Category` (field label), `Any%` (placeholder), `You can add more categories later. Not now keeps the name "Default".`, `Not now`, `Save`
 - Checks before every commit: `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`.
 - Conventional Commits, signed. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
@@ -48,7 +49,7 @@
   - `config::category_key(name: &str) -> String`
   - `config::DEFAULT_CATEGORY: &str = "Default"`
   - `config::RunCategory { pub key: String, pub name: String, pub settings: toml::Table }`
-  - `config::Game { pub slug, pub name, pub categories: Vec<RunCategory>, pub current: String }`, plus:
+  - `config::Game { pub slug, pub name, pub categories: Vec<RunCategory>, pub current: String, pub unnamed: Option<String> }` (`unnamed`: the key of the category read from a top-level `[settings]` table, cleared once the file is written), plus:
     - `Game::empty(slug: &str, name: &str) -> Game`
     - `Game::category(&self) -> &RunCategory`, `Game::settings(&self) -> &Table`
     - `Game::name_taken(&self, name: &str, except: Option<&str>) -> bool`
@@ -174,6 +175,32 @@ fn a_file_from_before_categories_is_read_as_default() {
     assert_eq!(names(&game), ["Default"]);
     assert_eq!(game.current, "default");
     assert_eq!(game.settings(), &table("gym = true"));
+    assert_eq!(game.unnamed.as_deref(), Some("default"));
+}
+
+#[test]
+fn naming_the_old_category_keeps_its_key_and_ends_the_old_form() {
+    let (_dir, config) = config();
+    write_replacing(
+        &config.game_file("gta"),
+        "name = \"GTA\"\n\n[settings]\ngym = true\n",
+    )
+    .unwrap();
+    let game = Game::rename_category(&config, "gta", "default", "Any%").unwrap();
+    assert_eq!(names(&game), ["Any%"]);
+    assert_eq!(game.current, "default");
+    assert_eq!(game.unnamed, None);
+    let saved = Game::load(&config, "gta").unwrap();
+    assert_eq!(saved.unnamed, None);
+    assert_eq!(saved.settings(), &table("gym = true"));
+}
+
+#[test]
+fn a_file_with_only_categories_has_nothing_to_name() {
+    let (_dir, config) = config();
+    let game = Game::create(&config, "GTA").unwrap();
+    assert_eq!(game.unnamed, None);
+    assert_eq!(Game::load(&config, "gta").unwrap().unnamed, None);
 }
 
 #[test]
@@ -192,6 +219,7 @@ fn an_old_map_beside_categories_becomes_another_category() {
     let old = game.categories.iter().find(|c| c.name == "Default 2").unwrap();
     assert_eq!(old.key, "default-2");
     assert_eq!(old.settings, table("gym = true"));
+    assert_eq!(game.unnamed.as_deref(), Some("default-2"));
 }
 
 #[test]
@@ -352,6 +380,10 @@ pub struct Game {
     pub categories: Vec<RunCategory>,
     /// The key of the category in use, always one of `categories`.
     pub current: String,
+    /// The key of the category holding the settings of a file from before
+    /// categories, until the file is written in the new form. The app asks
+    /// which category they are for (spec §7.4).
+    pub unnamed: Option<String>,
 }
 
 /// A category of a game, with its own saved settings.
@@ -412,6 +444,7 @@ impl Game {
                 settings: Table::new(),
             }],
             current: category_key(DEFAULT_CATEGORY),
+            unnamed: None,
         }
     }
 
@@ -466,12 +499,14 @@ impl Game {
                 })
                 .collect(),
             current: String::new(),
+            unnamed: None,
         };
         let mut current = file.category;
         if let Some(settings) = file.settings {
             let name = game.free_name(DEFAULT_CATEGORY);
             let key = game.free_key(&name);
             current.get_or_insert_with(|| key.clone());
+            game.unnamed = Some(key.clone());
             game.categories.push(RunCategory {
                 key,
                 name,
@@ -551,7 +586,7 @@ impl Game {
             })
             .find(|slug| !config.game_file(slug).exists())
             .expect("an unused slug");
-        let game = Self::empty(&slug, name.trim());
+        let mut game = Self::empty(&slug, name.trim());
         game.write(config)?;
         Ok(game)
     }
@@ -645,7 +680,9 @@ impl Game {
         Ok(game)
     }
 
-    fn write(&self, config: &Config) -> Result<(), String> {
+    /// Writes the game's file in the current form, so nothing is left to
+    /// name.
+    fn write(&mut self, config: &Config) -> Result<(), String> {
         let file = GameFile {
             name: self.name.clone(),
             category: Some(self.current.clone()),
@@ -665,7 +702,9 @@ impl Game {
                 .collect(),
         };
         let text = toml::to_string(&file).map_err(|error| error.to_string())?;
-        write_replacing(&config.game_file(&self.slug), &text)
+        write_replacing(&config.game_file(&self.slug), &text)?;
+        self.unnamed = None;
+        Ok(())
     }
 ```
 
@@ -958,7 +997,9 @@ git commit -m "feat(settings): show the category on the auto splitter card and s
 - Produces (used by Task 5):
   - `CategoryDialog::new(game: &Game) -> CategoryDialog`
   - `CategoryDialog::refresh(&mut self, game: &Game, select: Option<&str>)`: shows the game's categories again, selecting `select` (or keeping the selection if it still exists, else the one in use), back to the list.
-  - `CategoryDialog::back_to_list(&mut self)`: leaves renaming, adding or confirming a delete.
+  - `CategoryDialog::back_to_list(&mut self)`: leaves renaming, adding or confirming a delete. The naming state stays.
+  - `CategoryDialog::naming(game: &Game, key: &str) -> CategoryDialog`: the "Name this category" state for the category `key`. Its **Save** returns `Rename { key, name }`, **Not now** and Escape return `Cancel`.
+  - `CategoryDialog::is_naming(&self) -> bool`
   - `enum CategoryDialogAction { Use(String), Add(String), Rename { key: String, name: String }, Delete(String), Cancel }`
   - `category_dialog(ctx: &egui::Context, dialog: &mut CategoryDialog) -> Option<CategoryDialogAction>`
 
@@ -985,7 +1026,28 @@ mod tests {
             name: "GTA".to_owned(),
             categories: vec![category("100", "100%"), category("any", "Any%")],
             current: "any".to_owned(),
+            unnamed: None,
         }
+    }
+
+    #[test]
+    fn naming_asks_for_a_new_name_and_escape_is_not_now() {
+        let mut dialog = CategoryDialog::naming(&game(), "any");
+        assert!(dialog.is_naming());
+        assert_eq!(
+            dialog.mode,
+            Mode::Naming {
+                key: "any".to_owned(),
+                name: String::new(),
+                focus: true
+            }
+        );
+        // The category being named may keep its own name.
+        assert!(dialog.name_ok("ANY%", Some("any")));
+        assert!(!dialog.name_ok("100%", Some("any")));
+        dialog.back_to_list();
+        assert!(dialog.is_naming());
+        assert!(dialog.escape());
     }
 
     #[test]
@@ -1115,6 +1177,10 @@ enum Mode {
     Adding { name: String, focus: bool },
     /// Asking whether to delete the selected category.
     ConfirmDelete,
+    /// "Name this category": asking which category the settings from before
+    /// categories, in the category `key`, are for. `focus` until the field
+    /// has been focused.
+    Naming { key: String, name: String, focus: bool },
 }
 
 /// The Category dialog's state.
@@ -1151,9 +1217,32 @@ impl CategoryDialog {
         self.mode = Mode::List;
     }
 
-    /// Leaves renaming, adding or confirming a delete.
+    /// "Name this category" for `game`'s category `key`, which holds the
+    /// settings of a file from before categories (spec §6.8, §7.4).
+    pub fn naming(game: &Game, key: &str) -> Self {
+        Self {
+            game: game.clone(),
+            selected: key.to_owned(),
+            mode: Mode::Naming {
+                key: key.to_owned(),
+                name: String::new(),
+                focus: true,
+            },
+        }
+    }
+
+    /// Whether the dialog is asking for the name of settings from before
+    /// categories.
+    pub fn is_naming(&self) -> bool {
+        matches!(self.mode, Mode::Naming { .. })
+    }
+
+    /// Leaves renaming, adding or confirming a delete. Naming has no list
+    /// to go back to, so it stays.
     pub fn back_to_list(&mut self) {
-        self.mode = Mode::List;
+        if !self.is_naming() {
+            self.mode = Mode::List;
+        }
     }
 
     fn exists(&self, key: &str) -> bool {
@@ -1200,9 +1289,9 @@ impl CategoryDialog {
     }
 
     /// Escape, or a click outside: leaves an edit if there is one, and
-    /// returns whether the dialog should close.
+    /// returns whether the dialog should close. Naming closes: it is Not now.
     fn escape(&mut self) -> bool {
-        if self.mode == Mode::List {
+        if self.mode == Mode::List || self.is_naming() {
             return true;
         }
         self.mode = Mode::List;
@@ -1234,6 +1323,9 @@ pub fn category_dialog(
 fn contents(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogAction> {
     ui.set_width(WIDTH);
     ui.spacing_mut().item_spacing.y = 0.0;
+    if dialog.is_naming() {
+        return naming(ui, dialog);
+    }
     ui.label(
         RichText::new("CATEGORY")
             .font(theme::display(16.0))
@@ -1408,7 +1500,7 @@ fn row(ui: &mut Ui, name: &str, in_use: bool, selected: bool) -> Option<RowActio
 fn rename_row(ui: &mut Ui, name: &mut String, focus: &mut bool, ok: bool) -> Option<bool> {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        let field = name_field(ui, name, focus, WIDTH - 72.0);
+        let field = name_field(ui, name, focus, WIDTH - 72.0, "Category name");
         let entered = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
         let done = ui.add(Button::secondary("Done").size(ButtonSize::Sm).enabled(ok));
         ((done.clicked() || entered) && ok).then_some(true)
@@ -1438,7 +1530,7 @@ fn adding(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogActi
     let action = ui
         .horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            let field = name_field(ui, name, focus, WIDTH - 64.0);
+            let field = name_field(ui, name, focus, WIDTH - 64.0, "Category name");
             let entered = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
             let add = ui.add(Button::secondary("Add").enabled(ok));
             ((add.clicked() || entered) && ok)
@@ -1457,12 +1549,96 @@ fn adding(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogActi
     action
 }
 
-/// A one-line name field `width` wide, focused the first time it shows.
-fn name_field(ui: &mut Ui, name: &mut String, focus: &mut bool, width: f32) -> egui::Response {
+/// "Name this category": the game, the question, a name field and Not now
+/// and Save (spec §6.8).
+fn naming(ui: &mut Ui, dialog: &mut CategoryDialog) -> Option<CategoryDialogAction> {
+    let ok = match &dialog.mode {
+        Mode::Naming { key, name, .. } => dialog.name_ok(name, Some(key)),
+        _ => false,
+    };
+    let game = dialog.game.name.clone();
+    let Mode::Naming { key, name, focus } = &mut dialog.mode else {
+        return None;
+    };
+    ui.label(
+        RichText::new("NAME THIS CATEGORY")
+            .font(theme::display(16.0))
+            .color(theme::TEXT),
+    );
+    ui.add_space(8.0);
+    ui.add(
+        Label::new(
+            RichText::new(game)
+                .font(theme::body(13.0))
+                .color(theme::TEXT_SECONDARY),
+        )
+        .truncate(),
+    );
+    ui.add_space(16.0);
+    ui.add(
+        Label::new(
+            RichText::new(
+                "These settings were saved before the bridge kept settings per category. \
+                 Which category are they set up for?",
+            )
+            .font(theme::body(14.0))
+            .color(theme::TEXT),
+        )
+        .wrap(),
+    );
+    ui.add_space(16.0);
+    ui.add(
+        Label::new(
+            RichText::new("Category")
+                .font(theme::body_semibold(13.0))
+                .color(theme::TEXT),
+        )
+        .selectable(false),
+    );
+    ui.add_space(6.0);
+    let field = name_field(ui, name, focus, WIDTH, "Any%");
+    let entered = field.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
+    ui.add_space(6.0);
+    ui.add(
+        Label::new(
+            RichText::new("You can add more categories later. Not now keeps the name \"Default\".")
+                .font(theme::body(12.0))
+                .color(theme::TEXT_MUTED),
+        )
+        .wrap(),
+    );
+    ui.add_space(20.0);
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let save = ui.add(Button::primary("Save").enabled(ok));
+        let not_now = ui.add(Button::secondary("Not now"));
+        if (save.clicked() || entered) && ok {
+            Some(CategoryDialogAction::Rename {
+                key: key.clone(),
+                name: name.trim().to_owned(),
+            })
+        } else if not_now.clicked() {
+            Some(CategoryDialogAction::Cancel)
+        } else {
+            None
+        }
+    })
+    .inner
+}
+
+/// A one-line name field `width` wide showing `hint` while empty, focused
+/// the first time it shows.
+fn name_field(
+    ui: &mut Ui,
+    name: &mut String,
+    focus: &mut bool,
+    width: f32,
+    hint: &str,
+) -> egui::Response {
     let field = ui.add(
         TextEdit::singleline(name)
             .font(theme::body(14.0))
-            .hint_text("Category name")
+            .hint_text(hint)
             .desired_width(width)
             .min_size(vec2(0.0, 32.0))
             .vertical_align(Align::Center)
@@ -1557,7 +1733,7 @@ git commit -m "feat(settings): add the category dialog"
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–4.
-- Produces: `Pending::ChangeCategory(String)`; `BridgeApp::change_category(&mut self)`, `category_action(&mut self, action: CategoryDialogAction)`, `switch_category(&mut self, key: &str)`.
+- Produces: `Pending::ChangeCategory(String)`; `BridgeApp::change_category(&mut self)`, `category_action(&mut self, action: CategoryDialogAction)`, `switch_category(&mut self, key: &str)`, `ask_category_name(&mut self)`.
 
 - [ ] **Step 1: Write the failing app tests**
 
@@ -1663,6 +1839,55 @@ fn renaming_and_deleting_are_saved_straight_away() {
     assert_eq!(app.game.as_ref().unwrap().categories.len(), 1);
 }
 
+/// `app_with_unsaved_edit`, whose game's file is from before categories.
+fn app_with_an_old_file() -> (tempfile::TempDir, BridgeApp) {
+    let (dir, mut app) = app_with_unsaved_edit();
+    let config = app.config.clone().unwrap();
+    std::fs::write(config.game_file("gta"), "name = \"GTA\"\n\n[settings]\ngym = true\n")
+        .unwrap();
+    app.game = Some(Game::load(&config, "gta").unwrap());
+    (dir, app)
+}
+
+#[test]
+fn settings_from_before_categories_are_named_when_asked() {
+    let (_dir, mut app) = app_with_an_old_file();
+    app.ask_category_name();
+    assert!(app.category_dialog.as_ref().is_some_and(CategoryDialog::is_naming));
+    app.category_action(CategoryDialogAction::Rename {
+        key: "default".to_owned(),
+        name: "Any%".to_owned(),
+    });
+    // Named: the dialog closes rather than showing the list.
+    assert!(app.category_dialog.is_none());
+    let game = app.game.as_ref().unwrap();
+    assert_eq!(game.category().name, "Any%");
+    assert_eq!(game.unnamed, None);
+    assert_eq!(saved_in(&app, "default").get("gym"), Some(&Value::Boolean(true)));
+}
+
+#[test]
+fn not_now_keeps_default_and_leaves_the_file_alone() {
+    let (_dir, mut app) = app_with_an_old_file();
+    let config = app.config.clone().unwrap();
+    let before = std::fs::read_to_string(config.game_file("gta")).unwrap();
+    app.ask_category_name();
+    app.category_action(CategoryDialogAction::Cancel);
+    assert!(app.category_dialog.is_none());
+    assert_eq!(std::fs::read_to_string(config.game_file("gta")).unwrap(), before);
+    // Loading the game again asks again.
+    app.game = Some(Game::load(&config, "gta").unwrap());
+    app.ask_category_name();
+    assert!(app.category_dialog.as_ref().is_some_and(CategoryDialog::is_naming));
+}
+
+#[test]
+fn a_game_in_the_new_form_is_not_asked_about() {
+    let (_dir, mut app) = app_with_unsaved_edit();
+    app.ask_category_name();
+    assert!(app.category_dialog.is_none());
+}
+
 #[test]
 fn the_category_in_use_is_not_deleted() {
     let (_dir, mut app) = app_with_two_categories();
@@ -1713,6 +1938,17 @@ New methods, after `remember_game`:
     fn change_category(&mut self) {
         if let Some(game) = &self.game {
             self.category_dialog = Some(CategoryDialog::new(game));
+        }
+    }
+
+    /// Opens "Name this category" if the loaded game's settings are from
+    /// before categories (spec §7.4). Called when an auto splitter is loaded
+    /// and when its game is changed.
+    fn ask_category_name(&mut self) {
+        if let Some(game) = &self.game
+            && let Some(key) = &game.unnamed
+        {
+            self.category_dialog = Some(CategoryDialog::naming(game, key));
         }
     }
 
@@ -1795,6 +2031,10 @@ New methods, after `remember_game`:
                 if let Some(running) = &self.game {
                     game.current.clone_from(&running.current);
                 }
+                // Naming settings from before categories is done once named.
+                if self.category_dialog.as_ref().is_some_and(CategoryDialog::is_naming) {
+                    self.category_dialog = None;
+                }
                 if let Some(dialog) = &mut self.category_dialog {
                     dialog.refresh(&game, select.as_deref());
                 }
@@ -1850,6 +2090,13 @@ New methods, after `remember_game`:
         self.game = Some(game);
     }
 ```
+
+Ask for the name of settings from before categories wherever a game is loaded:
+
+- In `runner_event`, `RunnerEvent::Loaded` (~363), after `self.stored_keys.clear();`, add `self.ask_category_name();`. Starting the app loads the last auto splitter, so this covers it.
+- In `game_dialog`, the `GameDialogKind::Change` arm (~600), after `self.game = Some(game);`, add `self.ask_category_name();`. The `GameDialogKind::New` arm needs nothing: it loads, and `Loaded` asks.
+
+The Game dialog has closed (`self.dialog.take()`) by then, so the naming dialog comes after it, as spec §6.8 says.
 
 In `fn ui` (around `self.game_dialog(&ui.ctx().clone());`, ~1341), add after it:
 
@@ -1910,6 +2157,38 @@ fn switching_category_gives_the_auto_splitter_its_settings_and_remembers_it() {
 }
 ```
 
+And a test that loading a game from before categories asks, and Save names it:
+
+```rust
+#[test]
+fn loading_settings_from_before_categories_asks_which_category_they_are_for() {
+    let mut harness = Harness::new();
+    std::fs::write(
+        harness.config.game_file("gta"),
+        "name = \"GTA\"\n\n[settings]\ngym = true\n",
+    )
+    .unwrap();
+    let path = harness.path.clone();
+    harness.app.load(path);
+    harness.until("the naming dialog", |_, nodes| has(nodes, "NAME THIS CATEGORY"));
+    // The name field takes the focus on the frame after it shows.
+    harness.frame(Vec::new());
+    harness.frame(vec![Event::Text("Any%".to_owned())]);
+    // Enter, not a click: the Settings tab behind has its own "Save".
+    harness.frame(vec![Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    }]);
+    let game = Game::load(&harness.config, "gta").unwrap();
+    assert_eq!(game.category().name, "Any%");
+    assert_eq!(game.unnamed, None);
+    assert_eq!(game.settings()["gym"].as_bool(), Some(true));
+}
+```
+
 `Game::save_settings(…, "100", …)` records `100` as the category in use in the file, which is why the test sets the in-memory `current` back to `default` before switching: it stands for the app still running Default.
 
 - [ ] **Step 6: Run every test, lint, commit**
@@ -1940,7 +2219,7 @@ No full release exists yet (only `v0.1.0-rc.*`), so the pages describe `main` di
 ```markdown
 ## Categories
 
-Each game has one or more categories, such as Any% and 100%, and each category keeps its own settings. That way the same auto splitter can split on different things for different runs. A new game starts with one category, "Default". If you used the app before categories existed, your settings are in "Default".
+Each game has one or more categories, such as Any% and 100%, and each category keeps its own settings. That way the same auto splitter can split on different things for different runs. A new game starts with one category, "Default". If you used the app before categories existed, the first time it loads one of your games it asks which category those settings are for, such as Any%, and names the category after your answer. Choose **Not now** to keep the name "Default"; it asks again next time, until the settings are saved, and you can rename the category later.
 
 The Auto splitter card shows the category in use under the game. To change it, click the **Change** next to the category. The Category dialog lists the game's categories, and the one in use is marked IN USE.
 

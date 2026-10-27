@@ -570,6 +570,18 @@ the window dimmed behind them.
     straight away; **Cancel** only closes the dialog without switching.
     **Use this category** switches to the selected category, or just
     closes the dialog if it is the one in use.
+- **"Name this category"**, when a game is loaded whose file has settings
+  from before categories (section 7.4): loading an auto splitter, changing
+  its game or starting the app. Under the title, the game's name, then
+  "These settings were saved before the bridge kept settings per category.
+  Which category are they set up for?", a **Category** name field, empty
+  with the placeholder "Any%", and the note "You can add more categories
+  later. Not now keeps the name "Default"." The name follows the Category
+  dialog's rules. The buttons, aligned right, are **Not now** and **Save**
+  (primary); Enter is **Save** and Escape is **Not now**. **Save** names
+  the category and writes the game's file. **Not now** keeps "Default"
+  without writing the file. The dialog comes after any Game dialog that
+  led to the load.
 - **"Save your settings changes?"**, when the app is closed, a different
   `.wasm` is opened, or **Reload** or **Change** is pressed with unsaved
   settings, or a category is picked in the Category dialog with unsaved
@@ -647,7 +659,7 @@ and their exact values are in `.superdesign/design-system.md`.
 | **How to connect** | expanded, collapsed, or expanded and collapsible | Connection tab |
 | **Log toolbar** and **Log line** | filter states; line categories, highlighted entry | Log tab |
 | **About row** | a folder with **Open** | Preferences tab |
-| **Game dialog**, **Category dialog** and **Unsaved dialog** | new file or change; picking, renaming, adding, confirming a delete; reload, open, change game, change category or close | dialogs |
+| **Game dialog**, **Category dialog** and **Unsaved dialog** | new file or change; picking, renaming, adding, confirming a delete, naming settings from before categories; reload, open, change game, change category or close | dialogs |
 
 ## 7. Configuration and settings storage
 
@@ -783,6 +795,16 @@ category, named "Default", or "Default 2", "Default 3"… if a category has
 that name, so no settings are lost.
 The file is written in the new form the next time it is written.
 
+Those settings were made for a category the bridge doesn't know, so when
+such a game is loaded the "Name this category" dialog asks for its name
+(section 6.8). The settings then live in the category they belong to from
+the start, rather than in a "Default" whose settings the user would have to
+copy into a new category by hand. Naming it is a rename: the key stays, so
+the running auto splitter is unaffected. **Not now** leaves it "Default",
+which can be renamed later in the Category dialog. The dialog comes back on
+the next load only while the file is still in the old form, so not once
+the settings have been saved.
+
 ## 8. Logging
 
 ### 8.1 Categories
@@ -877,8 +899,10 @@ Automated:
   files; slug generation; categories (section 7.4): reading files from
   before categories, keys, adding, renaming, deleting and its limits, the
   last category used, and saving into one category leaving the others
-  unchanged. The Category dialog and switching category, with and without
-  unsaved changes, are tested headless.
+  unchanged. The Category dialog, switching category with and without
+  unsaved changes, and naming settings from before categories (Save, Not
+  now, and the dialog coming back only for a file still in the old form)
+  are tested headless.
 - **Settings:** a test auto splitter publishes every widget kind and every
   kind of file filter, then stores values of every type itself. Runner tests
   check what it publishes and stores and that saved edits keep its values;
