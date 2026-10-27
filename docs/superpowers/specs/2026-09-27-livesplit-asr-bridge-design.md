@@ -971,7 +971,9 @@ before.
   its variables marked `is-subcategory` that apply to full-game runs (scope
   `global` or `full-game`). Each combination of one value of each
   subcategory is a variant, all of them offered; a category without
-  subcategories is one variant.
+  subcategories is one variant. The answer comes from outside the app, so
+  a category stops at its first 1,000 variants and the whole list at
+  10,000, which no real game comes near.
 - **Level variants:** offered only while **Include level categories** is
   ticked (section 6.8). For each level, its categories (the `per-level`
   categories listed under the level), with the subcategories that apply to
