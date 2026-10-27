@@ -9,7 +9,7 @@ mod test_server;
 
 #[cfg(not(test))]
 pub use categories::live_categories;
-pub use categories::{CategoryLink, CategorySource, Variant};
+pub use categories::{CategoryLink, CategorySource, Variant, valid_id};
 #[cfg(test)]
 pub use categories::{FakeCategories, OfflineCategories};
 pub use matching::{clear_match, clear_variant};

@@ -80,6 +80,13 @@ impl SpeedrunCategories {
 
 impl CategorySource for SpeedrunCategories {
     fn request(&mut self, game_id: &str) {
+        if !valid_id(game_id) {
+            let _ = self.sender.send((
+                game_id.to_string(),
+                Err(format!("{game_id:?} is not a game id")),
+            ));
+            return;
+        }
         let base_url = self.base_url.clone();
         let sender = self.sender.clone();
         let game_id = game_id.to_string();
@@ -93,6 +100,15 @@ impl CategorySource for SpeedrunCategories {
     fn poll(&mut self) -> Option<Answer> {
         self.answers.try_recv().ok()
     }
+}
+
+/// Whether `id` can be put in an address: not empty, and only ASCII letters,
+/// digits, `_` and `-`. A hand-edited file may hold anything as a game id.
+pub fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 /// Asks the API at `base_url` for the game `game_id` with its levels,
@@ -308,6 +324,12 @@ fn push_variants(
     level: Option<&str>,
     prefix: &str,
 ) {
+    let room = MAX_VARIANTS.saturating_sub(variants.len());
+    if room == 0 {
+        return;
+    }
+    // No combination past this many is ever used.
+    let cap = room.min(MAX_VARIANTS_PER_CATEGORY);
     // Each combination so far: the chosen value of each variable, and labels.
     let mut combinations: Vec<(BTreeMap<String, String>, Vec<&str>)> =
         vec![(BTreeMap::new(), Vec::new())];
@@ -318,7 +340,7 @@ fn push_variants(
         }
         combinations = combinations
             .iter()
-            .take(MAX_VARIANTS_PER_CATEGORY)
+            .take(cap)
             .flat_map(|(chosen, labels)| {
                 variable.values.values.0.iter().map(move |(id, label)| {
                     let mut chosen = chosen.clone();
@@ -328,11 +350,10 @@ fn push_variants(
                     (chosen, labels)
                 })
             })
-            .take(MAX_VARIANTS_PER_CATEGORY)
+            .take(cap)
             .collect();
     }
-    let room = MAX_VARIANTS.saturating_sub(variants.len());
-    for (values, labels) in combinations.into_iter().take(room) {
+    for (values, labels) in combinations {
         let name = if labels.is_empty() {
             format!("{prefix}{}", category.name)
         } else {
@@ -529,6 +550,27 @@ mod tests {
         assert_eq!(variants[999].name, "Big (L2, L9, L19)");
         let many = vec![big; 11];
         assert_eq!(parse_variants(&answer("", &many)).unwrap().len(), 10_000);
+    }
+
+    #[test]
+    fn only_letters_digits_underscores_and_hyphens_make_a_valid_id() {
+        for id in ["yo1yv1q5", "a_b-C9"] {
+            assert!(valid_id(id), "{id}");
+        }
+        for id in ["", "a/b", "a b", "a?x=1", "..", "é", "a#"] {
+            assert!(!valid_id(id), "{id:?}");
+        }
+    }
+
+    #[test]
+    fn the_source_answers_an_error_for_an_invalid_id_without_asking() {
+        // Nothing listens here; a request would answer a connection error
+        // later, not at once.
+        let mut source = SpeedrunCategories::new("http://127.0.0.1:1");
+        source.request("../users");
+        let (id, answer) = source.poll().expect("answers at once");
+        assert_eq!(id, "../users");
+        assert!(answer.unwrap_err().contains("not a game id"));
     }
 
     #[test]
