@@ -19,7 +19,7 @@ use std::{collections::BTreeMap, fs};
 use serde::{Deserialize, Serialize};
 use toml::Table;
 
-use crate::speedrun::SpeedrunLink;
+use crate::speedrun::{CategoryLink, SpeedrunLink};
 
 use super::{Config, Splitters, category_key, merge_saved, read_if_exists, slug, write_replacing};
 
@@ -57,6 +57,8 @@ pub struct RunCategory {
     /// The saved settings, shared by every auto splitter for the game while
     /// this category is in use.
     pub settings: Table,
+    /// The category on speedrun.com this one is for, once linked (spec §7.5.1).
+    pub speedrun: Option<CategoryLink>,
 }
 
 /// A game in the list the Game dialog offers.
@@ -94,8 +96,83 @@ struct CategoryFile {
     /// Missing in a hand-edited file: the key names the category then.
     #[serde(default)]
     name: Option<String>,
+    /// The category's id on speedrun.com. The keys of its link are declared
+    /// before `settings`, so they are written above that table.
+    #[serde(default, skip_serializing_if = "Key::is_absent")]
+    speedrun_id: Key<String>,
+    /// The variables and values that pick the category's variant.
+    #[serde(default, skip_serializing_if = "Key::is_absent")]
+    speedrun_values: Key<BTreeMap<String, String>>,
+    /// The level, for a category of a level.
+    #[serde(default, skip_serializing_if = "Key::is_absent")]
+    speedrun_level: Key<String>,
     #[serde(default)]
     settings: Table,
+}
+
+/// A key of a category's link in a game's file. A hand-edited file may give
+/// it the wrong type, which must not fail the whole file.
+#[derive(Debug, Default)]
+enum Key<T> {
+    /// Not in the file.
+    #[default]
+    Absent,
+    /// In the file, with the right type.
+    Value(T),
+    /// In the file, with another type.
+    Wrong,
+}
+
+impl<T> Key<T> {
+    fn is_absent(&self) -> bool {
+        matches!(self, Self::Absent)
+    }
+
+    /// A key to write, or none for `None`.
+    fn of(value: Option<T>) -> Self {
+        value.map_or(Self::Absent, Self::Value)
+    }
+}
+
+impl<T: Serialize> Serialize for Key<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Value(value) => value.serialize(serializer),
+            Self::Absent | Self::Wrong => serializer.serialize_none(),
+        }
+    }
+}
+
+impl<'de, T: serde::de::DeserializeOwned> Deserialize<'de> for Key<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = toml::Value::deserialize(deserializer)?;
+        Ok(value.try_into().map_or(Self::Wrong, Self::Value))
+    }
+}
+
+impl CategoryFile {
+    /// The link the file's keys describe. Values or a level without an id are
+    /// not a link, and neither is a link with a key of the wrong type.
+    fn link(&self) -> Option<CategoryLink> {
+        let Key::Value(id) = &self.speedrun_id else {
+            return None;
+        };
+        let values = match &self.speedrun_values {
+            Key::Absent => BTreeMap::new(),
+            Key::Value(values) => values.clone(),
+            Key::Wrong => return None,
+        };
+        let level = match &self.speedrun_level {
+            Key::Absent => None,
+            Key::Value(level) => Some(level.clone()),
+            Key::Wrong => return None,
+        };
+        Some(CategoryLink {
+            id: id.clone(),
+            values,
+            level,
+        })
+    }
 }
 
 impl Game {
@@ -110,6 +187,7 @@ impl Game {
                 key: category_key(DEFAULT_CATEGORY),
                 name: DEFAULT_CATEGORY.to_owned(),
                 settings: Table::new(),
+                speedrun: None,
             }],
             current: category_key(DEFAULT_CATEGORY),
             unnamed: None,
@@ -162,6 +240,7 @@ impl Game {
                 .categories
                 .into_iter()
                 .map(|(key, category)| RunCategory {
+                    speedrun: category.link(),
                     name: category.name.unwrap_or_else(|| key.clone()),
                     key,
                     settings: category.settings,
@@ -180,6 +259,7 @@ impl Game {
                 key,
                 name,
                 settings,
+                speedrun: None,
             });
         }
         if game.categories.is_empty() {
@@ -230,6 +310,27 @@ impl Game {
             .ok_or_else(|| format!("there is no category {key}"))
     }
 
+    /// The category linked to `link`, if any.
+    pub fn linked_to(&self, link: &CategoryLink) -> Option<&RunCategory> {
+        self.categories
+            .iter()
+            .find(|category| category.speedrun.as_ref() == Some(link))
+    }
+
+    /// An error if another category than `except` (a key) already has `link`.
+    fn check_link(&self, link: Option<&CategoryLink>, except: Option<&str>) -> Result<(), String> {
+        let taken = link
+            .and_then(|link| self.linked_to(link))
+            .filter(|category| Some(category.key.as_str()) != except);
+        match taken {
+            Some(category) => Err(format!(
+                "the category {} is already linked to that speedrun.com category",
+                category.name
+            )),
+            None => Ok(()),
+        }
+    }
+
     /// `name` trimmed, or an error if it is blank or another category than
     /// `except` has it.
     fn check_name(&self, name: &str, except: Option<&str>) -> Result<String, String> {
@@ -277,6 +378,7 @@ impl Game {
                 key: key.to_owned(),
                 name: game.free_name(key),
                 settings: Table::new(),
+                speedrun: None,
             });
             game.sort();
         }
@@ -288,37 +390,47 @@ impl Game {
     }
 
     /// Adds a category called `name` with `settings` to the game `slug`,
-    /// without switching to it. Returns the game and the new category's key.
+    /// without switching to it, linked to the speedrun.com category `link` if
+    /// given. A link another category has is refused. Returns the game and
+    /// the new category's key.
     pub fn add_category(
         config: &Config,
         slug: &str,
         name: &str,
         settings: &Table,
+        link: Option<&CategoryLink>,
     ) -> Result<(Self, String), String> {
         let mut game = Self::load(config, slug)?;
         let name = game.check_name(name, None)?;
+        game.check_link(link, None)?;
         let key = game.free_key(&name);
         game.categories.push(RunCategory {
             key: key.clone(),
             name,
             settings: settings.clone(),
+            speedrun: link.cloned(),
         });
         game.sort();
         game.write(config)?;
         Ok((game, key))
     }
 
-    /// Renames the category `key` of the game `slug` to `name`. Its key
-    /// stays the same.
+    /// Renames the category `key` of the game `slug` to `name`, and sets its
+    /// link to `link`: `None` unlinks it. A link another category has is
+    /// refused. Its key stays the same.
     pub fn rename_category(
         config: &Config,
         slug: &str,
         key: &str,
         name: &str,
+        link: Option<&CategoryLink>,
     ) -> Result<Self, String> {
         let mut game = Self::load(config, slug)?;
         let name = game.check_name(name, Some(key))?;
-        game.category_mut(key)?.name = name;
+        game.check_link(link, Some(key))?;
+        let category = game.category_mut(key)?;
+        category.name = name;
+        category.speedrun = link.cloned();
         game.sort();
         game.write(config)?;
         Ok(game)
@@ -351,15 +463,23 @@ impl Game {
 
     /// Links the game `slug` to speedrun.com, or unlinks it with `None`. A
     /// link also names the game as speedrun.com does; unlinking keeps the
-    /// name. The slug, and so the file, stay the same. The file is read
-    /// again first.
+    /// name. The slug, and so the file, stay the same. Another id, or none,
+    /// unlinks every category from speedrun.com. The file is read again
+    /// first.
     pub fn set_link(
         config: &Config,
         slug: &str,
         link: Option<&SpeedrunLink>,
     ) -> Result<Self, String> {
         let mut game = Self::load(config, slug)?;
-        game.speedrun_id = link.map(|link| link.id.clone());
+        let id = link.map(|link| link.id.clone());
+        if id != game.speedrun_id {
+            // The categories' links are ids within the old game.
+            for category in &mut game.categories {
+                category.speedrun = None;
+            }
+        }
+        game.speedrun_id = id;
         if let Some(link) = link {
             game.name = link.name.clone();
         }
@@ -383,6 +503,22 @@ impl Game {
                         category.key.clone(),
                         CategoryFile {
                             name: Some(category.name.clone()),
+                            speedrun_id: Key::of(
+                                category.speedrun.as_ref().map(|link| link.id.clone()),
+                            ),
+                            speedrun_values: Key::of(
+                                category
+                                    .speedrun
+                                    .as_ref()
+                                    .map(|link| link.values.clone())
+                                    .filter(|values| !values.is_empty()),
+                            ),
+                            speedrun_level: Key::of(
+                                category
+                                    .speedrun
+                                    .as_ref()
+                                    .and_then(|link| link.level.clone()),
+                            ),
                             settings: category.settings.clone(),
                         },
                     )
@@ -604,7 +740,7 @@ mod tests {
             "name = \"GTA\"\n\n[settings]\ngym = true\n",
         )
         .unwrap();
-        let game = Game::rename_category(&config, "gta", "default", "Any%").unwrap();
+        let game = Game::rename_category(&config, "gta", "default", "Any%", None).unwrap();
         assert_eq!(names(&game), ["Any%"]);
         assert_eq!(game.current, "default");
         assert_eq!(game.unnamed, None);
@@ -680,7 +816,7 @@ mod tests {
         let (_dir, config) = config();
         let game = Game::create(&config, "GTA").unwrap();
         let (game, key) =
-            Game::add_category(&config, &game.slug, " 100% ", &table("gym = true")).unwrap();
+            Game::add_category(&config, &game.slug, " 100% ", &table("gym = true"), None).unwrap();
         assert_eq!(key, "100");
         assert_eq!(names(&game), ["100%", "Default"]);
         // Adding doesn't switch.
@@ -694,11 +830,11 @@ mod tests {
     fn categories_whose_names_slug_alike_get_their_own_keys() {
         let (_dir, config) = config();
         Game::create(&config, "GTA").unwrap();
-        let (_, any) = Game::add_category(&config, "gta", "Any%", &Table::new()).unwrap();
-        let (_, other) = Game::add_category(&config, "gta", "Any", &Table::new()).unwrap();
+        let (_, any) = Game::add_category(&config, "gta", "Any%", &Table::new(), None).unwrap();
+        let (_, other) = Game::add_category(&config, "gta", "Any", &Table::new(), None).unwrap();
         assert_eq!((any.as_str(), other.as_str()), ("any", "any-2"));
         // Renaming changes only the name.
-        let game = Game::rename_category(&config, "gta", "any", "Any% NMG").unwrap();
+        let game = Game::rename_category(&config, "gta", "any", "Any% NMG", None).unwrap();
         let renamed = game.categories.iter().find(|c| c.key == "any").unwrap();
         assert_eq!(renamed.name, "Any% NMG");
     }
@@ -707,12 +843,12 @@ mod tests {
     fn a_name_already_used_in_any_case_or_blank_is_refused() {
         let (_dir, config) = config();
         Game::create(&config, "GTA").unwrap();
-        Game::add_category(&config, "gta", "Any%", &Table::new()).unwrap();
-        assert!(Game::add_category(&config, "gta", "any%", &Table::new()).is_err());
-        assert!(Game::add_category(&config, "gta", "  ", &Table::new()).is_err());
-        assert!(Game::rename_category(&config, "gta", "default", "ANY%").is_err());
+        Game::add_category(&config, "gta", "Any%", &Table::new(), None).unwrap();
+        assert!(Game::add_category(&config, "gta", "any%", &Table::new(), None).is_err());
+        assert!(Game::add_category(&config, "gta", "  ", &Table::new(), None).is_err());
+        assert!(Game::rename_category(&config, "gta", "default", "ANY%", None).is_err());
         // A category keeps its own name, in another case.
-        assert!(Game::rename_category(&config, "gta", "any", "ANY%").is_ok());
+        assert!(Game::rename_category(&config, "gta", "any", "ANY%", None).is_ok());
     }
 
     #[test]
@@ -720,7 +856,7 @@ mod tests {
         let (_dir, config) = config();
         Game::create(&config, "GTA").unwrap();
         assert!(Game::delete_category(&config, "gta", "default").is_err());
-        Game::add_category(&config, "gta", "100%", &Table::new()).unwrap();
+        Game::add_category(&config, "gta", "100%", &Table::new(), None).unwrap();
         assert!(Game::delete_category(&config, "gta", "default").is_err());
         let game = Game::delete_category(&config, "gta", "100").unwrap();
         assert_eq!(names(&game), ["Default"]);
@@ -731,7 +867,7 @@ mod tests {
     fn the_category_used_is_remembered() {
         let (_dir, config) = config();
         Game::create(&config, "GTA").unwrap();
-        Game::add_category(&config, "gta", "100%", &table("gym = true")).unwrap();
+        Game::add_category(&config, "gta", "100%", &table("gym = true"), None).unwrap();
         let game = Game::use_category(&config, "gta", "100").unwrap();
         assert_eq!(game.settings(), &table("gym = true"));
         assert_eq!(Game::load(&config, "gta").unwrap().current, "100");
@@ -742,7 +878,7 @@ mod tests {
     fn saving_into_one_category_leaves_the_others_alone() {
         let (_dir, config) = config();
         Game::create(&config, "GTA").unwrap();
-        Game::add_category(&config, "gta", "100%", &table("gym = false")).unwrap();
+        Game::add_category(&config, "gta", "100%", &table("gym = false"), None).unwrap();
         Game::save_settings(&config, "gta", "default", &table("gym = true")).unwrap();
         let game = Game::load(&config, "gta").unwrap();
         let other = game.categories.iter().find(|c| c.key == "100").unwrap();
@@ -832,5 +968,162 @@ mod tests {
             .map(|g| (g.slug.as_str(), g.speedrun_id.as_deref()))
             .collect();
         assert_eq!(ids, [("doom", None), ("portal", Some("4pd0n31e"))]);
+    }
+
+    fn link(id: &str, values: &[(&str, &str)], level: Option<&str>) -> CategoryLink {
+        CategoryLink {
+            id: id.to_owned(),
+            values: values
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
+            level: level.map(str::to_owned),
+        }
+    }
+
+    fn pc() -> CategoryLink {
+        link("jdzg83rk", &[("yn2wk42n", "21gzep8l")], None)
+    }
+
+    /// The `[categories.<key>]` table of a game's file.
+    fn category_table(config: &Config, slug: &str, key: &str) -> Table {
+        let text = fs::read_to_string(config.game_file(slug)).unwrap();
+        let file: Table = toml::from_str(&text).unwrap();
+        file["categories"][key].as_table().unwrap().clone()
+    }
+
+    #[test]
+    fn a_category_link_is_written_and_read_back() {
+        let (_dir, config) = config();
+        Game::create(&config, "GTA").unwrap();
+        let (_, key) =
+            Game::add_category(&config, "gta", "Any% (PC)", &Table::new(), Some(&pc())).unwrap();
+        let written = category_table(&config, "gta", &key);
+        assert_eq!(written["speedrun_id"].as_str(), Some("jdzg83rk"));
+        assert_eq!(
+            written["speedrun_values"]["yn2wk42n"].as_str(),
+            Some("21gzep8l")
+        );
+        assert!(!written.contains_key("speedrun_level"));
+        // The keys come above the settings table.
+        let text = fs::read_to_string(config.game_file("gta")).unwrap();
+        assert!(text.find("speedrun_id").unwrap() < text.find("settings").unwrap());
+        let game = Game::load(&config, "gta").unwrap();
+        assert_eq!(game.linked_to(&pc()).unwrap().key, key);
+    }
+
+    #[test]
+    fn an_unlinked_category_writes_no_speedrun_keys() {
+        let (_dir, config) = config();
+        Game::create(&config, "GTA").unwrap();
+        let written = category_table(&config, "gta", "default");
+        assert!(written.keys().all(|key| !key.starts_with("speedrun")));
+        assert_eq!(
+            Game::load(&config, "gta").unwrap().categories[0].speedrun,
+            None
+        );
+    }
+
+    #[test]
+    fn a_level_link_keeps_its_level() {
+        let (_dir, config) = config();
+        Game::create(&config, "GTA").unwrap();
+        let level = link("abc", &[], Some("lvl1"));
+        let (game, key) =
+            Game::add_category(&config, "gta", "Level", &Table::new(), Some(&level)).unwrap();
+        let written = category_table(&config, "gta", &key);
+        assert_eq!(written["speedrun_level"].as_str(), Some("lvl1"));
+        assert!(!written.contains_key("speedrun_values"));
+        assert_eq!(game.linked_to(&level).unwrap().key, key);
+        assert_eq!(Game::load(&config, "gta").unwrap(), game);
+    }
+
+    #[test]
+    fn renaming_without_a_link_unlinks_and_keeps_the_name() {
+        let (_dir, config) = config();
+        Game::create(&config, "GTA").unwrap();
+        let (_, key) =
+            Game::add_category(&config, "gta", "Any%", &Table::new(), Some(&pc())).unwrap();
+        // Renaming with its own link is fine.
+        let game = Game::rename_category(&config, "gta", &key, "Any% PC", Some(&pc())).unwrap();
+        assert!(game.linked_to(&pc()).is_some());
+        let game = Game::rename_category(&config, "gta", &key, "Any% PC", None).unwrap();
+        assert!(game.linked_to(&pc()).is_none());
+        assert!(names(&game).contains(&"Any% PC"));
+        assert!(!category_table(&config, "gta", &key).contains_key("speedrun_id"));
+    }
+
+    #[test]
+    fn a_link_another_category_has_is_refused() {
+        let (_dir, config) = config();
+        Game::create(&config, "GTA").unwrap();
+        Game::add_category(&config, "gta", "Any%", &Table::new(), Some(&pc())).unwrap();
+        assert!(Game::add_category(&config, "gta", "Other", &Table::new(), Some(&pc())).is_err());
+        assert!(Game::rename_category(&config, "gta", "default", "Default", Some(&pc())).is_err());
+    }
+
+    #[test]
+    fn changing_the_game_s_link_unlinks_its_categories() {
+        let (_dir, config) = config();
+        let game = |id: &str| SpeedrunLink {
+            id: id.to_owned(),
+            name: "GTA".to_owned(),
+        };
+        Game::create(&config, "GTA").unwrap();
+        Game::set_link(&config, "gta", Some(&game("g1"))).unwrap();
+        let relink = || {
+            let game = Game::rename_category(&config, "gta", "any", "Any%", Some(&pc())).unwrap();
+            assert!(game.linked_to(&pc()).is_some());
+        };
+        Game::add_category(&config, "gta", "Any%", &Table::new(), Some(&pc())).unwrap();
+        let same = Game::set_link(&config, "gta", Some(&game("g1"))).unwrap();
+        assert!(same.linked_to(&pc()).is_some());
+        let other = Game::set_link(&config, "gta", Some(&game("g2"))).unwrap();
+        assert!(other.categories.iter().all(|c| c.speedrun.is_none()));
+        assert_eq!(names(&other), ["Any%", "Default"]);
+        relink();
+        let none = Game::set_link(&config, "gta", None).unwrap();
+        assert!(none.categories.iter().all(|c| c.speedrun.is_none()));
+    }
+
+    #[test]
+    fn values_without_an_id_read_as_not_linked() {
+        let (_dir, config) = config();
+        fs::create_dir_all(config.game_file("gta").parent().unwrap()).unwrap();
+        fs::write(
+            config.game_file("gta"),
+            "name = \"GTA\"\n[categories.any]\nname = \"Any%\"\nspeedrun_values = { a = \"b\" }\nspeedrun_level = \"l\"\n",
+        )
+        .unwrap();
+        let game = Game::load(&config, "gta").unwrap();
+        assert_eq!(game.categories[0].speedrun, None);
+    }
+
+    #[test]
+    fn link_keys_of_the_wrong_type_read_as_not_linked() {
+        let (_dir, config) = config();
+        fs::create_dir_all(config.game_file("gta").parent().unwrap()).unwrap();
+        fs::write(
+            config.game_file("gta"),
+            "name = \"GTA\"\n\
+             [categories.a]\nname = \"A\"\nspeedrun_id = 5\n\
+             [categories.b]\nname = \"B\"\nspeedrun_id = \"x\"\nspeedrun_values = { a = 1 }\n\
+             [categories.c]\nname = \"C\"\nspeedrun_id = \"x\"\nspeedrun_level = [1]\n\
+             [categories.d]\nname = \"D\"\nspeedrun_id = \"x\"\n",
+        )
+        .unwrap();
+        let game = Game::load(&config, "gta").unwrap();
+        let link = |key: &str| {
+            game.categories
+                .iter()
+                .find(|c| c.key == key)
+                .unwrap()
+                .speedrun
+                .clone()
+        };
+        assert_eq!(link("a"), None);
+        assert_eq!(link("b"), None);
+        assert_eq!(link("c"), None);
+        assert_eq!(link("d").map(|l| l.id), Some("x".to_owned()));
     }
 }

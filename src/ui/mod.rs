@@ -35,7 +35,7 @@ use crate::{
     logging::{self, Category, Filters, Logger},
     runner::{Runner, RunnerEvent, TimerAction, file_name},
     server::{self, NetworkAddress, Server, ServerEvent},
-    speedrun::{self, GameSearch, SpeedrunLink},
+    speedrun::{self, CategorySource, GameSearch, SpeedrunLink},
     version::VERSION,
 };
 use components::{
@@ -130,6 +130,20 @@ fn default_search() -> Box<dyn GameSearch> {
     }
 }
 
+/// The source the Category dialog asks for a linked game's speedrun.com
+/// categories: the real one, or none in tests, which make no network
+/// requests.
+fn default_categories() -> Box<dyn CategorySource> {
+    #[cfg(test)]
+    {
+        Box::new(speedrun::OfflineCategories)
+    }
+    #[cfg(not(test))]
+    {
+        speedrun::live_categories()
+    }
+}
+
 /// What waits for an answer in the Unsaved dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Pending {
@@ -218,6 +232,8 @@ pub struct BridgeApp {
     game: Option<Game>,
     /// Makes the search a Game dialog suggests speedrun.com games with.
     new_search: fn() -> Box<dyn GameSearch>,
+    /// Makes the source a Category dialog asks for speedrun.com categories.
+    new_categories: fn() -> Box<dyn CategorySource>,
     /// The open Game dialog, and the file it is for.
     dialog: Option<(GameDialog, PathBuf)>,
     /// The open Category dialog.
@@ -300,6 +316,7 @@ impl BridgeApp {
             loading: HashMap::new(),
             game: None,
             new_search: default_search,
+            new_categories: default_categories,
             dialog: None,
             category_dialog: None,
             settings: SettingsEditor::default(),
@@ -718,7 +735,7 @@ impl BridgeApp {
     /// asks about unsaved settings only when another category is used.
     fn change_category(&mut self) {
         if let Some(game) = &self.game {
-            self.category_dialog = Some(CategoryDialog::new(game));
+            self.category_dialog = Some(CategoryDialog::new(game, (self.new_categories)()));
         }
     }
 
@@ -729,7 +746,7 @@ impl BridgeApp {
         if let Some(game) = &self.game
             && let Some(key) = &game.unnamed
         {
-            self.category_dialog = Some(CategoryDialog::naming(game, key));
+            self.category_dialog = Some(CategoryDialog::naming(game, key, (self.new_categories)()));
         }
     }
 
@@ -738,7 +755,15 @@ impl BridgeApp {
         let Some(dialog) = &mut self.category_dialog else {
             return;
         };
-        if let Some(action) = components::category_dialog(ctx, dialog) {
+        let action = components::category_dialog(ctx, dialog);
+        // Reported once, when the request for the categories first fails.
+        if let Some(error) = dialog.take_failure() {
+            self.log(
+                Category::App,
+                format!("Couldn't get categories from speedrun.com: {error}"),
+            );
+        }
+        if let Some(action) = action {
             self.category_action(action);
         }
     }
@@ -755,6 +780,8 @@ impl BridgeApp {
             self.category_dialog = None;
             return;
         };
+        // What to log when the category's link changed.
+        let mut link_note = None;
         // The result, the category to select, and what to log on success
         // and on failure.
         let (result, select, done, failed) = match action {
@@ -769,9 +796,13 @@ impl BridgeApp {
                 }
                 return;
             }
-            CategoryDialogAction::Add(name) => {
+            CategoryDialogAction::Add { name, link } => {
                 let name = name.trim().to_owned();
-                match Game::add_category(&config, &slug, &name, self.settings.live()) {
+                let live = self.settings.live();
+                if link.is_some() {
+                    link_note = Some(format!("Linked {name} to speedrun.com"));
+                }
+                match Game::add_category(&config, &slug, &name, live, link.as_ref()) {
                     Ok((game, key)) => (
                         Ok(game),
                         Some(key),
@@ -786,11 +817,22 @@ impl BridgeApp {
                     ),
                 }
             }
-            CategoryDialogAction::Rename { key, name } => {
+            CategoryDialogAction::Rename { key, name, link } => {
                 let name = name.trim().to_owned();
                 let old = self.category_name(&key);
+                let before = self
+                    .game
+                    .as_ref()
+                    .and_then(|game| game.categories.iter().find(|category| category.key == key))
+                    .and_then(|category| category.speedrun.as_ref());
+                if before != link.as_ref() {
+                    link_note = Some(match link {
+                        Some(_) => format!("Linked {name} to speedrun.com"),
+                        None => format!("Unlinked {name} from speedrun.com"),
+                    });
+                }
                 (
-                    Game::rename_category(&config, &slug, &key, &name),
+                    Game::rename_category(&config, &slug, &key, &name, link.as_ref()),
                     None,
                     format!("Renamed {old} to {name}"),
                     format!("Couldn't rename {old}"),
@@ -810,6 +852,9 @@ impl BridgeApp {
             Ok(mut game) => {
                 // For example "Renamed 100% to 100% NMG (GTA)".
                 self.log(Category::App, format!("{done} ({})", game.name));
+                if let Some(note) = link_note {
+                    self.log(Category::App, format!("{note} ({})", game.name));
+                }
                 // The category in use is the one running. If the file no
                 // longer has it, for example after a hand edit, it is saved
                 // back first so `current` never names no category.
@@ -1746,7 +1791,7 @@ mod tests {
     fn app_with_two_categories() -> (tempfile::TempDir, BridgeApp) {
         let (dir, mut app) = app_with_unsaved_edit();
         let config = app.config.clone().unwrap();
-        Game::add_category(&config, "gta", "100%", &table("gym = true")).unwrap();
+        Game::add_category(&config, "gta", "100%", &table("gym = true"), None).unwrap();
         app.game = Some(Game::load(&config, "gta").unwrap());
         (dir, app)
     }
@@ -1817,8 +1862,14 @@ mod tests {
     fn a_new_category_copies_the_running_settings_not_the_edits() {
         let (_dir, mut app) = app_with_unsaved_edit();
         let _ = app.settings.set_live(table("level = 2"), Instant::now());
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
-        app.category_action(CategoryDialogAction::Add("Low%".to_owned()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
+        app.category_action(CategoryDialogAction::Add {
+            name: "Low%".to_owned(),
+            link: None,
+        });
         let added = saved_in(&app, "low");
         assert_eq!(added.get("level"), Some(&Value::Integer(2)));
         // "gym" is an unsaved edit.
@@ -1831,10 +1882,14 @@ mod tests {
     #[test]
     fn renaming_and_deleting_are_saved_straight_away() {
         let (_dir, mut app) = app_with_two_categories();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
         app.category_action(CategoryDialogAction::Rename {
             key: "100".to_owned(),
             name: "100% NMG".to_owned(),
+            link: None,
         });
         let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
         assert!(
@@ -1861,8 +1916,14 @@ mod tests {
             "name = \"GTA\"\ncategory = \"100\"\n\n[categories.100]\nname = \"100%\"\n",
         )
         .unwrap();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
-        app.category_action(CategoryDialogAction::Add("Low%".to_owned()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
+        app.category_action(CategoryDialogAction::Add {
+            name: "Low%".to_owned(),
+            link: None,
+        });
         let game = app.game.as_ref().unwrap();
         assert_eq!(game.current, "default");
         assert_eq!(game.category().key, "default");
@@ -1897,6 +1958,7 @@ mod tests {
         app.category_action(CategoryDialogAction::Rename {
             key: "default".to_owned(),
             name: "Any%".to_owned(),
+            link: None,
         });
         // Named: the dialog closes rather than showing the list.
         assert!(app.category_dialog.is_none());
@@ -1941,7 +2003,10 @@ mod tests {
     #[test]
     fn an_open_category_dialog_closes_when_the_auto_splitter_unloads() {
         let (_dir, mut app) = app_with_two_categories();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
         app.runner_event(RunnerEvent::Unloaded);
         assert!(app.category_dialog.is_none());
     }
@@ -1949,8 +2014,14 @@ mod tests {
     #[test]
     fn the_log_has_the_trimmed_category_name() {
         let (_dir, mut app) = app_with_unsaved_edit();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
-        app.category_action(CategoryDialogAction::Add(" Y ".to_owned()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
+        app.category_action(CategoryDialogAction::Add {
+            name: " Y ".to_owned(),
+            link: None,
+        });
         let all = Filters {
             auto_splitter: true,
             connection: true,
@@ -1967,7 +2038,10 @@ mod tests {
     #[test]
     fn the_category_in_use_is_not_deleted() {
         let (_dir, mut app) = app_with_two_categories();
-        app.category_dialog = Some(CategoryDialog::new(app.game.as_ref().unwrap()));
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(speedrun::OfflineCategories),
+        ));
         app.category_action(CategoryDialogAction::Delete("default".to_owned()));
         let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
         assert_eq!(game.categories.len(), 2);
@@ -2908,6 +2982,237 @@ mod tests {
             .filter(|line| line.contains("speedrun.com"))
             .collect();
         assert_eq!(failures, ["Couldn't search speedrun.com: offline"]);
+    }
+
+    /// An app whose game GTA is linked to speedrun.com as "sa", with the
+    /// categories "default" and "100%", and `fake` as its source.
+    fn app_with_a_linked_game(fake: &speedrun::FakeCategories) -> (tempfile::TempDir, BridgeApp) {
+        let (dir, mut app) = app_with_two_categories();
+        let config = app.config.clone().unwrap();
+        Game::set_link(&config, "gta", Some(&link("sa", "GTA"))).unwrap();
+        let game = Game::load(&config, "gta").unwrap();
+        app.category_dialog = Some(CategoryDialog::new(&game, Box::new(fake.clone())));
+        app.game = Some(game);
+        (dir, app)
+    }
+
+    fn pc_link() -> speedrun::CategoryLink {
+        speedrun::CategoryLink {
+            id: "c1".to_owned(),
+            ..Default::default()
+        }
+    }
+
+    fn category_link_of(app: &BridgeApp, key: &str) -> Option<speedrun::CategoryLink> {
+        Game::load(app.config.as_ref().unwrap(), "gta")
+            .unwrap()
+            .categories
+            .into_iter()
+            .find(|category| category.key == key)
+            .unwrap()
+            .speedrun
+    }
+
+    #[test]
+    fn adding_a_linked_category_stores_its_link_and_logs_it() {
+        let (_dir, mut app) = app_with_a_linked_game(&speedrun::FakeCategories::default());
+        app.category_action(CategoryDialogAction::Add {
+            name: "Any% (PC)".to_owned(),
+            link: Some(pc_link()),
+        });
+        assert_eq!(category_link_of(&app, "any-pc"), Some(pc_link()));
+        let logged = lines(&app, Category::App);
+        assert!(
+            logged.contains(&"Linked Any% (PC) to speedrun.com (GTA)".to_owned()),
+            "{logged:?}"
+        );
+        assert!(
+            logged.contains(&"Added the category Any% (PC) (GTA)".to_owned()),
+            "{logged:?}"
+        );
+    }
+
+    #[test]
+    fn renaming_without_a_link_unlinks_it() {
+        let (_dir, mut app) = app_with_a_linked_game(&speedrun::FakeCategories::default());
+        app.category_action(CategoryDialogAction::Rename {
+            key: "100".to_owned(),
+            name: "100%".to_owned(),
+            link: Some(pc_link()),
+        });
+        app.category_action(CategoryDialogAction::Rename {
+            key: "100".to_owned(),
+            name: "100%".to_owned(),
+            link: None,
+        });
+        assert_eq!(category_link_of(&app, "100"), None);
+        let logged = lines(&app, Category::App);
+        assert!(
+            logged.contains(&"Unlinked 100% from speedrun.com (GTA)".to_owned()),
+            "{logged:?}"
+        );
+    }
+
+    #[test]
+    fn renaming_with_the_same_link_logs_no_link_line() {
+        let (_dir, mut app) = app_with_a_linked_game(&speedrun::FakeCategories::default());
+        for name in ["100%", "100% NMG"] {
+            app.category_action(CategoryDialogAction::Rename {
+                key: "100".to_owned(),
+                name: name.to_owned(),
+                link: Some(pc_link()),
+            });
+        }
+        let linked = lines(&app, Category::App)
+            .into_iter()
+            .filter(|line| line.contains("speedrun.com"))
+            .count();
+        assert_eq!(linked, 1);
+    }
+
+    #[test]
+    fn using_a_set_up_variant_while_adding_renames_and_selects_it() {
+        let (_dir, mut app) = app_with_a_linked_game(&speedrun::FakeCategories::default());
+        // The variant is already set up as the category "100%": adding it
+        // means renaming that category to the variant's name and using it.
+        app.category_action(CategoryDialogAction::Rename {
+            key: "100".to_owned(),
+            name: "Any% (PC)".to_owned(),
+            link: Some(pc_link()),
+        });
+        app.category_action(CategoryDialogAction::Use("100".to_owned()));
+        let game = Game::load(app.config.as_ref().unwrap(), "gta").unwrap();
+        let renamed = game.categories.iter().find(|c| c.key == "100").unwrap();
+        assert_eq!(renamed.name, "Any% (PC)");
+        assert_eq!(renamed.speedrun, Some(pc_link()));
+        assert_eq!(app.pending, Some(Pending::ChangeCategory("100".to_owned())));
+    }
+
+    #[test]
+    fn a_category_fetch_failure_is_logged_once() {
+        let fake = speedrun::FakeCategories::default();
+        fake.answer("sa", Err("offline".to_owned()));
+        let (_dir, mut app) = app_with_a_linked_game(&fake);
+        draw_app(&mut app, 800.0);
+        draw_app(&mut app, 800.0);
+        let failures: Vec<_> = lines(&app, Category::App)
+            .into_iter()
+            .filter(|line| line.contains("speedrun.com"))
+            .collect();
+        assert_eq!(
+            failures,
+            ["Couldn't get categories from speedrun.com: offline"]
+        );
+    }
+
+    #[test]
+    fn changing_the_game_s_link_removes_its_categories_links() {
+        let (_dir, mut app) = app_with_a_linked_game(&speedrun::FakeCategories::default());
+        app.category_action(CategoryDialogAction::Rename {
+            key: "100".to_owned(),
+            name: "100%".to_owned(),
+            link: Some(pc_link()),
+        });
+        let current = GameSummary {
+            slug: "gta".to_owned(),
+            name: "GTA".to_owned(),
+            speedrun_id: Some("sa".to_owned()),
+            splitters: 1,
+        };
+        let dialog = GameDialog::change(
+            "x.wasm",
+            vec![current.clone()],
+            &current,
+            Box::new(speedrun::Offline),
+        );
+        app.apply_game_choice(
+            &dialog,
+            PathBuf::from("x.wasm"),
+            GameChoice {
+                game: GameTarget::Existing("gta".to_owned()),
+                link: Some(link("vc", "GTA Vice City")),
+            },
+        );
+        assert_eq!(category_link_of(&app, "100"), None);
+        let game = app.game.as_ref().unwrap();
+        assert_eq!(game.speedrun_id.as_deref(), Some("vc"));
+        assert!(game.categories.iter().all(|c| c.speedrun.is_none()));
+    }
+
+    #[test]
+    fn changing_the_game_closes_the_category_dialog() {
+        let (_dir, mut app) = app_with_a_linked_game(&speedrun::FakeCategories::default());
+        assert!(app.category_dialog.is_some());
+        let current = GameSummary {
+            slug: "gta".to_owned(),
+            name: "GTA".to_owned(),
+            speedrun_id: Some("sa".to_owned()),
+            splitters: 1,
+        };
+        let dialog = GameDialog::change(
+            "x.wasm",
+            vec![current.clone()],
+            &current,
+            Box::new(speedrun::Offline),
+        );
+        app.apply_game_choice(
+            &dialog,
+            PathBuf::from("x.wasm"),
+            GameChoice {
+                game: GameTarget::Existing("gta".to_owned()),
+                link: Some(link("vc", "GTA Vice City")),
+            },
+        );
+        assert!(app.category_dialog.is_none());
+    }
+
+    #[test]
+    fn the_category_dialog_of_an_unlinked_game_asks_nothing() {
+        let fake = speedrun::FakeCategories::default();
+        let (_dir, mut app) = app_with_two_categories();
+        app.category_dialog = Some(CategoryDialog::new(
+            app.game.as_ref().unwrap(),
+            Box::new(fake.clone()),
+        ));
+        draw_app(&mut app, 800.0);
+        assert!(fake.requests().is_empty());
+        assert!(
+            lines(&app, Category::App)
+                .iter()
+                .all(|line| !line.contains("speedrun.com"))
+        );
+    }
+
+    #[test]
+    fn an_unlinked_game_adds_renames_and_names_as_before() {
+        let (_dir, mut app) = app_with_an_old_file();
+        let config = app.config.clone().unwrap();
+        app.ask_category_name();
+        app.category_action(CategoryDialogAction::Rename {
+            key: "default".to_owned(),
+            name: "Any%".to_owned(),
+            link: None,
+        });
+        app.change_category();
+        app.category_action(CategoryDialogAction::Add {
+            name: "Low%".to_owned(),
+            link: None,
+        });
+        app.category_action(CategoryDialogAction::Rename {
+            key: "low".to_owned(),
+            name: "Low% NMG".to_owned(),
+            link: None,
+        });
+        let game = Game::load(&config, "gta").unwrap();
+        assert!(game.categories.iter().any(|c| c.name == "Low% NMG"));
+        assert!(game.categories.iter().all(|c| c.speedrun.is_none()));
+        let text = std::fs::read_to_string(config.game_file("gta")).unwrap();
+        assert!(!text.contains("speedrun_"), "{text}");
+        assert!(
+            lines(&app, Category::App)
+                .iter()
+                .all(|line| !line.contains("speedrun.com"))
+        );
     }
 
     /// The messages logged in `category`.

@@ -34,13 +34,13 @@ const ROW_HEIGHT: f32 = 32.0;
 /// The list of games scrolls beyond this height.
 const LIST_HEIGHT: f32 = 200.0;
 /// The height of a row in the list of speedrun.com results.
-const RESULT_HEIGHT: f32 = 32.0;
+pub(super) const RESULT_HEIGHT: f32 = 32.0;
 /// How many results the list shows before it scrolls.
-const RESULTS_SHOWN: f32 = 5.0;
+pub(super) const RESULTS_SHOWN: f32 = 5.0;
 /// How long after typing stops the name is searched, in seconds.
 const TYPING_PAUSE: f64 = 0.3;
 /// How often the dialog looks for answers while it waits for them.
-const POLL_EVERY: Duration = Duration::from_millis(100);
+pub(super) const POLL_EVERY: Duration = Duration::from_millis(100);
 
 /// Why the dialog is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -600,7 +600,7 @@ fn list_keys(ui: &mut Ui, dialog: &mut GameDialog) -> bool {
 /// The line under the field while the game is linked: a green dot,
 /// "Linked to speedrun.com" and **Change**. Returns whether **Change** was
 /// clicked.
-fn linked_line(ui: &mut Ui) -> bool {
+pub(super) fn linked_line(ui: &mut Ui) -> bool {
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -634,16 +634,7 @@ fn results_list(ctx: &egui::Context, field: Rect, dialog: &mut GameDialog) {
     let typed = format!("Use \"{}\" (not on speedrun.com)", dialog.name.trim());
     let scroll_to = dialog.highlight.filter(|_| dialog.highlight_moved);
     dialog.highlight_moved = false;
-    let frame = Frame::NONE
-        .fill(theme::RAISED)
-        .stroke(Stroke::new(1.0, theme::BORDER_STRONG))
-        .corner_radius(theme::RADIUS)
-        .shadow(Shadow {
-            offset: [0, 8],
-            blur: 24,
-            spread: 0,
-            color: Color32::from_black_alpha(128),
-        });
+    let frame = list_frame();
     let area = Area::new(Id::new("game dialog results"))
         .order(Order::Tooltip)
         .fixed_pos(field.left_bottom())
@@ -705,6 +696,21 @@ fn results_list(ctx: &egui::Context, field: Rect, dialog: &mut GameDialog) {
     dialog.focus_pending = true;
 }
 
+/// The frame of a list dropping down from a field: raised, with a strong
+/// border and a shadow.
+pub(super) fn list_frame() -> Frame {
+    Frame::NONE
+        .fill(theme::RAISED)
+        .stroke(Stroke::new(1.0, theme::BORDER_STRONG))
+        .corner_radius(theme::RADIUS)
+        .shadow(Shadow {
+            offset: [0, 8],
+            blur: 24,
+            spread: 0,
+            color: Color32::from_black_alpha(128),
+        })
+}
+
 /// A result in the list: its speedrun.com name, SET UP when a game already
 /// set up is linked to it, and the year it was released.
 fn result_row(
@@ -751,7 +757,7 @@ fn result_row(
 
 /// The list's last row: `Use "<typed name>" (not on speedrun.com)`. Returns
 /// whether it was clicked.
-fn typed_row(ui: &mut Ui, width: f32, text: String, highlighted: bool) -> bool {
+pub(super) fn typed_row(ui: &mut Ui, width: f32, text: String, highlighted: bool) -> bool {
     let (rect, response) = ui.allocate_exact_size(vec2(width, RESULT_HEIGHT), Sense::click());
     if ui.is_rect_visible(rect) {
         if highlighted || response.hovered() {
@@ -771,7 +777,7 @@ fn typed_row(ui: &mut Ui, width: f32, text: String, highlighted: bool) -> bool {
 }
 
 /// `text` on one line, cut short with an ellipsis beyond `width`.
-fn one_line(
+pub(super) fn one_line(
     ui: &Ui,
     text: String,
     font: FontId,

@@ -49,7 +49,7 @@ The app keeps its settings in one folder:
 
 - `app.toml`: the port, the last auto splitter you loaded, the log filters, the window preference and size, and Developer mode.
 - `splitters.toml`: which game each auto splitter file is for.
-- `games/`: one file per game, with its name (and its speedrun.com id, when the game is linked) and the saved settings of its auto splitters.
+- `games/`: one file per game, with its name (and its speedrun.com id, when the game is linked) and the saved settings of its auto splitters, with each category's speedrun.com link when it has one.
 
 You can back these files up. Don't copy them to another PC and expect them to work: `splitters.toml` holds file paths, so on the new PC you would open each auto splitter again from its new location. To start over, close the app and delete the folder. The next launch looks like the first one, and the app asks for your games again.
 
