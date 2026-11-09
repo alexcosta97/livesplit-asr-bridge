@@ -12,7 +12,7 @@ publish = false
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 dirs = "7.0.0"
-eframe = "0.36.2"
+eframe = "0.37.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["sink"] }
 if-addrs = "0.15.0"
 # The upstream runtime, from the livesplit-core repository by git rev: its only
